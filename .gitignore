@@ -55,6 +55,12 @@ cover/
 *.mo
 *.pot
 
+# runtime data
+data/*.sqlite3
+data/*.db
+backups/
+exports/
+
 # Django stuff:
 *.log
 local_settings.py
