@@ -7,30 +7,21 @@ from typing import Optional
 from flask import Flask
 
 from . import db
-from .routes.tournaments import bp as tournaments_bp
+from .routes.home import bp as home_bp
 
 
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = "dev-local-secret"  # offline lokal; später ggf. per ENV setzen
+    app.secret_key = "dev-secret-change-me"  # später via ENV
 
-    # Pfade
-    db.set_db_path(db_path)
-    app.config["SKT_DB_PATH"] = str(db_path)
-    if backup_dir is not None:
-        app.config["SKT_BACKUP_DIR"] = str(backup_dir)
-
-    # DB initialisieren (Schema erzeugen / migrieren)
+    # DB init
     db.init_db(db_path)
 
+    # Pfade in app.config
+    app.config["SKT_DB_PATH"] = str(db_path)
+    app.config["SKT_BACKUP_DIR"] = str(backup_dir) if backup_dir else ""
+
     # Blueprints
-    app.register_blueprint(tournaments_bp)
-
-    # Startseite
-    @app.get("/")
-    def index():
-        from flask import render_template
-
-        return render_template("index.html")
+    app.register_blueprint(home_bp)
 
     return app

@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="mb-2">Start</h3>
+    <div class="text-muted mb-3">
+      Basis läuft. Nächster Schritt: Adressbuch + Turniere als Module.
+    </div>
+
+    <form method="post" action="{{ url_for('home.backup') }}">
+      <button class="btn btn-outline-primary">DB-Backup jetzt erstellen</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
