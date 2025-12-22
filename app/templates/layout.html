@@ -7,29 +7,21 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="{{ url_for('index') }}">SchafkopfTurnier</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
-    </div>
+  <div class="container">
+    <a class="navbar-brand" href="/">SchafkopfTurnier</a>
   </div>
 </nav>
 
-<main class="container py-3">
+<main class="container py-4">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      {% for cat, msg in messages %}
-        <div class="alert alert-{% if cat=='error' %}danger{% elif cat=='ok' %}success{% else %}secondary{% endif %}">{{ msg }}</div>
+      {% for cat,msg in messages %}
+        <div class="alert alert-{% if cat=='ok' %}success{% elif cat=='error' %}danger{% else %}secondary{% endif %}">{{ msg }}</div>
       {% endfor %}
     {% endif %}
   {% endwith %}
-
   {% block content %}{% endblock %}
 </main>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
