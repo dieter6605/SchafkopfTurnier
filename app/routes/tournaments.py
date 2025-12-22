@@ -65,9 +65,8 @@ def _search_addresses(con, qtxt: str, limit: int = 60):
         (like, like, like, like, like, like, like, like, like, int(limit)),
     )
 
-
 # -----------------------------------------------------------------------------
-# Pages
+# Pages: Turnierliste
 # -----------------------------------------------------------------------------
 @bp.get("/tournaments")
 def tournaments_list():
@@ -83,7 +82,87 @@ def tournaments_list():
         )
     return render_template("tournaments.html", tournaments=rows, now=_now_local_iso())
 
+# -----------------------------------------------------------------------------
+# Pages: Neues Turnier + Speichern
+# -----------------------------------------------------------------------------
+@bp.get("/tournaments/new")
+def tournament_new():
+    defaults = {
+        "title": "",
+        "event_date": datetime.now().strftime("%Y-%m-%d"),
+        "start_time": "19:00",
+        "location": "",
+        "organizer": "",
+        "description": "",
+        "min_participants": 0,
+        "max_participants": 0,
+    }
+    return render_template("tournament_form.html", t=defaults, mode="new")
 
+
+@bp.post("/tournaments/new")
+def tournament_create():
+    f = request.form
+    title = (f.get("title") or "").strip()
+    event_date = (f.get("event_date") or "").strip()
+    start_time = (f.get("start_time") or "").strip()
+
+    if not title:
+        flash("Turniername fehlt.", "error")
+        return redirect(url_for("tournaments.tournament_new"))
+    if not event_date:
+        flash("Datum ist Pflicht.", "error")
+        return redirect(url_for("tournaments.tournament_new"))
+    if not start_time:
+        flash("Beginn ist Pflicht.", "error")
+        return redirect(url_for("tournaments.tournament_new"))
+
+    with db.connect() as con:
+        con.execute(
+            """
+            INSERT INTO tournaments(
+              title, event_date, start_time,
+              location, organizer, description,
+              min_participants, max_participants,
+              created_at, updated_at
+            )
+            VALUES (?,?,?,?,?,?,?, ?, datetime('now'), datetime('now'))
+            """,
+            (
+                title,
+                event_date,
+                start_time,
+                (f.get("location") or "").strip() or None,
+                (f.get("organizer") or "").strip() or None,
+                (f.get("description") or "").strip() or None,
+                _to_int(f.get("min_participants"), 0),
+                _to_int(f.get("max_participants"), 0),
+            ),
+        )
+        con.commit()
+        tid = int(con.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    flash("Turnier angelegt.", "ok")
+    return redirect(url_for("tournaments.tournament_detail", tournament_id=tid))
+
+# -----------------------------------------------------------------------------
+# Pages: Turnier-Detail
+# -----------------------------------------------------------------------------
+@bp.get("/tournaments/<int:tournament_id>")
+def tournament_detail(tournament_id: int):
+    with db.connect() as con:
+        t = db.one(con, "SELECT * FROM tournaments WHERE id=?", (tournament_id,))
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        counts = _tournament_counts(con, tournament_id)
+
+    return render_template("tournament_detail.html", t=t, counts=counts, now=_now_local_iso())
+
+# -----------------------------------------------------------------------------
+# Pages: Teilnehmer erfassen
+# -----------------------------------------------------------------------------
 @bp.get("/tournaments/<int:tournament_id>/participants")
 def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
@@ -98,7 +177,7 @@ def tournament_participants(tournament_id: int):
 
         hits = _search_addresses(con, qtxt)
         already = db.q(con, "SELECT address_id FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
-        already_ids = {int(r["address_id"]) for r in already if r["address_id"] is not None}
+        already_ids = {int(r["address_id"]) for r in already}
         hits = [h for h in hits if int(h["id"]) not in already_ids]
 
         participants = db.q(
@@ -124,20 +203,14 @@ def tournament_participants(tournament_id: int):
         participants=participants,
     )
 
-
 # -----------------------------------------------------------------------------
 # Teilnehmer übernehmen (aus Adressbuch)
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/add/<int:address_id>")
 def tournament_participant_add(tournament_id: int, address_id: int):
-    q = (request.args.get("q") or request.form.get("q") or "").strip()
+    q = (request.args.get("q") or "").strip()
 
     with db.connect() as con:
-        t = db.one(con, "SELECT id FROM tournaments WHERE id=?", (tournament_id,))
-        if not t:
-            flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
-
         dup = db.one(
             con,
             "SELECT 1 FROM tournament_participants WHERE tournament_id=? AND address_id=?",
@@ -167,9 +240,8 @@ def tournament_participant_add(tournament_id: int, address_id: int):
     flash(f"Teilnehmer übernommen (Nr {pno}).", "ok")
     return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-
 # -----------------------------------------------------------------------------
-# 🆕 Quick-Add: neue Adresse + sofortiger Turnierteilnehmer
+# Quick-Add: neue Adresse + sofortiger Turnierteilnehmer
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/quickadd")
 def tournament_participant_quickadd(tournament_id: int):
@@ -185,21 +257,9 @@ def tournament_participant_quickadd(tournament_id: int):
 
     plz = (f.get("plz") or "").strip() or None
     ort = (f.get("ort") or "").strip() or None
-    strasse = (f.get("strasse") or "").strip() or None
-    hausnummer = (f.get("hausnummer") or "").strip() or None
-    telefon = (f.get("telefon") or "").strip() or None
-    email = (f.get("email") or "").strip() or None
-    notizen = (f.get("notizen") or "").strip() or None
 
     with db.connect() as con:
-        t = db.one(con, "SELECT id FROM tournaments WHERE id=?", (tournament_id,))
-        if not t:
-            flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
-
-        # Wohnort-Lookup upsert (nur wenn plz/ort sinnvoll vorhanden)
         _upsert_wohnort(con, wohnort, plz, ort)
-
         ab_id = _default_ab_id(con)
 
         cur = con.execute(
@@ -219,32 +279,17 @@ def tournament_participant_quickadd(tournament_id: int):
                 wohnort,
                 plz,
                 ort,
-                strasse,
-                hausnummer,
-                telefon,
-                email,
+                (f.get("strasse") or "").strip() or None,
+                (f.get("hausnummer") or "").strip() or None,
+                (f.get("telefon") or "").strip() or None,
+                (f.get("email") or "").strip() or None,
                 "aktiv",
-                notizen,
+                (f.get("notizen") or "").strip() or None,
             ),
         )
+
         address_id = int(cur.lastrowid)
-
-        # Falls (theoretisch) schon Teilnehmer: abbrechen
-        dup = db.one(
-            con,
-            "SELECT 1 FROM tournament_participants WHERE tournament_id=? AND address_id=?",
-            (tournament_id, address_id),
-        )
-        if dup:
-            con.rollback()
-            flash("Diese Person ist bereits als Teilnehmer erfasst.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
-
-        # Teilnehmer anlegen
         pno = _next_free_player_no(con, tournament_id)
-
-        a = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
-        disp = _display_name(a) if a else f"{nachname}, {vorname} · {wohnort}"
 
         con.execute(
             """
@@ -252,7 +297,7 @@ def tournament_participant_quickadd(tournament_id: int):
               (tournament_id, player_no, address_id, display_name)
             VALUES (?,?,?,?)
             """,
-            (tournament_id, pno, address_id, disp),
+            (tournament_id, pno, address_id, f"{nachname}, {vorname} · {wohnort}"),
         )
 
         con.commit()

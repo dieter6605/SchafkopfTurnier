@@ -1,51 +1,70 @@
 {% extends "layout.html" %}
 {% block content %}
 
-<h3 class="mb-3">{% if mode=='new' %}Neues Turnier{% else %}Turnier bearbeiten{% endif %}</h3>
-
-<form method="post" class="card shadow-sm">
-  <div class="card-body row g-2">
-    <div class="col-md-6">
-      <label class="form-label">Titel *</label>
-      <input class="form-control" name="title" required value="{{ t.title or '' }}">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Datum *</label>
-      <input class="form-control" name="event_date" required placeholder="YYYY-MM-DD" value="{{ t.event_date or '' }}">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Beginn *</label>
-      <input class="form-control" name="start_time" required placeholder="HH:MM" value="{{ t.start_time or '19:00' }}">
-    </div>
-
-    <div class="col-md-6">
-      <label class="form-label">Ort</label>
-      <input class="form-control" name="location" value="{{ t.location or '' }}">
-    </div>
-    <div class="col-md-6">
-      <label class="form-label">Organisator</label>
-      <input class="form-control" name="organizer" value="{{ t.organizer or '' }}">
-    </div>
-
-    <div class="col-12">
-      <label class="form-label">Beschreibung</label>
-      <textarea class="form-control" name="description" rows="3">{{ t.description or '' }}</textarea>
-    </div>
-
-    <div class="col-md-3">
-      <label class="form-label">Min. Teilnehmer</label>
-      <input class="form-control" name="min_participants" value="{{ t.min_participants or 0 }}">
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Max. Teilnehmer</label>
-      <input class="form-control" name="max_participants" value="{{ t.max_participants or 0 }}">
-    </div>
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h3 class="mb-0">
+      {% if mode=='new' %}Neues Turnier{% else %}Turnier bearbeiten{% endif %}
+    </h3>
   </div>
-
-  <div class="card-footer d-flex gap-2">
-    <button class="btn btn-primary">Speichern</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournaments_list') }}">Abbrechen</a>
+  <div>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournaments_list') }}">
+      Zurück
+    </a>
   </div>
-</form>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" class="row g-2">
+
+      <div class="col-md-6">
+        <label class="form-label">Turniername *</label>
+        <input class="form-control" name="title" required value="{{ t.title }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Datum *</label>
+        <input class="form-control" type="date" name="event_date" required value="{{ t.event_date }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Beginn *</label>
+        <input class="form-control" type="time" name="start_time" required value="{{ t.start_time }}">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Ort</label>
+        <input class="form-control" name="location" value="{{ t.location }}">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Veranstalter</label>
+        <input class="form-control" name="organizer" value="{{ t.organizer }}">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Min. Teilnehmer</label>
+        <input class="form-control" type="number" name="min_participants" value="{{ t.min_participants }}">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Max. Teilnehmer</label>
+        <input class="form-control" type="number" name="max_participants" value="{{ t.max_participants }}">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Beschreibung</label>
+        <textarea class="form-control" name="description" rows="3">{{ t.description }}</textarea>
+      </div>
+
+      <div class="col-12 mt-2">
+        <button class="btn btn-primary">Speichern</button>
+      </div>
+
+    </form>
+  </div>
+</div>
 
 {% endblock %}
