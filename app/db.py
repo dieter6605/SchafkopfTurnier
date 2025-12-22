@@ -10,6 +10,9 @@ from typing import Optional
 _DB_PATH: Optional[Path] = None
 
 
+# -----------------------------------------------------------------------------
+# Connection handling
+# -----------------------------------------------------------------------------
 def set_db_path(path: Path) -> None:
     global _DB_PATH
     _DB_PATH = Path(path)
@@ -24,6 +27,7 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON;")
     return con
 
+
 def one(con: sqlite3.Connection, sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
     return con.execute(sql, params).fetchone()
 
@@ -32,6 +36,27 @@ def q(con: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row
     return list(con.execute(sql, params))
 
 
+# -----------------------------------------------------------------------------
+# Schema helpers
+# -----------------------------------------------------------------------------
+def _has_table(con: sqlite3.Connection, name: str) -> bool:
+    r = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+        (name,),
+    ).fetchone()
+    return bool(r)
+
+
+def _has_column(con: sqlite3.Connection, table: str, column: str) -> bool:
+    if not _has_table(con, table):
+        return False
+    rows = con.execute(f"PRAGMA table_info({table});").fetchall()
+    return any(r["name"] == column for r in rows)
+
+
+# -----------------------------------------------------------------------------
+# Init / Migration
+# -----------------------------------------------------------------------------
 def init_db(db_path: Path) -> None:
     """
     Minimales, erweiterbares Basisschema:
@@ -42,6 +67,9 @@ def init_db(db_path: Path) -> None:
     set_db_path(db_path)
 
     with connect() as con:
+        # ---------------------------------------------------------------------
+        # Basisschema
+        # ---------------------------------------------------------------------
         con.executescript(
             """
             CREATE TABLE IF NOT EXISTS meta (
@@ -86,6 +114,8 @@ def init_db(db_path: Path) -> None:
                 email TEXT,
                 telefon TEXT,
 
+                invite INTEGER NOT NULL DEFAULT 1,
+
                 status TEXT NOT NULL DEFAULT 'aktiv',  -- aktiv|inaktiv|verstorben|...
                 notizen TEXT,
 
@@ -119,7 +149,7 @@ def init_db(db_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_tournaments_event_date ON tournaments(event_date);
 
-            -- Tournament participants (müssen immer addresses referenzieren)
+            -- Tournament participants
             CREATE TABLE IF NOT EXISTS tournament_participants (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
@@ -141,10 +171,19 @@ def init_db(db_path: Path) -> None:
             """
         )
 
+        # ---------------------------------------------------------------------
+        # Migration: addresses.invite nachziehen (für bestehende DBs)
+        # ---------------------------------------------------------------------
+        if _has_table(con, "addresses") and not _has_column(con, "addresses", "invite"):
+            con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER;")
+            con.execute("UPDATE addresses SET invite=1 WHERE invite IS NULL;")
+
+        # ---------------------------------------------------------------------
         # Standard-Adressbuch sicherstellen
-        ab = con.execute("SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1").fetchone()
+        # ---------------------------------------------------------------------
+        ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
         if not ab:
-            any_ab = con.execute("SELECT id FROM addressbooks LIMIT 1").fetchone()
+            any_ab = one(con, "SELECT id FROM addressbooks LIMIT 1")
             if not any_ab:
                 con.execute("INSERT INTO addressbooks(name, is_default) VALUES (?,1)", ("Standard",))
             else:
@@ -153,6 +192,9 @@ def init_db(db_path: Path) -> None:
         con.commit()
 
 
+# -----------------------------------------------------------------------------
+# Backup
+# -----------------------------------------------------------------------------
 def backup_db(backup_dir: Path) -> Path:
     """
     Erstellt ein timestamped Backup der SQLite-Datei (copy).

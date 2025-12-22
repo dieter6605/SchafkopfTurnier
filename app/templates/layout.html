@@ -26,5 +26,8 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+<!-- Gemeinsame JS-Logik: Wohnort-Autocomplete -->
+<script src="{{ url_for('static', filename='js/wohnort_autocomplete.js') }}"></script>
 </body>
 </html>
