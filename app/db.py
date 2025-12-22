@@ -24,6 +24,13 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys=ON;")
     return con
 
+def one(con: sqlite3.Connection, sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
+    return con.execute(sql, params).fetchone()
+
+
+def q(con: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+    return list(con.execute(sql, params))
+
 
 def init_db(db_path: Path) -> None:
     """
