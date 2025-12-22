@@ -10,6 +10,9 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container">
     <a class="navbar-brand" href="/">SchafkopfTurnier</a>
+    <div class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-light" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
+    </div>
   </div>
 </nav>
 
@@ -23,5 +26,8 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+<!-- Gemeinsame JS-Logik: Wohnort-Autocomplete -->
+<script src="{{ url_for('static', filename='js/wohnort_autocomplete.js') }}"></script>
 </body>
 </html>

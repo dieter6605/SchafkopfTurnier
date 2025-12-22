@@ -1,4 +1,6 @@
 # app/__init__.py
 from __future__ import annotations
 
-# bewusst leer – create_app liegt in app/web.py
+from .web import create_app
+
+__all__ = ["create_app"]
