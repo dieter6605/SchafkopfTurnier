@@ -5,6 +5,7 @@
   .sk-hit { cursor:pointer; }
   .sk-selected { outline: 3px solid rgba(13,110,253,.45); border-radius: 10px; }
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -24,6 +25,26 @@
       <div class="card-body">
         <div class="text-muted small">Teilnehmer</div>
         <div style="font-size:2.2rem;font-weight:900;">{{ counts.participants }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small mb-1">Teilnehmernummern</div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <form method="post" action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary" title="Prüft auf Lücken (Anzeige kommt als nächstes)">Prüfen</button>
+          </form>
+
+          <form method="post" action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            <input type="hidden" name="renumber" value="1">
+            <button class="btn btn-sm btn-outline-danger" title="Verdichtet alle Teilnehmer auf 1..N">Neu durchnummerieren</button>
+          </form>
+
+          <span class="text-muted small">Tipp: nach Entfernen kannst du optional ab der Nummer neu durchnummerieren.</span>
+        </div>
       </div>
     </div>
   </div>
@@ -56,16 +77,14 @@
           </thead>
           <tbody id="hitsBody">
             {% for h in hits %}
-              <tr class="sk-hit"
-                  data-add-url="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
+              <tr class="sk-hit" data-add-url="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
                 <td>
                   <strong>{{ h.nachname }}</strong>, {{ h.vorname }}
                   <span class="text-muted">· {{ h.wohnort }}</span>
-                  <span class="text-muted small">#{{ h.id }}</span>
+                  <span class="text-muted small sk-mono">#{{ h.id }}</span>
                 </td>
                 <td class="text-end">
-                  <form method="post"
-                        action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
+                  <form method="post" action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
                     <button class="btn btn-sm btn-outline-primary">Übernehmen</button>
                   </form>
                 </td>
@@ -96,17 +115,16 @@
 
       <div class="col-md-3">
         <label class="form-label">Nachname *</label>
-        <input class="form-control" id="qaNachname" name="nachname" required autocomplete="off">
+        <input class="form-control" id="qaNachname" name="nachname" required>
       </div>
       <div class="col-md-3">
         <label class="form-label">Vorname *</label>
-        <input class="form-control" name="vorname" required autocomplete="off">
+        <input class="form-control" name="vorname" required>
       </div>
 
       <div class="col-md-3">
         <label class="form-label">Wohnort *</label>
         <input class="form-control sk-wohnort-input"
-               id="qaWohnort"
                name="wohnort" required autocomplete="off"
                data-plz-id="qaPlz"
                data-ort-id="qaOrt">
@@ -158,23 +176,66 @@
 
     {% if participants %}
       <div class="table-responsive">
-        <table class="table table-striped mb-0">
+        <table class="table table-striped mb-0 align-middle">
           <thead>
             <tr>
-              <th>Nr</th>
+              <th style="width:90px;">Nr</th>
               <th>Name</th>
-              <th class="text-end">Meta</th>
+              <th class="text-end" style="width:520px;">Aktionen</th>
             </tr>
           </thead>
           <tbody>
           {% for p in participants %}
             <tr>
-              <td><strong>{{ p.player_no }}</strong></td>
+              <td class="sk-mono"><strong>{{ p.player_no }}</strong></td>
               <td>
                 <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
                 <span class="text-muted">· {{ p.wohnort }}</span>
+                <div class="text-muted small">
+                  <span class="sk-mono">#{{ p.address_id }}</span>
+                  {% if p.telefon %} · ☎ {{ p.telefon }}{% endif %}
+                  {% if p.email %} · ✉ {{ p.email }}{% endif %}
+                </div>
               </td>
-              <td class="text-end text-muted small">#{{ p.address_id }}</td>
+
+              <td class="text-end">
+                <div class="d-flex justify-content-end gap-2 flex-wrap">
+
+                  <!-- Swap (Nummer bleibt) -->
+                  <form method="post"
+                        action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}"
+                        class="d-flex gap-2 align-items-center">
+                    <input type="hidden" name="tp_id" value="{{ p.id }}">
+                    <input class="form-control form-control-sm sk-mono"
+                           name="new_address_id"
+                           placeholder="Swap Address-ID"
+                           style="max-width: 170px;">
+                    <button class="btn btn-sm btn-outline-secondary" title="Ersetzt Person, behält Nr">Swap</button>
+                  </form>
+
+                  <!-- Entfernen (ohne Renummerieren) -->
+                  <form method="post"
+                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                    <input type="hidden" name="renumber" value="0">
+                    <button class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Teilnehmer Nr {{ p.player_no }} wirklich entfernen?\\n\\nOK = Entfernen (Nummer bleibt frei)');">
+                      Entfernen
+                    </button>
+                  </form>
+
+                  <!-- Entfernen + Renummerieren ab dieser Nr -->
+                  <form method="post"
+                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                    <input type="hidden" name="renumber" value="1">
+                    <button class="btn btn-sm btn-outline-danger"
+                            onclick="return confirm('Teilnehmer Nr {{ p.player_no }} entfernen und ab dieser Nr neu durchnummerieren?');"
+                            title="Entfernt und verdichtet ab dieser Nr">
+                      Entfernen + Renummerieren
+                    </button>
+                  </form>
+
+                </div>
+              </td>
             </tr>
           {% endfor %}
           </tbody>

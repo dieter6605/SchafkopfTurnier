@@ -65,8 +65,49 @@ def _search_addresses(con, qtxt: str, limit: int = 60):
         (like, like, like, like, like, like, like, like, like, int(limit)),
     )
 
+
+def _renumber_all(con, tournament_id: int) -> None:
+    """Verdichtet alle Teilnehmer auf 1..N in aktueller Reihenfolge (player_no aufsteigend)."""
+    rows = db.q(
+        con,
+        "SELECT id FROM tournament_participants WHERE tournament_id=? ORDER BY player_no ASC, id ASC",
+        (tournament_id,),
+    )
+    n = 1
+    for r in rows:
+        con.execute(
+            "UPDATE tournament_participants SET player_no=?, updated_at=datetime('now') WHERE id=?",
+            (n, int(r["id"])),
+        )
+        n += 1
+
+
+def _renumber_from(con, tournament_id: int, start_no: int) -> None:
+    """
+    Verdichtet ab start_no: alle Teilnehmer mit player_no >= start_no werden neu fortlaufend nummeriert,
+    bestehende Nummern < start_no bleiben wie sie sind.
+    """
+    rows = db.q(
+        con,
+        """
+        SELECT id
+        FROM tournament_participants
+        WHERE tournament_id=? AND player_no>=?
+        ORDER BY player_no ASC, id ASC
+        """,
+        (tournament_id, int(start_no)),
+    )
+    n = int(start_no)
+    for r in rows:
+        con.execute(
+            "UPDATE tournament_participants SET player_no=?, updated_at=datetime('now') WHERE id=?",
+            (n, int(r["id"])),
+        )
+        n += 1
+
+
 # -----------------------------------------------------------------------------
-# Pages: Turnierliste
+# Pages
 # -----------------------------------------------------------------------------
 @bp.get("/tournaments")
 def tournaments_list():
@@ -82,14 +123,12 @@ def tournaments_list():
         )
     return render_template("tournaments.html", tournaments=rows, now=_now_local_iso())
 
-# -----------------------------------------------------------------------------
-# Pages: Neues Turnier + Speichern
-# -----------------------------------------------------------------------------
+
 @bp.get("/tournaments/new")
 def tournament_new():
     defaults = {
         "title": "",
-        "event_date": datetime.now().strftime("%Y-%m-%d"),
+        "event_date": "",
         "start_time": "19:00",
         "location": "",
         "organizer": "",
@@ -121,8 +160,7 @@ def tournament_create():
         con.execute(
             """
             INSERT INTO tournaments(
-              title, event_date, start_time,
-              location, organizer, description,
+              title, event_date, start_time, location, organizer, description,
               min_participants, max_participants,
               created_at, updated_at
             )
@@ -145,9 +183,7 @@ def tournament_create():
     flash("Turnier angelegt.", "ok")
     return redirect(url_for("tournaments.tournament_detail", tournament_id=tid))
 
-# -----------------------------------------------------------------------------
-# Pages: Turnier-Detail
-# -----------------------------------------------------------------------------
+
 @bp.get("/tournaments/<int:tournament_id>")
 def tournament_detail(tournament_id: int):
     with db.connect() as con:
@@ -160,9 +196,7 @@ def tournament_detail(tournament_id: int):
 
     return render_template("tournament_detail.html", t=t, counts=counts, now=_now_local_iso())
 
-# -----------------------------------------------------------------------------
-# Pages: Teilnehmer erfassen
-# -----------------------------------------------------------------------------
+
 @bp.get("/tournaments/<int:tournament_id>/participants")
 def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
@@ -203,6 +237,7 @@ def tournament_participants(tournament_id: int):
         participants=participants,
     )
 
+
 # -----------------------------------------------------------------------------
 # Teilnehmer übernehmen (aus Adressbuch)
 # -----------------------------------------------------------------------------
@@ -230,8 +265,8 @@ def tournament_participant_add(tournament_id: int, address_id: int):
         con.execute(
             """
             INSERT INTO tournament_participants
-              (tournament_id, player_no, address_id, display_name)
-            VALUES (?,?,?,?)
+              (tournament_id, player_no, address_id, display_name, created_at, updated_at)
+            VALUES (?,?,?, ?, datetime('now'), datetime('now'))
             """,
             (tournament_id, pno, address_id, _display_name(a)),
         )
@@ -239,6 +274,7 @@ def tournament_participant_add(tournament_id: int, address_id: int):
 
     flash(f"Teilnehmer übernommen (Nr {pno}).", "ok")
     return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
 
 # -----------------------------------------------------------------------------
 # Quick-Add: neue Adresse + sofortiger Turnierteilnehmer
@@ -294,13 +330,114 @@ def tournament_participant_quickadd(tournament_id: int):
         con.execute(
             """
             INSERT INTO tournament_participants
-              (tournament_id, player_no, address_id, display_name)
-            VALUES (?,?,?,?)
+              (tournament_id, player_no, address_id, display_name, created_at, updated_at)
+            VALUES (?,?,?, ?, datetime('now'), datetime('now'))
             """,
             (tournament_id, pno, address_id, f"{nachname}, {vorname} · {wohnort}"),
         )
-
         con.commit()
 
     flash(f"Teilnehmer neu angelegt und übernommen (Nr {pno}).", "ok")
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
+# Teilnehmer entfernen
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
+def tournament_participant_remove(tournament_id: int, tp_id: int):
+    renumber = _to_int(request.form.get("renumber"), 0)  # 0/1
+    with db.connect() as con:
+        row = db.one(
+            con,
+            "SELECT id, player_no FROM tournament_participants WHERE id=? AND tournament_id=?",
+            (tp_id, tournament_id),
+        )
+        if not row:
+            flash("Teilnehmer nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+        removed_no = int(row["player_no"] or 0)
+
+        con.execute("DELETE FROM tournament_participants WHERE id=? AND tournament_id=?", (tp_id, tournament_id))
+
+        # optional: ab der entfernten Nummer verdichten
+        if renumber and removed_no > 0:
+            _renumber_from(con, tournament_id, removed_no)
+
+        con.commit()
+
+    flash("Teilnehmer entfernt.", "ok")
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
+# Teilnehmernummern prüfen / komplett renummerieren
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/participants/check-numbers")
+def tournament_participants_check_numbers(tournament_id: int):
+    renumber = _to_int(request.form.get("renumber"), 0)  # 0/1
+    with db.connect() as con:
+        if renumber:
+            _renumber_all(con, tournament_id)
+            con.commit()
+            flash("Teilnehmernummern wurden neu durchnummeriert (1..N).", "ok")
+        else:
+            # nur prüfen (UI kann später gaps anzeigen)
+            flash("Prüfung abgeschlossen (Hinweis: Lückenanzeige kommt als nächstes).", "ok")
+
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
+# Swap: Teilnehmer ersetzen, Nummer bleibt gleich
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/participants/swap")
+def tournament_participant_swap(tournament_id: int):
+    tp_id = _to_int(request.form.get("tp_id"), 0)
+    new_address_id = _to_int(request.form.get("new_address_id"), 0)
+
+    if tp_id <= 0 or new_address_id <= 0:
+        flash("Swap: tp_id oder neue Address-ID fehlt.", "error")
+        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+    with db.connect() as con:
+        tp = db.one(
+            con,
+            "SELECT id, address_id, player_no FROM tournament_participants WHERE id=? AND tournament_id=?",
+            (tp_id, tournament_id),
+        )
+        if not tp:
+            flash("Swap: Teilnehmer nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+        # neue Adresse muss existieren
+        a = db.one(con, "SELECT * FROM addresses WHERE id=?", (new_address_id,))
+        if not a:
+            flash("Swap: Ziel-Adresse nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+        # Ziel darf nicht schon Teilnehmer sein
+        dup = db.one(
+            con,
+            "SELECT 1 FROM tournament_participants WHERE tournament_id=? AND address_id=? LIMIT 1",
+            (tournament_id, new_address_id),
+        )
+        if dup:
+            flash("Swap: Diese Adresse ist bereits als Teilnehmer erfasst.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+        con.execute(
+            """
+            UPDATE tournament_participants
+            SET address_id=?,
+                display_name=?,
+                updated_at=datetime('now')
+            WHERE id=? AND tournament_id=?
+            """,
+            (new_address_id, _display_name(a), tp_id, tournament_id),
+        )
+        con.commit()
+
+    flash("Teilnehmer ersetzt (Nummer blieb gleich).", "ok")
     return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
