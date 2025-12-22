@@ -1,7 +1,6 @@
 # app/routes/addresses.py
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -9,7 +8,6 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from .. import db
 
 bp = Blueprint("addresses", __name__)
-
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -21,26 +19,40 @@ def _to_int(v: Any, default: int = 0) -> int:
         return default
 
 
-def _s(v: Any) -> str:
-    return (v or "").strip()
-
-
-def _display_name(r: Any) -> str:
-    base = f"{r['nachname']}, {r['vorname']}"
-    w = (r["wohnort"] or "").strip()
-    return f"{base} · {w}" if w else base
-
-
 def _is_used_in_any_tournament(con, address_id: int) -> bool:
-    r = db.one(
-        con,
-        "SELECT 1 FROM tournament_participants WHERE address_id=? LIMIT 1",
-        (address_id,),
-    )
+    r = db.one(con, "SELECT 1 FROM tournament_participants WHERE address_id=? LIMIT 1", (address_id,))
     return bool(r)
 
 
+def _default_ab_id(con) -> int:
+    dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
+    return int(dab["id"]) if dab else 1
+
+
+def _build_next_url(qtxt: str, show_inactive: bool) -> str:
+    return url_for(
+        "addresses.addresses_list",
+        q=qtxt or None,
+        show_inactive="1" if show_inactive else "0",
+    )
+
+
+def _has_column(con, table: str, column: str) -> bool:
+    """
+    Lokale Schema-Prüfung (ohne Abhängigkeit von db._has_column, die evtl. nicht exportiert ist).
+    """
+    try:
+        rows = con.execute(f"PRAGMA table_info({table});").fetchall()
+        return any((r["name"] == column) for r in rows)
+    except Exception:
+        return False
+
+
 def _upsert_wohnort(con, wohnort: str, plz: str | None, ort: str | None) -> None:
+    """
+    Pflegt Wohnort/PLZ/Ort in die Lookup-Tabelle 'wohnorte'.
+    Upsert über UNIQUE(wohnort). Nur wenn alle drei Werte vorhanden sind.
+    """
     w = (wohnort or "").strip()
     p = (plz or "").strip() if plz is not None else ""
     o = (ort or "").strip() if ort is not None else ""
@@ -60,105 +72,92 @@ def _upsert_wohnort(con, wohnort: str, plz: str | None, ort: str | None) -> None
 
 
 # -----------------------------------------------------------------------------
-# Search DTO
-# -----------------------------------------------------------------------------
-@dataclass
-class SearchHit:
-    id: int
-    nachname: str
-    vorname: str
-    wohnort: str
-    plz: str
-    ort: str
-    strasse: str
-    hausnummer: str
-    telefon: str
-    email: str
-    status: str
-    display: str
-
-
-def _search(con, qtxt: str, limit: int = 80) -> list[SearchHit]:
-    qtxt = (qtxt or "").strip()
-    if not qtxt:
-        return []
-
-    like = f"%{qtxt}%"
-    rows = db.q(
-        con,
-        """
-        SELECT *
-        FROM addresses
-        WHERE
-          nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR
-          plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR
-          strasse LIKE ? OR hausnummer LIKE ?
-        ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id DESC
-        LIMIT ?
-        """,
-        (like, like, like, like, like, like, like, like, like, int(limit)),
-    )
-
-    out: list[SearchHit] = []
-    for r in rows:
-        out.append(
-            SearchHit(
-                id=int(r["id"]),
-                nachname=r["nachname"],
-                vorname=r["vorname"],
-                wohnort=r["wohnort"],
-                plz=(r["plz"] or ""),
-                ort=(r["ort"] or ""),
-                strasse=(r["strasse"] or ""),
-                hausnummer=(r["hausnummer"] or ""),
-                telefon=(r["telefon"] or ""),
-                email=(r["email"] or ""),
-                status=(r["status"] or "aktiv"),
-                display=_display_name(r),
-            )
-        )
-    return out
-
-
-# -----------------------------------------------------------------------------
-# Pages
+# Pages: Liste / Suche
 # -----------------------------------------------------------------------------
 @bp.get("/addresses")
 def addresses_list():
     qtxt = (request.args.get("q") or "").strip()
+    show_inactive = (request.args.get("show_inactive") or "0") == "1"
+    like = f"%{qtxt}%"
 
     with db.connect() as con:
-        dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
-        default_ab_id = int(dab["id"]) if dab else 1
+        default_ab_id = _default_ab_id(con)
 
-        hits = _search(con, qtxt, limit=120) if qtxt else []
+        # Zähler für UI (immer über gesamtes Adressbuch)
+        cnt_all = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
+        cnt_inactive = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status!='aktiv'",
+            (default_ab_id,),
+        )
+        cnt_all_i = int((cnt_all["c"] or 0) if cnt_all else 0)
+        cnt_inactive_i = int((cnt_inactive["c"] or 0) if cnt_inactive else 0)
 
-        # zuletzt bearbeitete oben, wenn keine Suche
+        hits = []
         latest = []
-        if not qtxt:
-            latest = db.q(
-                con,
-                """
+
+        if qtxt:
+            where = ["addressbook_id=?"]
+            params: list[Any] = [default_ab_id]
+
+            where.append(
+                "("
+                "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
+                "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
+                "strasse LIKE ? OR hausnummer LIKE ?"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like, like, like, like])
+
+            if not show_inactive:
+                where.append("status='aktiv'")
+
+            sql = f"""
                 SELECT *
                 FROM addresses
-                WHERE addressbook_id=?
+                WHERE {' AND '.join(where)}
+                ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id DESC
+                LIMIT 500
+            """
+            hits = db.q(con, sql, tuple(params))
+
+        else:
+            where = ["addressbook_id=?"]
+            params2: list[Any] = [default_ab_id]
+            if not show_inactive:
+                where.append("status='aktiv'")
+
+            sql2 = f"""
+                SELECT *
+                FROM addresses
+                WHERE {' AND '.join(where)}
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 80
-                """,
-                (default_ab_id,),
-            )
+            """
+            latest = db.q(con, sql2, tuple(params2))
 
     return render_template(
         "addresses.html",
         q=qtxt,
+        show_inactive=show_inactive,
+        cnt_all=cnt_all_i,
+        cnt_inactive=cnt_inactive_i,
         hits=hits,
         latest=latest,
     )
 
 
+# -----------------------------------------------------------------------------
+# Neu anlegen
+# -----------------------------------------------------------------------------
 @bp.get("/addresses/new")
 def address_new():
+    qtxt = (request.args.get("q") or "").strip()
+    show_inactive = (request.args.get("show_inactive") or "0") == "1"
+    next_url = (request.args.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+
     defaults = {
+        "id": 0,
         "nachname": "",
         "vorname": "",
         "wohnort": "",
@@ -171,112 +170,156 @@ def address_new():
         "status": "aktiv",
         "notizen": "",
     }
-    return render_template("address_form.html", a=defaults, mode="new", used=False)
+    return render_template("address_form.html", a=defaults, mode="new", used=False, next=next_url)
 
 
 @bp.post("/addresses/new")
 def address_create():
     f = request.form
-    nachname = _s(f.get("nachname"))
-    vorname = _s(f.get("vorname"))
-    wohnort = _s(f.get("wohnort"))
+    nxt = (f.get("next") or "").strip()
+
+    nachname = (f.get("nachname") or "").strip()
+    vorname = (f.get("vorname") or "").strip()
+    wohnort = (f.get("wohnort") or "").strip()
     if not nachname or not vorname or not wohnort:
         flash("Pflichtfelder fehlen: Nachname, Vorname, Wohnort.", "error")
-        return redirect(url_for("addresses.address_new"))
+        return redirect(url_for("addresses.address_new", next=nxt))
 
-    plz = _s(f.get("plz")) or None
-    ort = _s(f.get("ort")) or None
+    plz = (f.get("plz") or "").strip() or None
+    ort = (f.get("ort") or "").strip() or None
+
+    strasse = (f.get("strasse") or "").strip() or None
+    hausnummer = (f.get("hausnummer") or "").strip() or None
+    email = (f.get("email") or "").strip() or None
+    telefon = (f.get("telefon") or "").strip() or None
+    status = (f.get("status") or "aktiv").strip() or "aktiv"
+    notizen = (f.get("notizen") or "").strip() or None
 
     with db.connect() as con:
-        dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
-        default_ab_id = int(dab["id"]) if dab else 1
+        default_ab_id = _default_ab_id(con)
+        has_invite = _has_column(con, "addresses", "invite")
 
-        con.execute(
-            """
-            INSERT INTO addresses(
-              addressbook_id,
-              nachname, vorname,
-              wohnort, plz, ort,
-              strasse, hausnummer,
-              email, telefon,
-              status, notizen,
-              created_at, updated_at
+        if has_invite:
+            con.execute(
+                """
+                INSERT INTO addresses(
+                  addressbook_id, nachname, vorname, wohnort,
+                  plz, ort, strasse, hausnummer,
+                  invite,
+                  email, telefon, status, notizen,
+                  created_at, updated_at
+                )
+                VALUES (?,?,?,?, ?,?,?,?, ?, ?,?,?,?, datetime('now'), datetime('now'))
+                """,
+                (
+                    default_ab_id,
+                    nachname,
+                    vorname,
+                    wohnort,
+                    plz,
+                    ort,
+                    strasse,
+                    hausnummer,
+                    1,
+                    email,
+                    telefon,
+                    status,
+                    notizen,
+                ),
             )
-            VALUES (?,?,?,?,?,?,?,?,?,?,?, ?, datetime('now'), datetime('now'))
-            """,
-            (
-                default_ab_id,
-                nachname,
-                vorname,
-                wohnort,
-                plz,
-                ort,
-                _s(f.get("strasse")) or None,
-                _s(f.get("hausnummer")) or None,
-                _s(f.get("email")) or None,
-                _s(f.get("telefon")) or None,
-                _s(f.get("status")) or "aktiv",
-                _s(f.get("notizen")) or None,
-            ),
-        )
+        else:
+            # Fallback für DBs ohne invite-Spalte
+            con.execute(
+                """
+                INSERT INTO addresses(
+                  addressbook_id, nachname, vorname, wohnort,
+                  plz, ort, strasse, hausnummer,
+                  email, telefon, status, notizen,
+                  created_at, updated_at
+                )
+                VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, datetime('now'), datetime('now'))
+                """,
+                (
+                    default_ab_id,
+                    nachname,
+                    vorname,
+                    wohnort,
+                    plz,
+                    ort,
+                    strasse,
+                    hausnummer,
+                    email,
+                    telefon,
+                    status,
+                    notizen,
+                ),
+            )
 
+        # ✅ Wohnort-Lookup pflegen (nur wenn wohnort+plz+ort vollständig)
         _upsert_wohnort(con, wohnort, plz, ort)
 
         con.commit()
-        new_id = int(con.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     flash("Adresse angelegt.", "ok")
-    return redirect(url_for("addresses.address_edit", address_id=new_id))
+    return redirect(nxt or url_for("addresses.addresses_list"))
 
 
+# -----------------------------------------------------------------------------
+# Bearbeiten
+# -----------------------------------------------------------------------------
 @bp.get("/addresses/<int:address_id>/edit")
 def address_edit(address_id: int):
+    qtxt = (request.args.get("q") or "").strip()
+    show_inactive = (request.args.get("show_inactive") or "0") == "1"
+    next_url = (request.args.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+
     with db.connect() as con:
         a = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(url_for("addresses.addresses_list"))
+            return redirect(next_url)
 
         used = _is_used_in_any_tournament(con, address_id)
 
-    return render_template("address_form.html", a=a, mode="edit", used=used)
+    return render_template("address_form.html", a=a, mode="edit", used=used, next=next_url)
 
 
 @bp.post("/addresses/<int:address_id>/edit")
 def address_update(address_id: int):
     f = request.form
-    nachname = _s(f.get("nachname"))
-    vorname = _s(f.get("vorname"))
-    wohnort = _s(f.get("wohnort"))
+    nxt = (f.get("next") or "").strip()
+
+    nachname = (f.get("nachname") or "").strip()
+    vorname = (f.get("vorname") or "").strip()
+    wohnort = (f.get("wohnort") or "").strip()
     if not nachname or not vorname or not wohnort:
         flash("Pflichtfelder fehlen: Nachname, Vorname, Wohnort.", "error")
-        return redirect(url_for("addresses.address_edit", address_id=address_id))
+        return redirect(url_for("addresses.address_edit", address_id=address_id, next=nxt))
 
-    plz = _s(f.get("plz")) or None
-    ort = _s(f.get("ort")) or None
+    plz = (f.get("plz") or "").strip() or None
+    ort = (f.get("ort") or "").strip() or None
 
     with db.connect() as con:
-        a0 = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
-        if not a0:
+        a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
+        if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(url_for("addresses.addresses_list"))
+            return redirect(nxt or url_for("addresses.addresses_list"))
 
         con.execute(
             """
             UPDATE addresses
-            SET
-              nachname=?,
-              vorname=?,
-              wohnort=?,
-              plz=?,
-              ort=?,
-              strasse=?,
-              hausnummer=?,
-              telefon=?,
-              email=?,
-              status=?,
-              notizen=?,
-              updated_at=datetime('now')
+            SET nachname=?,
+                vorname=?,
+                wohnort=?,
+                plz=?,
+                ort=?,
+                strasse=?,
+                hausnummer=?,
+                telefon=?,
+                email=?,
+                status=?,
+                notizen=?,
+                updated_at=datetime('now')
             WHERE id=?
             """,
             (
@@ -285,55 +328,97 @@ def address_update(address_id: int):
                 wohnort,
                 plz,
                 ort,
-                _s(f.get("strasse")) or None,
-                _s(f.get("hausnummer")) or None,
-                _s(f.get("telefon")) or None,
-                _s(f.get("email")) or None,
-                _s(f.get("status")) or "aktiv",
-                _s(f.get("notizen")) or None,
+                (f.get("strasse") or "").strip() or None,
+                (f.get("hausnummer") or "").strip() or None,
+                (f.get("telefon") or "").strip() or None,
+                (f.get("email") or "").strip() or None,
+                (f.get("status") or "aktiv").strip() or "aktiv",
+                (f.get("notizen") or "").strip() or None,
                 address_id,
             ),
         )
 
-        # Wohnort-Lookup pflegen
+        # ✅ Wohnort-Lookup pflegen (nur wenn wohnort+plz+ort vollständig)
         _upsert_wohnort(con, wohnort, plz, ort)
-
-        # Wichtig: Anzeige im Turnier aktualisieren (einseitig: Adresse -> Turnier)
-        a1 = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
-        if a1:
-            con.execute(
-                """
-                UPDATE tournament_participants
-                SET display_name=?, updated_at=datetime('now')
-                WHERE address_id=?
-                """,
-                (_display_name(a1), address_id),
-            )
 
         con.commit()
 
-    flash("Adresse gespeichert (und Turnieranzeige aktualisiert).", "ok")
-    return redirect(url_for("addresses.address_edit", address_id=address_id))
+    flash("Adresse gespeichert.", "ok")
+    return redirect(nxt or url_for("addresses.addresses_list"))
 
 
-@bp.post("/addresses/<int:address_id>/delete")
-def address_delete(address_id: int):
-    """
-    Löschen ist grundsätzlich nur erlaubt, wenn Adresse noch nie in einem Turnier war.
-    Sonst: Status verwenden.
-    """
+# -----------------------------------------------------------------------------
+# Soft-Delete: Deaktivieren / Reaktivieren
+# -----------------------------------------------------------------------------
+@bp.post("/addresses/<int:address_id>/deactivate")
+def address_deactivate(address_id: int):
+    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
+    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
+    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+
+    with db.connect() as con:
+        a = db.one(con, "SELECT id, status FROM addresses WHERE id=?", (address_id,))
+        if not a:
+            flash("Adresse nicht gefunden.", "error")
+            return redirect(next_url)
+
+        if (a["status"] or "aktiv") != "aktiv":
+            flash("Adresse ist bereits inaktiv.", "ok")
+            return redirect(next_url)
+
+        con.execute(
+            "UPDATE addresses SET status='inaktiv', updated_at=datetime('now') WHERE id=?",
+            (address_id,),
+        )
+        con.commit()
+
+    flash("Adresse deaktiviert (wird standardmäßig nicht mehr angezeigt).", "ok")
+    return redirect(next_url)
+
+
+@bp.post("/addresses/<int:address_id>/reactivate")
+def address_reactivate(address_id: int):
+    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
+    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
+    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+
     with db.connect() as con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(url_for("addresses.addresses_list"))
+            return redirect(next_url)
+
+        con.execute(
+            "UPDATE addresses SET status='aktiv', updated_at=datetime('now') WHERE id=?",
+            (address_id,),
+        )
+        con.commit()
+
+    flash("Adresse reaktiviert.", "ok")
+    return redirect(next_url)
+
+
+# -----------------------------------------------------------------------------
+# Optional: Physisches Löschen (stark eingeschränkt)
+# -----------------------------------------------------------------------------
+@bp.post("/addresses/<int:address_id>/delete")
+def address_delete(address_id: int):
+    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
+    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
+    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+
+    with db.connect() as con:
+        a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
+        if not a:
+            flash("Adresse nicht gefunden.", "error")
+            return redirect(next_url)
 
         if _is_used_in_any_tournament(con, address_id):
-            flash("Löschen nicht erlaubt: Adresse war bereits Teilnehmer in einem Turnier. Bitte Status setzen.", "error")
-            return redirect(url_for("addresses.address_edit", address_id=address_id))
+            flash("Löschen nicht möglich: Adresse war bereits in einem Turnier. Bitte deaktivieren.", "error")
+            return redirect(next_url)
 
         con.execute("DELETE FROM addresses WHERE id=?", (address_id,))
         con.commit()
 
-    flash("Adresse gelöscht.", "ok")
-    return redirect(url_for("addresses.addresses_list"))
+    flash("Adresse gelöscht (war nie Turnierteilnehmer).", "ok")
+    return redirect(next_url)

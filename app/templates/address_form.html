@@ -5,19 +5,26 @@
   <div>
     <h3 class="mb-0">{% if mode=='new' %}Neue Adresse{% else %}Adresse bearbeiten{% endif %}</h3>
     {% if mode!='new' %}
-      <div class="text-muted small">ID #{{ a.id }}{% if used %} · war schon Turnierteilnehmer (Löschen gesperrt){% endif %}</div>
+      <div class="text-muted small">
+        ID #{{ a.id }}{% if used %} · war schon Turnierteilnehmer (Löschen gesperrt){% endif %}
+      </div>
     {% endif %}
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
+    <a class="btn btn-outline-secondary" href="{{ next or url_for('addresses.addresses_list') }}">Adressbuch</a>
   </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="card-body">
+
+    <!-- Hauptformular: Anlegen / Speichern -->
     <form method="post"
           action="{% if mode=='new' %}{{ url_for('addresses.address_create') }}{% else %}{{ url_for('addresses.address_update', address_id=a.id) }}{% endif %}"
           class="row g-2">
+
+      <!-- Rücksprung beibehalten -->
+      <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
 
       <div class="col-md-4">
         <label class="form-label">Nachname *</label>
@@ -29,16 +36,22 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Wohnort *</label>
-        <input class="form-control" name="wohnort" required value="{{ a.wohnort }}">
+        <input class="form-control sk-wohnort-input"
+               name="wohnort"
+               required
+               value="{{ a.wohnort }}"
+               autocomplete="off"
+               data-plz-id="addrPlz"
+               data-ort-id="addrOrt">
       </div>
 
       <div class="col-md-2">
         <label class="form-label">PLZ</label>
-        <input class="form-control" name="plz" value="{{ a.plz or '' }}">
+        <input class="form-control" id="addrPlz" name="plz" value="{{ a.plz or '' }}">
       </div>
       <div class="col-md-4">
         <label class="form-label">Ort</label>
-        <input class="form-control" name="ort" value="{{ a.ort or '' }}">
+        <input class="form-control" id="addrOrt" name="ort" value="{{ a.ort or '' }}">
       </div>
 
       <div class="col-md-4">
@@ -75,20 +88,50 @@
         <input class="form-control" name="notizen" value="{{ a.notizen or '' }}">
       </div>
 
-      <div class="col-12 d-flex gap-2 mt-2">
-        <button class="btn btn-primary">Speichern</button>
-
-        {% if mode!='new' %}
-          <form method="post" action="{{ url_for('addresses.address_delete', address_id=a.id) }}">
-            <button class="btn btn-outline-danger"
-                    {% if used %}disabled{% endif %}
-                    onclick="return confirm('Adresse wirklich löschen? (nur möglich, wenn nie Turnierteilnehmer)');">
-              Löschen
-            </button>
-          </form>
-        {% endif %}
+      <div class="col-12 d-flex gap-2 mt-2 flex-wrap">
+        <button class="btn btn-primary" type="submit">Speichern</button>
       </div>
     </form>
+
+    {% if mode!='new' %}
+      <!-- Separate Formulare (kein Nested-Form!) -->
+      <div class="d-flex gap-2 mt-2 flex-wrap">
+
+        <form method="post"
+              action="{{ url_for('addresses.address_delete', address_id=a.id) }}"
+              class="d-inline">
+          <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
+          <button class="btn btn-outline-danger"
+                  type="submit"
+                  {% if used %}disabled{% endif %}
+                  onclick="return confirm('Adresse wirklich löschen? (nur möglich, wenn nie Turnierteilnehmer)');">
+            Löschen
+          </button>
+        </form>
+
+        <form method="post"
+              action="{{ url_for('addresses.address_deactivate', address_id=a.id) }}"
+              class="d-inline">
+          <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
+          <button class="btn btn-outline-secondary"
+                  type="submit"
+                  onclick="return confirm('Adresse deaktivieren? (bleibt historisch erhalten)');">
+            Deaktivieren
+          </button>
+        </form>
+
+        <form method="post"
+              action="{{ url_for('addresses.address_reactivate', address_id=a.id) }}"
+              class="d-inline">
+          <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
+          <button class="btn btn-outline-success" type="submit">
+            Reaktivieren
+          </button>
+        </form>
+
+      </div>
+    {% endif %}
+
   </div>
 </div>
 

@@ -46,7 +46,32 @@
                   <td>{{ h.wohnort }}</td>
                   <td>{{ h.status }}</td>
                   <td class="text-end">
-                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('addresses.address_edit', address_id=h.id) }}">Bearbeiten</a>
+                    <div class="d-flex justify-content-end gap-2">
+
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{{ url_for('addresses.address_edit', address_id=h.id) }}">
+                        Bearbeiten
+                      </a>
+
+                      {% if h.status == 'aktiv' %}
+                        <form method="post"
+                              action="{{ url_for('addresses.address_deactivate', address_id=h.id) }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button class="btn btn-sm btn-outline-warning">
+                            Deaktivieren
+                          </button>
+                        </form>
+                      {% else %}
+                        <form method="post"
+                              action="{{ url_for('addresses.address_reactivate', address_id=h.id) }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button class="btn btn-sm btn-outline-success">
+                            Reaktivieren
+                          </button>
+                        </form>
+                      {% endif %}
+
+                    </div>
                   </td>
                 </tr>
               {% endfor %}
@@ -80,7 +105,32 @@
                   <td>{{ a.wohnort }}</td>
                   <td>{{ a.status }}</td>
                   <td class="text-end">
-                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('addresses.address_edit', address_id=a.id) }}">Bearbeiten</a>
+                    <div class="d-flex justify-content-end gap-2">
+
+                      <a class="btn btn-sm btn-outline-primary"
+                         href="{{ url_for('addresses.address_edit', address_id=a.id) }}">
+                        Bearbeiten
+                      </a>
+
+                      {% if a.status == 'aktiv' %}
+                        <form method="post"
+                              action="{{ url_for('addresses.address_deactivate', address_id=a.id) }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button class="btn btn-sm btn-outline-warning">
+                            Deaktivieren
+                          </button>
+                        </form>
+                      {% else %}
+                        <form method="post"
+                              action="{{ url_for('addresses.address_reactivate', address_id=a.id) }}">
+                          <input type="hidden" name="next" value="{{ request.full_path }}">
+                          <button class="btn btn-sm btn-outline-success">
+                            Reaktivieren
+                          </button>
+                        </form>
+                      {% endif %}
+
+                    </div>
                   </td>
                 </tr>
               {% endfor %}
