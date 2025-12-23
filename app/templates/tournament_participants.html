@@ -43,7 +43,7 @@
             <button class="btn btn-sm btn-outline-danger" title="Verdichtet alle Teilnehmer auf 1..N">Neu durchnummerieren</button>
           </form>
 
-          <span class="text-muted small">Tipp: nach Entfernen kannst du optional ab der Nummer neu durchnummerieren.</span>
+          <span class="text-muted small">Standard beim Entfernen: ab der Nummer neu durchnummerieren.</span>
         </div>
       </div>
     </div>
@@ -213,24 +213,25 @@
                     <button class="btn btn-sm btn-outline-secondary" title="Ersetzt Person, behält Nr">Swap</button>
                   </form>
 
-                  <!-- Entfernen (ohne Renummerieren) -->
-                  <form method="post"
-                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
-                    <input type="hidden" name="renumber" value="0">
-                    <button class="btn btn-sm btn-outline-danger"
-                            onclick="return confirm('Teilnehmer Nr {{ p.player_no }} wirklich entfernen?\\n\\nOK = Entfernen (Nummer bleibt frei)');">
-                      Entfernen
-                    </button>
-                  </form>
-
-                  <!-- Entfernen + Renummerieren ab dieser Nr -->
+                  <!-- Entfernen (STANDARD: Renummerieren ab dieser Nr) -->
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
                     <input type="hidden" name="renumber" value="1">
                     <button class="btn btn-sm btn-outline-danger"
                             onclick="return confirm('Teilnehmer Nr {{ p.player_no }} entfernen und ab dieser Nr neu durchnummerieren?');"
-                            title="Entfernt und verdichtet ab dieser Nr">
-                      Entfernen + Renummerieren
+                            title="Standard: Entfernt und verdichtet ab dieser Nr">
+                      Entfernen
+                    </button>
+                  </form>
+
+                  <!-- Optional: Entfernen ohne Renummerieren -->
+                  <form method="post"
+                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                    <input type="hidden" name="renumber" value="0">
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="return confirm('Teilnehmer Nr {{ p.player_no }} wirklich entfernen?\\n\\nOK = Entfernen (Nummer bleibt frei)');"
+                            title="Entfernt, Nummer bleibt frei">
+                      Entfernen ohne Renummerieren
                     </button>
                   </form>
 

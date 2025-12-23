@@ -31,6 +31,18 @@ def _display_name(a: Any) -> str:
     return f"{base} · {wohnort}" if wohnort else base
 
 
+def _get_tournament(con, tournament_id: int):
+    return db.one(con, "SELECT * FROM tournaments WHERE id=?", (tournament_id,))
+
+
+def _cap_ok(t: Any, participant_count: int) -> bool:
+    try:
+        mx = int(t["max_participants"] or 0)
+    except Exception:
+        mx = 0
+    return (mx <= 0) or (participant_count < mx)
+
+
 def _next_free_player_no(con, tournament_id: int) -> int:
     rows = db.q(con, "SELECT player_no FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
     used = {int(r["player_no"]) for r in rows if r["player_no"] is not None}
@@ -47,9 +59,10 @@ def _tournament_counts(con, tournament_id: int) -> dict[str, int]:
 
 
 def _search_addresses(con, qtxt: str, limit: int = 60):
+    qtxt = (qtxt or "").strip()
     if not qtxt:
         return []
-    like = f"%{qtxt.strip()}%"
+    like = f"%{qtxt}%"
     return db.q(
         con,
         """
@@ -84,9 +97,14 @@ def _renumber_all(con, tournament_id: int) -> None:
 
 def _renumber_from(con, tournament_id: int, start_no: int) -> None:
     """
-    Verdichtet ab start_no: alle Teilnehmer mit player_no >= start_no werden neu fortlaufend nummeriert,
-    bestehende Nummern < start_no bleiben wie sie sind.
+    Verdichtet ab start_no:
+    - alle Teilnehmer mit player_no >= start_no werden neu fortlaufend nummeriert
+    - Nummern < start_no bleiben unverändert
     """
+    start_no = int(start_no)
+    if start_no <= 0:
+        return
+
     rows = db.q(
         con,
         """
@@ -95,9 +113,9 @@ def _renumber_from(con, tournament_id: int, start_no: int) -> None:
         WHERE tournament_id=? AND player_no>=?
         ORDER BY player_no ASC, id ASC
         """,
-        (tournament_id, int(start_no)),
+        (tournament_id, start_no),
     )
-    n = int(start_no)
+    n = start_no
     for r in rows:
         con.execute(
             "UPDATE tournament_participants SET player_no=?, updated_at=datetime('now') WHERE id=?",
@@ -187,7 +205,7 @@ def tournament_create():
 @bp.get("/tournaments/<int:tournament_id>")
 def tournament_detail(tournament_id: int):
     with db.connect() as con:
-        t = db.one(con, "SELECT * FROM tournaments WHERE id=?", (tournament_id,))
+        t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
@@ -202,14 +220,15 @@ def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
 
     with db.connect() as con:
-        t = db.one(con, "SELECT * FROM tournaments WHERE id=?", (tournament_id,))
+        t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
         counts = _tournament_counts(con, tournament_id)
+        cap_ok = _cap_ok(t, counts["participants"])
 
-        hits = _search_addresses(con, qtxt)
+        hits = _search_addresses(con, qtxt) if qtxt else []
         already = db.q(con, "SELECT address_id FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
         already_ids = {int(r["address_id"]) for r in already}
         hits = [h for h in hits if int(h["id"]) not in already_ids]
@@ -235,6 +254,7 @@ def tournament_participants(tournament_id: int):
         q=qtxt,
         hits=hits,
         participants=participants,
+        cap_ok=cap_ok,
     )
 
 
@@ -243,9 +263,19 @@ def tournament_participants(tournament_id: int):
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/add/<int:address_id>")
 def tournament_participant_add(tournament_id: int, address_id: int):
-    q = (request.args.get("q") or "").strip()
+    q = (request.args.get("q") or request.form.get("q") or "").strip()
 
     with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        counts = _tournament_counts(con, tournament_id)
+        if not _cap_ok(t, counts["participants"]):
+            flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
         dup = db.one(
             con,
             "SELECT 1 FROM tournament_participants WHERE tournament_id=? AND address_id=?",
@@ -295,6 +325,16 @@ def tournament_participant_quickadd(tournament_id: int):
     ort = (f.get("ort") or "").strip() or None
 
     with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        counts = _tournament_counts(con, tournament_id)
+        if not _cap_ok(t, counts["participants"]):
+            flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
         _upsert_wohnort(con, wohnort, plz, ort)
         ab_id = _default_ab_id(con)
 
@@ -343,10 +383,13 @@ def tournament_participant_quickadd(tournament_id: int):
 
 # -----------------------------------------------------------------------------
 # Teilnehmer entfernen
+# Default: AB DIESER NUMMER renummerieren
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
 def tournament_participant_remove(tournament_id: int, tp_id: int):
-    renumber = _to_int(request.form.get("renumber"), 0)  # 0/1
+    # Default = 1 (Standard: ab dieser Nummer)
+    renumber = _to_int(request.form.get("renumber"), 1)  # 0/1
+
     with db.connect() as con:
         row = db.one(
             con,
@@ -359,9 +402,11 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
 
         removed_no = int(row["player_no"] or 0)
 
-        con.execute("DELETE FROM tournament_participants WHERE id=? AND tournament_id=?", (tp_id, tournament_id))
+        con.execute(
+            "DELETE FROM tournament_participants WHERE id=? AND tournament_id=?",
+            (tp_id, tournament_id),
+        )
 
-        # optional: ab der entfernten Nummer verdichten
         if renumber and removed_no > 0:
             _renumber_from(con, tournament_id, removed_no)
 
@@ -372,19 +417,38 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
 
 
 # -----------------------------------------------------------------------------
-# Teilnehmernummern prüfen / komplett renummerieren
+# Renummerieren ab Nummer X (expliziter Backend-Endpoint)
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/participants/renumber-from")
+def tournament_participants_renumber_from(tournament_id: int):
+    start_no = _to_int(request.form.get("start_no"), 0)
+
+    if start_no <= 0:
+        flash("Renummerieren: Startnummer fehlt/ungültig.", "error")
+        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+    with db.connect() as con:
+        _renumber_from(con, tournament_id, start_no)
+        con.commit()
+
+    flash(f"Neu durchnummeriert ab Nr {start_no}.", "ok")
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
+# Teilnehmernummern komplett renummerieren (1..N)
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/check-numbers")
 def tournament_participants_check_numbers(tournament_id: int):
     renumber = _to_int(request.form.get("renumber"), 0)  # 0/1
+
     with db.connect() as con:
         if renumber:
             _renumber_all(con, tournament_id)
             con.commit()
             flash("Teilnehmernummern wurden neu durchnummeriert (1..N).", "ok")
         else:
-            # nur prüfen (UI kann später gaps anzeigen)
-            flash("Prüfung abgeschlossen (Hinweis: Lückenanzeige kommt als nächstes).", "ok")
+            flash("Prüfung abgeschlossen (Lückenanzeige kommt als nächstes).", "ok")
 
     return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
 
@@ -411,13 +475,11 @@ def tournament_participant_swap(tournament_id: int):
             flash("Swap: Teilnehmer nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
 
-        # neue Adresse muss existieren
         a = db.one(con, "SELECT * FROM addresses WHERE id=?", (new_address_id,))
         if not a:
             flash("Swap: Ziel-Adresse nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
 
-        # Ziel darf nicht schon Teilnehmer sein
         dup = db.one(
             con,
             "SELECT 1 FROM tournament_participants WHERE tournament_id=? AND address_id=? LIMIT 1",
