@@ -63,13 +63,11 @@ def init_db(db_path: Path) -> None:
     - meta (schema_version)
     - addressbooks, wohnorte, addresses
     - tournaments, tournament_participants
+    - tournament_rounds, tournament_seats (Auslosung Sitzplan pro Runde)
     """
     set_db_path(db_path)
 
     with connect() as con:
-        # ---------------------------------------------------------------------
-        # Basisschema
-        # ---------------------------------------------------------------------
         con.executescript(
             """
             CREATE TABLE IF NOT EXISTS meta (
@@ -168,19 +166,44 @@ def init_db(db_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_tp_tournament ON tournament_participants(tournament_id);
             CREATE INDEX IF NOT EXISTS idx_tp_address ON tournament_participants(address_id);
+
+            -- -----------------------------------------------------------------
+            -- Runden / Sitzplan
+            -- -----------------------------------------------------------------
+            CREATE TABLE IF NOT EXISTS tournament_rounds (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tournament_id INTEGER NOT NULL,
+                round_no INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(tournament_id, round_no),
+                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);
+
+            CREATE TABLE IF NOT EXISTS tournament_seats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tournament_id INTEGER NOT NULL,
+                round_no INTEGER NOT NULL,
+                table_no INTEGER NOT NULL,
+                seat TEXT NOT NULL,          -- 'A'|'B'|'C'|'D'
+                tp_id INTEGER NOT NULL,      -- tournament_participants.id
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+                UNIQUE(tournament_id, round_no, table_no, seat),
+                UNIQUE(tournament_id, round_no, tp_id),
+
+                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_ts_round ON tournament_seats(tournament_id, round_no);
+            CREATE INDEX IF NOT EXISTS idx_ts_tp ON tournament_seats(tp_id);
             """
         )
 
-        # ---------------------------------------------------------------------
-        # Migration: addresses.invite nachziehen (für bestehende DBs)
-        # ---------------------------------------------------------------------
         if _has_table(con, "addresses") and not _has_column(con, "addresses", "invite"):
             con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER;")
             con.execute("UPDATE addresses SET invite=1 WHERE invite IS NULL;")
 
-        # ---------------------------------------------------------------------
-        # Standard-Adressbuch sicherstellen
-        # ---------------------------------------------------------------------
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
         if not ab:
             any_ab = one(con, "SELECT id FROM addressbooks LIMIT 1")
