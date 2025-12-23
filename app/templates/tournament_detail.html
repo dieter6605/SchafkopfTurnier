@@ -112,6 +112,18 @@
             · Letzte Runde: <strong>{{ last_round_no }}</strong>
           {% endif %}
         </div>
+
+        {% if round_list and round_list|length > 0 %}
+          <div class="mt-2 d-flex gap-2 flex-wrap align-items-center">
+            <span class="text-muted small">Vorhanden:</span>
+            {% for rn in round_list %}
+              <a class="btn btn-sm btn-outline-secondary"
+                 href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rn) }}">
+                R{{ rn }}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
 
       <div class="d-flex gap-2 flex-wrap justify-content-end">
@@ -153,7 +165,7 @@
         <label class="text-muted small mb-0" for="roundNo">Runde</label>
         <input id="roundNo" class="form-control form-control-sm"
                type="number" min="1" step="1"
-               value="1"
+               value="{{ (next_round_no or 1) | int }}"
                style="max-width:110px;">
         <button class="btn btn-sm btn-outline-primary" id="btnRoundShow" type="submit">Anzeigen</button>
       </form>
@@ -204,7 +216,6 @@
   }
 
   document.addEventListener("keydown", function (ev) {
-    // keine Global-Shortcuts mit Alt/Ctrl/Cmd
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
 
     const k = (ev.key || "").toLowerCase();
@@ -215,7 +226,6 @@
       if (k === "l") { ev.preventDefault(); clickIf("btnBackToList"); return; }
       if (k === "b") { ev.preventDefault(); clickIf("btnEditTournament"); return; }
 
-      // 🔒 Löschen NUR mit Shift + Delete
       if (ev.shiftKey && k === "delete") {
         const btn = document.getElementById("btnDeleteTournament");
         if (btn) { ev.preventDefault(); btn.click(); }
@@ -223,23 +233,17 @@
       }
     }
 
-    // -----------------------------
     // Runden-Shortcuts
-    // -----------------------------
-    // Achtung: Runden-Shortcuts NICHT, wenn gerade irgendwo getippt wird
-    // Ausnahme: + / - dürfen auch im roundNo-Feld wirken (weil es genau dafür gedacht ist)
     const activeId = (document.activeElement && document.activeElement.id) ? String(document.activeElement.id) : "";
     const typing = isTypingContext();
     const inRoundField = (activeId === "roundNo");
 
-    // 1 = Runde 1 anzeigen
     if (!typing && k === "1") {
       ev.preventDefault();
       clickIf("btnRound1Show");
       return;
     }
 
-    // N = nächste Runde (letzte+1, sonst 1) -> nur setzen
     if (!typing && k === "n") {
       ev.preventDefault();
       const next = (lastRoundNo > 0) ? (lastRoundNo + 1) : 1;
@@ -247,7 +251,6 @@
       return;
     }
 
-    // + / - = Runde im Feld hoch/runter (nur im roundNo Feld oder wenn nicht getippt wird)
     if ((inRoundField || !typing) && (k === "+" || ev.key === "=")) {
       ev.preventDefault();
       setRoundNo(getRoundNo() + 1);
@@ -259,7 +262,6 @@
       return;
     }
 
-    // A = anzeigen (Runde aus Feld)
     if (!typing && k === "a") {
       ev.preventDefault();
       const btn = document.getElementById("btnRoundShow");
@@ -267,7 +269,6 @@
       return;
     }
 
-    // R = auslosen (Runde aus Feld) -> confirm() greift über onsubmit
     if (!typing && k === "r") {
       ev.preventDefault();
       const btn = document.getElementById("btnRoundDraw");

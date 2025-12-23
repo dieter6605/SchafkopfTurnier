@@ -7,12 +7,18 @@
     return tag === "input" || tag === "textarea" || tag === "select";
   }
 
+  function isDisabled(el) {
+    if (!el) return true;
+    if (el.classList && el.classList.contains("disabled")) return true;
+    if (el.getAttribute && el.getAttribute("aria-disabled") === "true") return true;
+    if (el.hasAttribute && el.hasAttribute("disabled")) return true;
+    return false;
+  }
+
   function clickIf(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    if (el.classList.contains("disabled")) return;
-    if (el.getAttribute("aria-disabled") === "true") return;
-    if (el.hasAttribute("disabled")) return;
+    if (isDisabled(el)) return;
     el.click();
   }
 
@@ -20,35 +26,58 @@
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (isTypingContext()) return;
 
-    const k = String(ev.key || "").toLowerCase();
+    const key = String(ev.key || "");
+    const k = key.toLowerCase();
 
-    if (ev.key === "ArrowLeft") {
+    // Pfeilnavigation
+    if (key === "ArrowLeft") {
       ev.preventDefault();
       clickIf("btnPrevRound");
       return;
     }
-    if (ev.key === "ArrowRight") {
+    if (key === "ArrowRight") {
       ev.preventDefault();
       clickIf("btnNextRound");
       return;
     }
-    if (ev.key === "Escape") {
+
+    // Esc = zurück zum Turnier
+    if (key === "Escape") {
       ev.preventDefault();
-      clickIf("btnBackToTournament");
+      clickIf("btnBackTournament");
       return;
     }
 
     // R = neu auslosen (confirm hängt am form/onsubmit)
     if (k === "r") {
       ev.preventDefault();
-      clickIf("btnRedrawRound");
+      clickIf("btnRedraw");
+      return;
+    }
+
+    // T = Turnier
+    if (k === "t") {
+      ev.preventDefault();
+      clickIf("btnBackTournament");
+      return;
+    }
+
+    // P/N = Vor/Zurück
+    if (k === "p") {
+      ev.preventDefault();
+      clickIf("btnPrevRound");
+      return;
+    }
+    if (k === "n") {
+      ev.preventDefault();
+      clickIf("btnNextRound");
       return;
     }
 
     // L = letzte Runde
     if (k === "l") {
       const el = document.getElementById("btnLastRound");
-      if (el) {
+      if (el && !isDisabled(el)) {
         ev.preventDefault();
         el.click();
       }

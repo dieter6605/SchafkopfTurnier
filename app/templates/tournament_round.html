@@ -17,8 +17,10 @@
     <div class="sk-kbd mt-1">
       Tastatur:
       <span class="fw-semibold">T</span> = Turnier ·
-      <span class="fw-semibold">R</span> = Runde neu auslosen ·
+      <span class="fw-semibold">R</span> = Runde auslosen/neu auslosen ·
       <span class="fw-semibold">P</span>/<span class="fw-semibold">N</span> = Vor/Zurück ·
+      <span class="fw-semibold">←/→</span> = Vor/Zurück ·
+      <span class="fw-semibold">Esc</span> = Turnier ·
       <span class="fw-semibold">L</span> = Letzte Runde
     </div>
   </div>
@@ -30,27 +32,55 @@
       Turnier
     </a>
 
+    {# Der R-Button soll in jedem Fall existieren:
+       - wenn seats existieren: "neu auslosen"
+       - sonst: "auslosen"
+    #}
     <form method="post"
-          id="formRedraw"
+          id="formDraw"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
           class="d-inline"
-          onsubmit="return confirm('Runde {{ round_no }} erneut auslosen?\n\nHinweis: Die vorhandene Auslosung wird überschrieben.');">
+          onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
       <button class="btn btn-warning" id="btnRedraw" type="submit">
-        Runde {{ round_no }} neu auslosen
+        {% if seats and seats|length > 0 %}
+          Runde {{ round_no }} neu auslosen
+        {% else %}
+          Runde {{ round_no }} auslosen
+        {% endif %}
       </button>
     </form>
 
-    <a class="btn btn-outline-secondary"
-       id="btnPrevRound"
-       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no - 1 if round_no > 1 else 1)) }}">
-      Vorherige
-    </a>
+    {% if prev_round_no %}
+      <a class="btn btn-outline-secondary"
+         id="btnPrevRound"
+         href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=prev_round_no) }}">
+        Vorherige
+      </a>
+    {% else %}
+      <a class="btn btn-outline-secondary disabled"
+         id="btnPrevRound"
+         href="#"
+         aria-disabled="true"
+         tabindex="-1">
+        Vorherige
+      </a>
+    {% endif %}
 
-    <a class="btn btn-outline-secondary"
-       id="btnNextRound"
-       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
-      Nächste
-    </a>
+    {% if next_round_no %}
+      <a class="btn btn-outline-secondary"
+         id="btnNextRound"
+         href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_round_no) }}">
+        Nächste
+      </a>
+    {% else %}
+      <a class="btn btn-outline-secondary disabled"
+         id="btnNextRound"
+         href="#"
+         aria-disabled="true"
+         tabindex="-1">
+        Nächste
+      </a>
+    {% endif %}
 
     {% if last_round_no and last_round_no > 0 %}
       <a class="btn btn-outline-secondary"
@@ -63,7 +93,6 @@
 </div>
 
 {% if seats and seats|length > 0 %}
-  {# seats ist flach: wir gruppieren in Jinja per table_no #}
   {% set cur = namespace(table_no=None) %}
 
   <div class="row g-3">
@@ -149,48 +178,27 @@
       </div>
     </div>
   {% endif %}
+
 {% else %}
-  <div class="alert alert-secondary">
-    Für Runde {{ round_no }} ist noch keine Auslosung vorhanden.
+  <div class="alert alert-secondary d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold">Für Runde {{ round_no }} ist noch keine Auslosung vorhanden.</div>
+      <div class="small text-muted mt-1">
+        Tipp: Drücke <span class="fw-semibold">R</span> oder klicke auf „Runde {{ round_no }} auslosen“.
+      </div>
+    </div>
+
+    <form method="post"
+          action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
+          class="d-inline"
+          onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+      <button class="btn btn-warning" type="submit">
+        Runde {{ round_no }} auslosen
+      </button>
+    </form>
   </div>
 {% endif %}
 
-<script>
-(function () {
-  const roundNo = {{ (round_no or 1) | int }};
-  const lastRoundNo = {{ (last_round_no or 0) | int }};
-
-  function isTypingContext() {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = (el.tagName || "").toLowerCase();
-    return tag === "input" || tag === "textarea" || tag === "select";
-  }
-
-  function go(id) {
-    const el = document.getElementById(id);
-    if (el) el.click();
-  }
-
-  document.addEventListener("keydown", function (ev) {
-    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-    if (isTypingContext()) return;
-
-    const k = (ev.key || "").toLowerCase();
-
-    if (k === "t") { ev.preventDefault(); go("btnBackTournament"); return; }
-
-    // R = neu auslosen (confirm hängt am onsubmit)
-    if (k === "r") { ev.preventDefault(); go("btnRedraw"); return; }
-
-    // P/N Navigation
-    if (k === "p") { ev.preventDefault(); go("btnPrevRound"); return; }
-    if (k === "n") { ev.preventDefault(); go("btnNextRound"); return; }
-
-    // L = letzte Runde (falls vorhanden)
-    if (k === "l" && lastRoundNo > 0) { ev.preventDefault(); go("btnLastRound"); return; }
-  });
-})();
-</script>
+<script src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 
 {% endblock %}
