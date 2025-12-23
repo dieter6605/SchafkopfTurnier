@@ -9,16 +9,38 @@
       {% if t.location %} · {{ t.location }}{% endif %}
     </div>
     <div class="text-muted small mt-1">
-      Tastatur: <span class="fw-semibold">E</span> = Teilnehmer erfassen · <span class="fw-semibold">L</span> = Turnierliste
+      Tastatur:
+      <span class="fw-semibold">E</span> = Teilnehmer erfassen ·
+      <span class="fw-semibold">L</span> = Turnierliste ·
+      <span class="fw-semibold">B</span> = Bearbeiten ·
+      <span class="fw-semibold">Entf</span> = Löschen
     </div>
   </div>
 
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap justify-content-end">
     <a class="btn btn-outline-secondary"
        id="btnBackToList"
        href="{{ url_for('tournaments.tournaments_list') }}">
       Turniere
     </a>
+
+    <a class="btn btn-outline-secondary"
+       id="btnEditTournament"
+       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}">
+      Bearbeiten
+    </a>
+
+    <form method="post"
+          action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
+          class="d-inline">
+      <button class="btn btn-outline-danger"
+              id="btnDeleteTournament"
+              type="submit"
+              onclick="return confirm('Turnier wirklich löschen?\\n\\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.');">
+        Löschen
+      </button>
+    </form>
+
     <a class="btn btn-primary"
        id="btnParticipants"
        href="{{ url_for('tournaments.tournament_participants', tournament_id=t.id) }}">
@@ -80,22 +102,61 @@
     return tag === "input" || tag === "textarea" || tag === "select";
   }
 
+  function isInteractiveFocus() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = (el.tagName || "").toLowerCase();
+    return tag === "a" || tag === "button" || tag === "input" || tag === "textarea" || tag === "select";
+  }
+
+  function clickIf(id) {
+    const el = document.getElementById(id);
+    if (el) el.click();
+  }
+
+  function confirmDelete() {
+    return confirm("Turnier wirklich löschen?\n\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.");
+  }
+
   document.addEventListener("keydown", function (ev) {
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (isTypingContext()) return;
 
-    const k = (ev.key || "").toLowerCase();
+    const kRaw = (ev.key || "");
+    const k = kRaw.toLowerCase();
+
     if (k === "e") {
-      const btn = document.getElementById("btnParticipants");
+      ev.preventDefault();
+      clickIf("btnParticipants");
+      return;
+    }
+    if (k === "l") {
+      ev.preventDefault();
+      clickIf("btnBackToList");
+      return;
+    }
+    if (k === "b") {
+      ev.preventDefault();
+      clickIf("btnEditTournament");
+      return;
+    }
+
+    // Löschen über Tastatur nur, wenn kein interaktives Element gerade fokussiert ist
+    // (reduziert Risiko versehentlicher Löschaktionen).
+    const isDeleteKey =
+      k === "delete" || k === "backspace" || kRaw === "Delete" || kRaw === "Backspace";
+
+    if (isDeleteKey) {
+      if (isInteractiveFocus()) return;
+
+      const btn = document.getElementById("btnDeleteTournament");
       if (btn) {
         ev.preventDefault();
-        btn.click();
-      }
-    } else if (k === "l") {
-      const btn = document.getElementById("btnBackToList");
-      if (btn) {
-        ev.preventDefault();
-        btn.click();
+
+        // Doppelt abgesichert: Confirm auch hier, unabhängig vom onclick.
+        if (confirmDelete()) {
+          btn.click();
+        }
       }
     }
   });
