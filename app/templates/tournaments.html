@@ -1,13 +1,22 @@
 {% extends "layout.html" %}
 {% block content %}
 
+<style>
+  .sk-row { cursor: pointer; }
+  .sk-row.sk-selected { outline: 3px solid rgba(13,110,253,.35); border-radius: 10px; }
+  .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
+</style>
+
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h3 class="mb-0">Turniere</h3>
     <div class="text-muted small">Übersicht aller angelegten Turniere</div>
+    <div class="sk-kbd mt-1">
+      Tastatur: ↑/↓ wählen · Enter öffnen · N = Neues Turnier
+    </div>
   </div>
   <div>
-    <a class="btn btn-primary" href="{{ url_for('tournaments.tournament_new') }}">
+    <a class="btn btn-primary" id="btnNewTournament" href="{{ url_for('tournaments.tournament_new') }}">
       Neues Turnier
     </a>
   </div>
@@ -27,9 +36,10 @@
               <th class="text-end">Aktion</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="tBody">
             {% for t in tournaments %}
-              <tr>
+              <tr class="sk-row"
+                  data-open-url="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">
                 <td class="text-nowrap">
                   {{ t.event_date }}<br>
                   <span class="text-muted small">{{ t.start_time }}</span>
@@ -60,5 +70,81 @@
 
   </div>
 </div>
+
+<script>
+(function () {
+  let idx = -1;
+
+  function qsa(sel, root=document) { return Array.from(root.querySelectorAll(sel)); }
+  function rows() { return qsa("#tBody tr.sk-row"); }
+
+  function setSel(i) {
+    const r = rows();
+    if (!r.length) return;
+    if (i < 0) i = 0;
+    if (i >= r.length) i = r.length - 1;
+
+    r.forEach(x => x.classList.remove("sk-selected"));
+    r[i].classList.add("sk-selected");
+    idx = i;
+    r[i].scrollIntoView({ block: "nearest" });
+  }
+
+  function openSel() {
+    const r = rows();
+    if (!r.length) return;
+    if (idx < 0 || idx >= r.length) return;
+    const url = r[idx].dataset.openUrl;
+    if (url) window.location.href = url;
+  }
+
+  function wireMouse() {
+    rows().forEach((row, i) => {
+      row.addEventListener("mouseenter", () => setSel(i));
+      row.addEventListener("click", (ev) => {
+        const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : "";
+        if (tag === "a" || tag === "button" || tag === "input") return;
+        setSel(i);
+        openSel();
+      });
+    });
+  }
+
+  function onKey(ev) {
+    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+
+    const k = (ev.key || "").toLowerCase();
+    if (k === "n") {
+      const btn = document.getElementById("btnNewTournament");
+      if (btn) { ev.preventDefault(); btn.click(); }
+      return;
+    }
+
+    const r = rows();
+    if (!r.length) return;
+
+    if (ev.key === "ArrowDown") { ev.preventDefault(); setSel((idx === -1) ? 0 : idx + 1); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); setSel((idx === -1) ? 0 : idx - 1); }
+    else if (ev.key === "Enter") {
+      // nur wenn Fokus nicht in einem Feld ist
+      const tag = (document.activeElement && document.activeElement.tagName)
+        ? document.activeElement.tagName.toLowerCase()
+        : "";
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      ev.preventDefault();
+      openSel();
+    }
+  }
+
+  function init() {
+    wireMouse();
+    if (rows().length) setSel(0);
+    document.addEventListener("keydown", onKey);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
 
 {% endblock %}

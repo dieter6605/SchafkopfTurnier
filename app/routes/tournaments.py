@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
@@ -253,7 +253,6 @@ def tournament_participants(tournament_id: int):
 
     gaps: list[int] = []
     if show_gaps:
-        # einmalig aus Session lesen (und danach löschen)
         k = _session_gaps_key(tournament_id)
         try:
             raw = session.get(k) or []
@@ -357,6 +356,7 @@ def tournament_participant_add(tournament_id: int, address_id: int):
 @bp.post("/tournaments/<int:tournament_id>/participants/quickadd")
 def tournament_participant_quickadd(tournament_id: int):
     f = request.form
+    q = (f.get("q") or "").strip()
 
     nachname = (f.get("nachname") or "").strip()
     vorname = (f.get("vorname") or "").strip()
@@ -364,7 +364,7 @@ def tournament_participant_quickadd(tournament_id: int):
 
     if not nachname or not vorname or not wohnort:
         flash("Pflichtfelder fehlen (Nachname, Vorname, Wohnort).", "error")
-        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
     plz = (f.get("plz") or "").strip() or None
     ort = (f.get("ort") or "").strip() or None
@@ -378,7 +378,7 @@ def tournament_participant_quickadd(tournament_id: int):
         counts = _tournament_counts(con, tournament_id)
         if not _cap_ok(t, counts["participants"]):
             flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         _upsert_wohnort(con, wohnort, plz, ort)
         ab_id = _default_ab_id(con)
@@ -423,16 +423,16 @@ def tournament_participant_quickadd(tournament_id: int):
         con.commit()
 
     flash(f"Teilnehmer neu angelegt und übernommen (Nr {pno}).", "ok")
-    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
 
 # -----------------------------------------------------------------------------
-# Teilnehmer entfernen
-# Default: AB DIESER NUMMER renummerieren
+# Teilnehmer entfernen (Default: ab dieser Nummer renummerieren)
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
 def tournament_participant_remove(tournament_id: int, tp_id: int):
     renumber = _to_int(request.form.get("renumber"), 1)  # Default = 1
+    q = (request.form.get("q") or request.args.get("q") or "").strip()
 
     with db.connect() as con:
         row = db.one(
@@ -442,7 +442,7 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
         )
         if not row:
             flash("Teilnehmer nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         removed_no = int(row["player_no"] or 0)
 
@@ -457,7 +457,7 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
         con.commit()
 
     flash("Teilnehmer entfernt.", "ok")
-    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
 
 # -----------------------------------------------------------------------------
@@ -466,17 +466,18 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
 @bp.post("/tournaments/<int:tournament_id>/participants/renumber-from")
 def tournament_participants_renumber_from(tournament_id: int):
     start_no = _to_int(request.form.get("start_no"), 0)
+    q = (request.form.get("q") or request.args.get("q") or "").strip()
 
     if start_no <= 0:
         flash("Renummerieren: Startnummer fehlt/ungültig.", "error")
-        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
     with db.connect() as con:
         _renumber_from(con, tournament_id, start_no)
         con.commit()
 
     flash(f"Neu durchnummeriert ab Nr {start_no}.", "ok")
-    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
 
 # -----------------------------------------------------------------------------
@@ -494,7 +495,6 @@ def tournament_participants_check_numbers(tournament_id: int):
             flash("Teilnehmernummern wurden neu durchnummeriert (1..N).", "ok")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-        # prüfen + Ergebnis in Session ablegen, dann im UI anzeigen
         gaps = _find_gaps(con, tournament_id)
         session[_session_gaps_key(tournament_id)] = gaps
         if gaps:
@@ -519,10 +519,11 @@ def tournament_participants_check_numbers(tournament_id: int):
 def tournament_participant_swap(tournament_id: int):
     tp_id = _to_int(request.form.get("tp_id"), 0)
     new_address_id = _to_int(request.form.get("new_address_id"), 0)
+    q = (request.form.get("q") or request.args.get("q") or "").strip()
 
     if tp_id <= 0 or new_address_id <= 0:
         flash("Swap: tp_id oder neue Address-ID fehlt.", "error")
-        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+        return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
     with db.connect() as con:
         tp = db.one(
@@ -532,12 +533,12 @@ def tournament_participant_swap(tournament_id: int):
         )
         if not tp:
             flash("Swap: Teilnehmer nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         a = db.one(con, "SELECT * FROM addresses WHERE id=?", (new_address_id,))
         if not a:
             flash("Swap: Ziel-Adresse nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         dup = db.one(
             con,
@@ -546,7 +547,7 @@ def tournament_participant_swap(tournament_id: int):
         )
         if dup:
             flash("Swap: Diese Adresse ist bereits als Teilnehmer erfasst.", "error")
-            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         con.execute(
             """
@@ -561,4 +562,4 @@ def tournament_participant_swap(tournament_id: int):
         con.commit()
 
     flash("Teilnehmer ersetzt (Nummer blieb gleich).", "ok")
-    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
