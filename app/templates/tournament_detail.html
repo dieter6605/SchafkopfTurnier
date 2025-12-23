@@ -14,6 +14,13 @@
       <span class="fw-semibold">L</span> = Turnierliste ·
       <span class="fw-semibold">B</span> = Bearbeiten ·
       <span class="fw-semibold">Shift + Entf</span> = Löschen
+      <br>
+      Runden:
+      <span class="fw-semibold">1</span> = Runde 1 anzeigen ·
+      <span class="fw-semibold">A</span> = Runde anzeigen ·
+      <span class="fw-semibold">R</span> = Runde auslosen ·
+      <span class="fw-semibold">N</span> = nächste Runde ·
+      <span class="fw-semibold">+ / -</span> = Runde ändern
     </div>
   </div>
 
@@ -36,7 +43,7 @@
       <button class="btn btn-outline-danger"
               id="btnDeleteTournament"
               type="submit"
-              onclick="return confirm('Turnier wirklich löschen?\\n\\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.');">
+              onclick="return confirm('Turnier wirklich löschen?\n\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.');">
         Löschen
       </button>
     </form>
@@ -93,8 +100,81 @@
 
 </div>
 
+<!-- Runden / Auslosung -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5 class="mb-1">Runden / Auslosung</h5>
+        <div class="text-muted small">
+          Auslosen überschreibt (mit Bestätigung) eine vorhandene Auslosung derselben Runde.
+          {% if last_round_no and last_round_no > 0 %}
+            · Letzte Runde: <strong>{{ last_round_no }}</strong>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap justify-content-end">
+        <a class="btn btn-outline-primary"
+           id="btnRound1Show"
+           href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}">
+          Runde 1 anzeigen
+        </a>
+
+        <form method="post"
+              action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=1) }}"
+              class="d-inline"
+              onsubmit="return confirm('Runde 1 auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+          <button class="btn btn-warning" id="btnRound1Draw" type="submit">
+            Runde 1 auslosen
+          </button>
+        </form>
+
+        {% if last_round_no and last_round_no > 0 %}
+          <a class="btn btn-outline-secondary"
+             id="btnLastRound"
+             href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=last_round_no) }}">
+            Letzte Runde anzeigen
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+      <form method="get"
+            id="roundShowForm"
+            class="d-flex gap-2 align-items-center"
+            onsubmit="
+              var rn = document.getElementById('roundNo').value || '1';
+              this.action = '{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}'.replace('/1', '/' + rn);
+              return true;">
+        <label class="text-muted small mb-0" for="roundNo">Runde</label>
+        <input id="roundNo" class="form-control form-control-sm"
+               type="number" min="1" step="1"
+               value="1"
+               style="max-width:110px;">
+        <button class="btn btn-sm btn-outline-primary" id="btnRoundShow" type="submit">Anzeigen</button>
+      </form>
+
+      <form method="post"
+            id="roundDrawForm"
+            class="d-flex gap-2 align-items-center"
+            onsubmit="
+              var rn = document.getElementById('roundNo').value || '1';
+              this.action = '{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=1) }}'.replace('/1/', '/' + rn + '/');
+              return confirm('Runde ' + rn + ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+        <button class="btn btn-sm btn-warning" id="btnRoundDraw" type="submit">Runde auslosen (überschreiben)</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
+  const lastRoundNo = {{ (last_round_no or 0) | int }};
+
   function isTypingContext() {
     const el = document.activeElement;
     if (!el) return false;
@@ -107,35 +187,92 @@
     if (el) el.click();
   }
 
+  function getRoundNo() {
+    const inp = document.getElementById("roundNo");
+    const v = inp ? String(inp.value || "").trim() : "";
+    const n = parseInt(v || "1", 10);
+    return (isFinite(n) && n >= 1) ? n : 1;
+  }
+
+  function setRoundNo(n) {
+    const inp = document.getElementById("roundNo");
+    if (!inp) return;
+    const nn = Math.max(1, parseInt(String(n), 10) || 1);
+    inp.value = String(nn);
+    inp.focus();
+    try { inp.select(); } catch (e) {}
+  }
+
   document.addEventListener("keydown", function (ev) {
+    // keine Global-Shortcuts mit Alt/Ctrl/Cmd
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-    if (isTypingContext()) return;
 
     const k = (ev.key || "").toLowerCase();
 
-    if (k === "e") {
-      ev.preventDefault();
-      clickIf("btnParticipants");
-      return;
+    // Turnier-Shortcuts (nur wenn nicht in Eingabefeld)
+    if (!isTypingContext()) {
+      if (k === "e") { ev.preventDefault(); clickIf("btnParticipants"); return; }
+      if (k === "l") { ev.preventDefault(); clickIf("btnBackToList"); return; }
+      if (k === "b") { ev.preventDefault(); clickIf("btnEditTournament"); return; }
+
+      // 🔒 Löschen NUR mit Shift + Delete
+      if (ev.shiftKey && k === "delete") {
+        const btn = document.getElementById("btnDeleteTournament");
+        if (btn) { ev.preventDefault(); btn.click(); }
+        return;
+      }
     }
-    if (k === "l") {
+
+    // -----------------------------
+    // Runden-Shortcuts
+    // -----------------------------
+    // Achtung: Runden-Shortcuts NICHT, wenn gerade irgendwo getippt wird
+    // Ausnahme: + / - dürfen auch im roundNo-Feld wirken (weil es genau dafür gedacht ist)
+    const activeId = (document.activeElement && document.activeElement.id) ? String(document.activeElement.id) : "";
+    const typing = isTypingContext();
+    const inRoundField = (activeId === "roundNo");
+
+    // 1 = Runde 1 anzeigen
+    if (!typing && k === "1") {
       ev.preventDefault();
-      clickIf("btnBackToList");
-      return;
-    }
-    if (k === "b") {
-      ev.preventDefault();
-      clickIf("btnEditTournament");
+      clickIf("btnRound1Show");
       return;
     }
 
-    // 🔒 Löschen NUR mit Shift + Delete
-    if (ev.shiftKey && k === "delete") {
-      const btn = document.getElementById("btnDeleteTournament");
-      if (btn) {
-        ev.preventDefault();
-        btn.click(); // Confirm steckt am onclick
-      }
+    // N = nächste Runde (letzte+1, sonst 1) -> nur setzen
+    if (!typing && k === "n") {
+      ev.preventDefault();
+      const next = (lastRoundNo > 0) ? (lastRoundNo + 1) : 1;
+      setRoundNo(next);
+      return;
+    }
+
+    // + / - = Runde im Feld hoch/runter (nur im roundNo Feld oder wenn nicht getippt wird)
+    if ((inRoundField || !typing) && (k === "+" || ev.key === "=")) {
+      ev.preventDefault();
+      setRoundNo(getRoundNo() + 1);
+      return;
+    }
+    if ((inRoundField || !typing) && (k === "-" || k === "_")) {
+      ev.preventDefault();
+      setRoundNo(getRoundNo() - 1);
+      return;
+    }
+
+    // A = anzeigen (Runde aus Feld)
+    if (!typing && k === "a") {
+      ev.preventDefault();
+      const btn = document.getElementById("btnRoundShow");
+      if (btn) btn.click();
+      return;
+    }
+
+    // R = auslosen (Runde aus Feld) -> confirm() greift über onsubmit
+    if (!typing && k === "r") {
+      ev.preventDefault();
+      const btn = document.getElementById("btnRoundDraw");
+      if (btn) btn.click();
+      return;
     }
   });
 })();
