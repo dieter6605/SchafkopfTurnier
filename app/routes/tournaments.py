@@ -365,12 +365,15 @@ def tournament_detail(tournament_id: int):
             return redirect(url_for("tournaments.tournaments_list"))
 
         counts = _tournament_counts(con, tournament_id)
-        last_round = db.one(
+
+        rounds = db.q(
             con,
-            "SELECT MAX(round_no) AS mx FROM tournament_rounds WHERE tournament_id=?",
+            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
             (tournament_id,),
         )
-        last_round_no = int(last_round["mx"] or 0) if last_round else 0
+        round_list = [int(r["round_no"]) for r in rounds]
+        last_round_no = max(round_list) if round_list else 0
+        next_round_no = (last_round_no + 1) if last_round_no > 0 else 1
 
     return render_template(
         "tournament_detail.html",
@@ -378,6 +381,8 @@ def tournament_detail(tournament_id: int):
         counts=counts,
         now=_now_local_iso(),
         last_round_no=last_round_no,
+        round_list=round_list,
+        next_round_no=next_round_no,
     )
 
 
@@ -496,9 +501,15 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             flash("Zu wenige Teilnehmer zum Auslosen.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
-        full_n = (n // 4) * 4
-        rest = n - full_n
-        tp_ids = [tp["id"] for tp in tps[:full_n]]
+        # Vorgabe: Teilnehmerzahl muss durch 4 teilbar sein (ihr ergänzt immer auf 4er)
+        if (n % 4) != 0:
+            flash(
+                f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. Bitte erst auf 4er auffüllen, dann auslosen.",
+                "error",
+            )
+            return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        tp_ids = [tp["id"] for tp in tps]  # alles ist full
 
         hist_pairs = _history_pairs(con, tournament_id, round_no)
 
@@ -524,10 +535,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
 
         con.commit()
 
-    msg = f"Runde {round_no} ausgelost ({full_n//4} Tische)."
-    if rest:
-        msg += f" {rest} Reserve (nicht gesetzt)."
-    flash(msg, "ok")
+    flash(f"Runde {round_no} ausgelost ({n//4} Tische).", "ok")
     return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
 
@@ -555,6 +563,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
+        # Reserve bleibt technisch möglich, wird aber bei euch normalerweise leer sein
         seated_tp = {int(r["tp_id"]) for r in seats}
         reserve = db.q(
             con,
@@ -603,6 +612,9 @@ def tournament_round_view(tournament_id: int, round_no: int):
     )
 
 
+# -----------------------------------------------------------------------------
+# Teilnehmer (unverändert)
+# -----------------------------------------------------------------------------
 @bp.get("/tournaments/<int:tournament_id>/participants")
 def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
