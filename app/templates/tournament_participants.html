@@ -1,3 +1,4 @@
+{# app/templates/tournament_participants.html #}
 {% extends "layout.html" %}
 {% block content %}
 
@@ -33,18 +34,67 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <div class="text-muted small mb-1">Teilnehmernummern</div>
+
         <div class="d-flex gap-2 flex-wrap align-items-center">
-          <form method="post" action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
-            <button class="btn btn-sm btn-outline-secondary" title="Prüft auf Lücken (Anzeige kommt als nächstes)">Prüfen</button>
+          <!-- Prüfen -->
+          <form method="post"
+                action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            <button class="btn btn-sm btn-outline-secondary"
+                    title="Prüft auf Lücken (Anzeige kommt als nächstes)">
+              Prüfen
+            </button>
           </form>
 
-          <form method="post" action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+          <!-- Komplett neu 1..N -->
+          <form method="post"
+                action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
             <input type="hidden" name="renumber" value="1">
-            <button class="btn btn-sm btn-outline-danger" title="Verdichtet alle Teilnehmer auf 1..N">Neu durchnummerieren</button>
+            <button class="btn btn-sm btn-outline-danger"
+                    title="Verdichtet alle Teilnehmer auf 1..N">
+              Neu durchnummerieren (1..N)
+            </button>
+          </form>
+
+          <!-- Neu: ab Nummer X -->
+          <form method="post"
+                action="{{ url_for('tournaments.tournament_participants_renumber_from', tournament_id=t.id) }}"
+                class="d-flex gap-2 align-items-center">
+            <span class="text-muted small">Ab Nr.</span>
+
+            <!-- Änderung: Startwert NICHT fest verdrahten (war value="1"), stattdessen leer mit Placeholder -->
+            <input class="form-control form-control-sm sk-mono"
+                   name="start_no"
+                   value=""
+                   inputmode="numeric"
+                   pattern="[0-9]*"
+                   placeholder="z.B. 17"
+                   style="max-width: 110px;"
+                   title="Startnummer (>=1)">
+
+            <!-- Änderung: Button optisch anders + klarerer Text -->
+            <button class="btn btn-sm btn-outline-warning"
+                    title="Verdichtet ab dieser Nummer, Nummern darunter bleiben unverändert"
+                    onclick="return confirm('Ab dieser Nummer neu durchnummerieren?');">
+              Renummerieren ab Nr.
+            </button>
           </form>
 
           <span class="text-muted small">Standard beim Entfernen: ab der Nummer neu durchnummerieren.</span>
         </div>
+
+        <!-- (Optional vorbereitet) Anzeige für Lücken, wenn du später show_gaps/gaps an Template übergibst -->
+        {% if show_gaps %}
+          <hr class="my-2">
+          {% if gaps and gaps|length > 0 %}
+            <div class="small">
+              <span class="text-muted">Lücken (1..max):</span>
+              <span class="sk-mono">{{ gaps|join(", ") }}</span>
+            </div>
+          {% else %}
+            <div class="small text-muted">Keine Lücken gefunden.</div>
+          {% endif %}
+        {% endif %}
+
       </div>
     </div>
   </div>
@@ -63,6 +113,11 @@
       <button class="btn btn-outline-secondary" type="button" id="btnOpenQuickAdd">
         Quick-Add (neu)
       </button>
+
+      <!-- Optional: wenn cap_ok vom Backend kommt -->
+      {% if cap_ok is defined and not cap_ok %}
+        <span class="badge text-bg-danger">Max. Teilnehmer erreicht</span>
+      {% endif %}
     </form>
 
     {% if hits %}
@@ -85,7 +140,10 @@
                 </td>
                 <td class="text-end">
                   <form method="post" action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
-                    <button class="btn btn-sm btn-outline-primary">Übernehmen</button>
+                    <button class="btn btn-sm btn-outline-primary"
+                            {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+                      Übernehmen
+                    </button>
                   </form>
                 </td>
               </tr>
@@ -115,11 +173,13 @@
 
       <div class="col-md-3">
         <label class="form-label">Nachname *</label>
-        <input class="form-control" id="qaNachname" name="nachname" required>
+        <input class="form-control" id="qaNachname" name="nachname" required
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
       <div class="col-md-3">
         <label class="form-label">Vorname *</label>
-        <input class="form-control" name="vorname" required>
+        <input class="form-control" name="vorname" required
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
 
       <div class="col-md-3">
@@ -127,45 +187,64 @@
         <input class="form-control sk-wohnort-input"
                name="wohnort" required autocomplete="off"
                data-plz-id="qaPlz"
-               data-ort-id="qaOrt">
+               data-ort-id="qaOrt"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
         <div class="form-text">Autocomplete aus Wohnort-Tabelle</div>
       </div>
 
       <div class="col-md-3">
         <label class="form-label">Telefon</label>
-        <input class="form-control" name="telefon">
+        <input class="form-control" name="telefon"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
 
       <div class="col-md-2">
         <label class="form-label">PLZ</label>
-        <input class="form-control" id="qaPlz" name="plz">
+        <input class="form-control" id="qaPlz" name="plz"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
       <div class="col-md-4">
         <label class="form-label">Ort</label>
-        <input class="form-control" id="qaOrt" name="ort">
+        <input class="form-control" id="qaOrt" name="ort"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
       <div class="col-md-4">
         <label class="form-label">Straße</label>
-        <input class="form-control" name="strasse">
+        <input class="form-control" name="strasse"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
       <div class="col-md-2">
         <label class="form-label">Hausnr.</label>
-        <input class="form-control" name="hausnummer">
+        <input class="form-control" name="hausnummer"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
 
       <div class="col-md-4">
         <label class="form-label">E-Mail</label>
-        <input class="form-control" name="email">
+        <input class="form-control" name="email"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
       <div class="col-md-8">
         <label class="form-label">Notizen</label>
-        <input class="form-control" name="notizen">
+        <input class="form-control" name="notizen"
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
       </div>
 
       <div class="col-12 d-flex gap-2 mt-2 flex-wrap">
-        <button class="btn btn-primary" type="submit">Anlegen + übernehmen</button>
+        <button class="btn btn-primary" type="submit"
+                {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+          Anlegen + übernehmen
+        </button>
         <button class="btn btn-outline-secondary" type="button" id="btnCloseQuickAdd">Schließen</button>
       </div>
+
+      {% if cap_ok is defined and not cap_ok %}
+        <div class="col-12">
+          <div class="alert alert-danger mb-0 mt-2">
+            Maximale Teilnehmerzahl erreicht – Quick-Add ist deaktiviert.
+          </div>
+        </div>
+      {% endif %}
     </form>
   </div>
 </div>

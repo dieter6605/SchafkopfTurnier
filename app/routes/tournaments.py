@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, List, Optional
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from .. import db
 from .addresses import _default_ab_id, _upsert_wohnort
@@ -124,6 +124,37 @@ def _renumber_from(con, tournament_id: int, start_no: int) -> None:
         n += 1
 
 
+def _find_gaps(con, tournament_id: int) -> list[int]:
+    """
+    Ermittelt fehlende Nummern im Bereich 1..max(player_no).
+    (Duplikate sind durch UNIQUE(tournament_id, player_no) ausgeschlossen.)
+    """
+    rows = db.q(
+        con,
+        "SELECT player_no FROM tournament_participants WHERE tournament_id=? ORDER BY player_no ASC",
+        (tournament_id,),
+    )
+    nums: list[int] = []
+    for r in rows:
+        try:
+            n = int(r["player_no"])
+            if n > 0:
+                nums.append(n)
+        except Exception:
+            pass
+
+    if not nums:
+        return []
+
+    s = set(nums)
+    m = max(nums)
+    return [i for i in range(1, m + 1) if i not in s]
+
+
+def _session_gaps_key(tournament_id: int) -> str:
+    return f"skt_tp_gaps_{int(tournament_id)}"
+
+
 # -----------------------------------------------------------------------------
 # Pages
 # -----------------------------------------------------------------------------
@@ -218,6 +249,18 @@ def tournament_detail(tournament_id: int):
 @bp.get("/tournaments/<int:tournament_id>/participants")
 def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
+    show_gaps = (request.args.get("show_gaps") or "0") == "1"
+
+    gaps: list[int] = []
+    if show_gaps:
+        # einmalig aus Session lesen (und danach löschen)
+        k = _session_gaps_key(tournament_id)
+        try:
+            raw = session.get(k) or []
+            gaps = [int(x) for x in raw]
+        except Exception:
+            gaps = []
+        session.pop(k, None)
 
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
@@ -255,6 +298,8 @@ def tournament_participants(tournament_id: int):
         hits=hits,
         participants=participants,
         cap_ok=cap_ok,
+        show_gaps=show_gaps,
+        gaps=gaps,
     )
 
 
@@ -387,8 +432,7 @@ def tournament_participant_quickadd(tournament_id: int):
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
 def tournament_participant_remove(tournament_id: int, tp_id: int):
-    # Default = 1 (Standard: ab dieser Nummer)
-    renumber = _to_int(request.form.get("renumber"), 1)  # 0/1
+    renumber = _to_int(request.form.get("renumber"), 1)  # Default = 1
 
     with db.connect() as con:
         row = db.one(
@@ -436,21 +480,36 @@ def tournament_participants_renumber_from(tournament_id: int):
 
 
 # -----------------------------------------------------------------------------
-# Teilnehmernummern komplett renummerieren (1..N)
+# Teilnehmernummern prüfen / komplett renummerieren (1..N)
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/check-numbers")
 def tournament_participants_check_numbers(tournament_id: int):
     renumber = _to_int(request.form.get("renumber"), 0)  # 0/1
+    q = (request.args.get("q") or request.form.get("q") or "").strip()
 
     with db.connect() as con:
         if renumber:
             _renumber_all(con, tournament_id)
             con.commit()
             flash("Teilnehmernummern wurden neu durchnummeriert (1..N).", "ok")
-        else:
-            flash("Prüfung abgeschlossen (Lückenanzeige kommt als nächstes).", "ok")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-    return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id))
+        # prüfen + Ergebnis in Session ablegen, dann im UI anzeigen
+        gaps = _find_gaps(con, tournament_id)
+        session[_session_gaps_key(tournament_id)] = gaps
+        if gaps:
+            flash(f"Prüfung: {len(gaps)} Lücke(n) gefunden.", "error")
+        else:
+            flash("Prüfung: keine Lücken gefunden.", "ok")
+
+    return redirect(
+        url_for(
+            "tournaments.tournament_participants",
+            tournament_id=tournament_id,
+            q=q,
+            show_gaps="1",
+        )
+    )
 
 
 # -----------------------------------------------------------------------------
