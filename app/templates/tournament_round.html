@@ -18,10 +18,14 @@
       Tastatur:
       <span class="fw-semibold">T</span> = Turnier ·
       <span class="fw-semibold">R</span> = Runde auslosen/neu auslosen ·
+      <span class="fw-semibold">Shift+R</span> = nächste Runde auslosen ·
       <span class="fw-semibold">P</span>/<span class="fw-semibold">N</span> = Vor/Zurück ·
       <span class="fw-semibold">←/→</span> = Vor/Zurück ·
       <span class="fw-semibold">Esc</span> = Turnier ·
       <span class="fw-semibold">L</span> = Letzte Runde
+      <br>
+      Workflow:
+      <span class="fw-semibold">→</span>/<span class="fw-semibold">N</span> nutzt „Vorbereiten“, wenn „Nächste“ nicht existiert
     </div>
   </div>
 
@@ -32,10 +36,7 @@
       Turnier
     </a>
 
-    {# Der R-Button soll in jedem Fall existieren:
-       - wenn seats existieren: "neu auslosen"
-       - sonst: "auslosen"
-    #}
+    {# Draw/Redraw aktuelle Runde #}
     <form method="post"
           id="formDraw"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
@@ -50,6 +51,7 @@
       </button>
     </form>
 
+    {# Vorherige existierende Runde #}
     {% if prev_round_no %}
       <a class="btn btn-outline-secondary"
          id="btnPrevRound"
@@ -66,6 +68,7 @@
       </a>
     {% endif %}
 
+    {# Nächste existierende Runde #}
     {% if next_round_no %}
       <a class="btn btn-outline-secondary"
          id="btnNextRound"
@@ -81,6 +84,24 @@
         Nächste
       </a>
     {% endif %}
+
+    {# Vorbereiten: immer möglich, ohne Auslosung #}
+    <a class="btn btn-outline-primary"
+       id="btnPrepareNext"
+       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
+      Runde {{ round_no + 1 }} vorbereiten
+    </a>
+
+    {# Neu: nächste Runde direkt auslosen (mit confirm) #}
+    <form method="post"
+          id="formDrawNext"
+          action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=(round_no + 1)) }}"
+          class="d-inline"
+          onsubmit="return confirm('Runde {{ round_no + 1 }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+      <button class="btn btn-outline-warning" id="btnDrawNext" type="submit">
+        Runde {{ round_no + 1 }} auslosen
+      </button>
+    </form>
 
     {% if last_round_no and last_round_no > 0 %}
       <a class="btn btn-outline-secondary"
@@ -184,18 +205,36 @@
     <div>
       <div class="fw-semibold">Für Runde {{ round_no }} ist noch keine Auslosung vorhanden.</div>
       <div class="small text-muted mt-1">
-        Tipp: Drücke <span class="fw-semibold">R</span> oder klicke auf „Runde {{ round_no }} auslosen“.
+        Tipp: <span class="fw-semibold">R</span> = auslosen ·
+        <span class="fw-semibold">Shift+R</span> = Runde {{ round_no + 1 }} auslosen ·
+        <span class="fw-semibold">N</span>/<span class="fw-semibold">→</span> = Runde {{ round_no + 1 }} vorbereiten
       </div>
     </div>
 
-    <form method="post"
-          action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
-          class="d-inline"
-          onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-      <button class="btn btn-warning" type="submit">
-        Runde {{ round_no }} auslosen
-      </button>
-    </form>
+    <div class="d-flex gap-2 flex-wrap">
+      <form method="post"
+            action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
+            class="d-inline"
+            onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+        <button class="btn btn-warning" type="submit">
+          Runde {{ round_no }} auslosen
+        </button>
+      </form>
+
+      <a class="btn btn-outline-primary"
+         href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
+        Runde {{ round_no + 1 }} vorbereiten
+      </a>
+
+      <form method="post"
+            action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=(round_no + 1)) }}"
+            class="d-inline"
+            onsubmit="return confirm('Runde {{ round_no + 1 }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+        <button class="btn btn-outline-warning" type="submit">
+          Runde {{ round_no + 1 }} auslosen
+        </button>
+      </form>
+    </div>
   </div>
 {% endif %}
 
