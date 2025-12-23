@@ -155,6 +155,32 @@ def _session_gaps_key(tournament_id: int) -> str:
     return f"skt_tp_gaps_{int(tournament_id)}"
 
 
+def _read_tournament_form() -> dict[str, Any]:
+    """Liest und normalisiert Turnier-Formularfelder aus request.form."""
+    f = request.form
+    return {
+        "title": (f.get("title") or "").strip(),
+        "event_date": (f.get("event_date") or "").strip(),
+        "start_time": (f.get("start_time") or "").strip(),
+        "location": (f.get("location") or "").strip() or None,
+        "organizer": (f.get("organizer") or "").strip() or None,
+        "description": (f.get("description") or "").strip() or None,
+        "min_participants": _to_int(f.get("min_participants"), 0),
+        "max_participants": _to_int(f.get("max_participants"), 0),
+    }
+
+
+def _validate_tournament_form(data: dict[str, Any]) -> str | None:
+    """Gibt Fehlermeldung zurück oder None wenn ok."""
+    if not data["title"]:
+        return "Turniername fehlt."
+    if not data["event_date"]:
+        return "Datum ist Pflicht."
+    if not data["start_time"]:
+        return "Beginn ist Pflicht."
+    return None
+
+
 # -----------------------------------------------------------------------------
 # Pages
 # -----------------------------------------------------------------------------
@@ -185,24 +211,15 @@ def tournament_new():
         "min_participants": 0,
         "max_participants": 0,
     }
-    return render_template("tournament_form.html", t=defaults, mode="new")
+    return render_template("tournament_form.html", t=defaults, mode="new", back_url=url_for("tournaments.tournaments_list"))
 
 
 @bp.post("/tournaments/new")
 def tournament_create():
-    f = request.form
-    title = (f.get("title") or "").strip()
-    event_date = (f.get("event_date") or "").strip()
-    start_time = (f.get("start_time") or "").strip()
-
-    if not title:
-        flash("Turniername fehlt.", "error")
-        return redirect(url_for("tournaments.tournament_new"))
-    if not event_date:
-        flash("Datum ist Pflicht.", "error")
-        return redirect(url_for("tournaments.tournament_new"))
-    if not start_time:
-        flash("Beginn ist Pflicht.", "error")
+    data = _read_tournament_form()
+    err = _validate_tournament_form(data)
+    if err:
+        flash(err, "error")
         return redirect(url_for("tournaments.tournament_new"))
 
     with db.connect() as con:
@@ -216,14 +233,14 @@ def tournament_create():
             VALUES (?,?,?,?,?,?,?, ?, datetime('now'), datetime('now'))
             """,
             (
-                title,
-                event_date,
-                start_time,
-                (f.get("location") or "").strip() or None,
-                (f.get("organizer") or "").strip() or None,
-                (f.get("description") or "").strip() or None,
-                _to_int(f.get("min_participants"), 0),
-                _to_int(f.get("max_participants"), 0),
+                data["title"],
+                data["event_date"],
+                data["start_time"],
+                data["location"],
+                data["organizer"],
+                data["description"],
+                data["min_participants"],
+                data["max_participants"],
             ),
         )
         con.commit()
@@ -244,6 +261,91 @@ def tournament_detail(tournament_id: int):
         counts = _tournament_counts(con, tournament_id)
 
     return render_template("tournament_detail.html", t=t, counts=counts, now=_now_local_iso())
+
+
+# -----------------------------------------------------------------------------
+# Turnier bearbeiten
+# -----------------------------------------------------------------------------
+@bp.get("/tournaments/<int:tournament_id>/edit")
+def tournament_edit(tournament_id: int):
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+    return render_template(
+        "tournament_form.html",
+        t=t,
+        mode="edit",
+        back_url=url_for("tournaments.tournament_detail", tournament_id=tournament_id),
+    )
+
+
+@bp.post("/tournaments/<int:tournament_id>/edit")
+def tournament_update(tournament_id: int):
+    data = _read_tournament_form()
+    err = _validate_tournament_form(data)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("tournaments.tournament_edit", tournament_id=tournament_id))
+
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        con.execute(
+            """
+            UPDATE tournaments
+            SET title=?,
+                event_date=?,
+                start_time=?,
+                location=?,
+                organizer=?,
+                description=?,
+                min_participants=?,
+                max_participants=?,
+                updated_at=datetime('now')
+            WHERE id=?
+            """,
+            (
+                data["title"],
+                data["event_date"],
+                data["start_time"],
+                data["location"],
+                data["organizer"],
+                data["description"],
+                data["min_participants"],
+                data["max_participants"],
+                tournament_id,
+            ),
+        )
+        con.commit()
+
+    flash("Turnier gespeichert.", "ok")
+    return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
+# Turnier löschen (inkl. Teilnehmer)
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/delete")
+def tournament_delete(tournament_id: int):
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        # Hinweis: FK ist ON DELETE CASCADE – das hier ist extra robust/lesbar.
+        con.execute("DELETE FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
+        con.execute("DELETE FROM tournaments WHERE id=?", (tournament_id,))
+        con.commit()
+
+    flash("Turnier gelöscht.", "ok")
+    return redirect(url_for("tournaments.tournaments_list"))
 
 
 @bp.get("/tournaments/<int:tournament_id>/participants")
