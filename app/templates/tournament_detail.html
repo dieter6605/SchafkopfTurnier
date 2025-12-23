@@ -1,6 +1,8 @@
 {% extends "layout.html" %}
 {% block content %}
 
+{% set next_round_no = (last_round_no + 1) if (last_round_no and last_round_no > 0) else 1 %}
+
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h3 class="mb-0">{{ t.title }}</h3>
@@ -112,18 +114,6 @@
             · Letzte Runde: <strong>{{ last_round_no }}</strong>
           {% endif %}
         </div>
-
-        {% if round_list and round_list|length > 0 %}
-          <div class="mt-2 d-flex gap-2 flex-wrap align-items-center">
-            <span class="text-muted small">Vorhanden:</span>
-            {% for rn in round_list %}
-              <a class="btn btn-sm btn-outline-secondary"
-                 href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rn) }}">
-                R{{ rn }}
-              </a>
-            {% endfor %}
-          </div>
-        {% endif %}
       </div>
 
       <div class="d-flex gap-2 flex-wrap justify-content-end">
@@ -141,6 +131,13 @@
             Runde 1 auslosen
           </button>
         </form>
+
+        <!-- ✅ Neu: nächste Runde anzeigen (letzte+1, sonst 1) -->
+        <a class="btn btn-outline-primary"
+           id="btnNextRoundShow"
+           href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_round_no) }}">
+          Nächste Runde ({{ next_round_no }}) anzeigen
+        </a>
 
         {% if last_round_no and last_round_no > 0 %}
           <a class="btn btn-outline-secondary"
@@ -163,10 +160,12 @@
               this.action = '{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}'.replace('/1', '/' + rn);
               return true;">
         <label class="text-muted small mb-0" for="roundNo">Runde</label>
+
         <input id="roundNo" class="form-control form-control-sm"
                type="number" min="1" step="1"
-               value="{{ (next_round_no or 1) | int }}"
+               value="{{ next_round_no }}"
                style="max-width:110px;">
+
         <button class="btn btn-sm btn-outline-primary" id="btnRoundShow" type="submit">Anzeigen</button>
       </form>
 
@@ -220,7 +219,6 @@
 
     const k = (ev.key || "").toLowerCase();
 
-    // Turnier-Shortcuts (nur wenn nicht in Eingabefeld)
     if (!isTypingContext()) {
       if (k === "e") { ev.preventDefault(); clickIf("btnParticipants"); return; }
       if (k === "l") { ev.preventDefault(); clickIf("btnBackToList"); return; }
@@ -233,7 +231,6 @@
       }
     }
 
-    // Runden-Shortcuts
     const activeId = (document.activeElement && document.activeElement.id) ? String(document.activeElement.id) : "";
     const typing = isTypingContext();
     const inRoundField = (activeId === "roundNo");
