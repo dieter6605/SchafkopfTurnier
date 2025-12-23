@@ -1,14 +1,22 @@
 {% extends "layout.html" %}
 {% block content %}
 
+<style>
+  .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
+</style>
+
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h3 class="mb-0">
       {% if mode=='new' %}Neues Turnier{% else %}Turnier bearbeiten{% endif %}
     </h3>
+    <div class="sk-kbd mt-1">
+      Tastatur: Esc = Zurück · Ctrl+S / Cmd+S = Speichern
+    </div>
   </div>
   <div>
     <a class="btn btn-outline-secondary"
+       id="btnBack"
        href="{{ url_for('tournaments.tournaments_list') }}">
       Zurück
     </a>
@@ -17,11 +25,11 @@
 
 <div class="card shadow-sm">
   <div class="card-body">
-    <form method="post" class="row g-2">
+    <form method="post" class="row g-2" id="tForm">
 
       <div class="col-md-6">
         <label class="form-label">Turniername *</label>
-        <input class="form-control" name="title" required value="{{ t.title }}">
+        <input class="form-control" name="title" required value="{{ t.title }}" autofocus>
       </div>
 
       <div class="col-md-3">
@@ -46,12 +54,13 @@
 
       <div class="col-md-6">
         <label class="form-label">Min. Teilnehmer</label>
-        <input class="form-control" type="number" name="min_participants" value="{{ t.min_participants }}">
+        <input class="form-control" type="number" min="0" step="1" name="min_participants" value="{{ t.min_participants }}">
       </div>
 
       <div class="col-md-6">
         <label class="form-label">Max. Teilnehmer</label>
-        <input class="form-control" type="number" name="max_participants" value="{{ t.max_participants }}">
+        <input class="form-control" type="number" min="0" step="1" name="max_participants" value="{{ t.max_participants }}">
+        <div class="form-text">0 oder leer = unbegrenzt</div>
       </div>
 
       <div class="col-12">
@@ -59,12 +68,42 @@
         <textarea class="form-control" name="description" rows="3">{{ t.description }}</textarea>
       </div>
 
-      <div class="col-12 mt-2">
-        <button class="btn btn-primary">Speichern</button>
+      <div class="col-12 mt-2 d-flex gap-2">
+        <button class="btn btn-primary" id="btnSave">Speichern</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournaments_list') }}">Abbrechen</a>
       </div>
 
     </form>
   </div>
 </div>
+
+<script>
+(function () {
+  function isTypingContext() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = (el.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || tag === "select";
+  }
+
+  document.addEventListener("keydown", function (ev) {
+    // Esc = zurück
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      const b = document.getElementById("btnBack");
+      if (b) b.click();
+      return;
+    }
+
+    // Ctrl+S / Cmd+S = speichern
+    const isSave = (ev.key || "").toLowerCase() === "s" && (ev.ctrlKey || ev.metaKey);
+    if (isSave) {
+      ev.preventDefault();
+      const f = document.getElementById("tForm");
+      if (f) f.submit();
+    }
+  });
+})();
+</script>
 
 {% endblock %}

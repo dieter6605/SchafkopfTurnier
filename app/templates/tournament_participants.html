@@ -39,6 +39,7 @@
           <!-- Prüfen -->
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            <input type="hidden" name="q" value="{{ q or '' }}">
             <button class="btn btn-sm btn-outline-secondary"
                     title="Prüft auf Lücken (Anzeige kommt als nächstes)">
               Prüfen
@@ -48,6 +49,7 @@
           <!-- Komplett neu 1..N -->
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            <input type="hidden" name="q" value="{{ q or '' }}">
             <input type="hidden" name="renumber" value="1">
             <button class="btn btn-sm btn-outline-danger"
                     title="Verdichtet alle Teilnehmer auf 1..N">
@@ -59,9 +61,9 @@
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_renumber_from', tournament_id=t.id) }}"
                 class="d-flex gap-2 align-items-center">
+            <input type="hidden" name="q" value="{{ q or '' }}">
             <span class="text-muted small">Ab Nr.</span>
 
-            <!-- Änderung: Startwert NICHT fest verdrahten (war value="1"), stattdessen leer mit Placeholder -->
             <input class="form-control form-control-sm sk-mono"
                    name="start_no"
                    value=""
@@ -71,7 +73,6 @@
                    style="max-width: 110px;"
                    title="Startnummer (>=1)">
 
-            <!-- Änderung: Button optisch anders + klarerer Text -->
             <button class="btn btn-sm btn-outline-warning"
                     title="Verdichtet ab dieser Nummer, Nummern darunter bleiben unverändert"
                     onclick="return confirm('Ab dieser Nummer neu durchnummerieren?');">
@@ -82,7 +83,6 @@
           <span class="text-muted small">Standard beim Entfernen: ab der Nummer neu durchnummerieren.</span>
         </div>
 
-        <!-- (Optional vorbereitet) Anzeige für Lücken, wenn du später show_gaps/gaps an Template übergibst -->
         {% if show_gaps %}
           <hr class="my-2">
           {% if gaps and gaps|length > 0 %}
@@ -114,7 +114,6 @@
         Quick-Add (neu)
       </button>
 
-      <!-- Optional: wenn cap_ok vom Backend kommt -->
       {% if cap_ok is defined and not cap_ok %}
         <span class="badge text-bg-danger">Max. Teilnehmer erreicht</span>
       {% endif %}
@@ -139,7 +138,8 @@
                   <span class="text-muted small sk-mono">#{{ h.id }}</span>
                 </td>
                 <td class="text-end">
-                  <form method="post" action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
+                  <form method="post"
+                        action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
                     <button class="btn btn-sm btn-outline-primary"
                             {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
                       Übernehmen
@@ -170,6 +170,7 @@
     <form method="post"
           action="{{ url_for('tournaments.tournament_participant_quickadd', tournament_id=t.id) }}"
           class="row g-2">
+      <input type="hidden" name="q" value="{{ q or '' }}">
 
       <div class="col-md-3">
         <label class="form-label">Nachname *</label>
@@ -284,6 +285,7 @@
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}"
                         class="d-flex gap-2 align-items-center">
+                    <input type="hidden" name="q" value="{{ q or '' }}">
                     <input type="hidden" name="tp_id" value="{{ p.id }}">
                     <input class="form-control form-control-sm sk-mono"
                            name="new_address_id"
@@ -295,6 +297,7 @@
                   <!-- Entfernen (STANDARD: Renummerieren ab dieser Nr) -->
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                    <input type="hidden" name="q" value="{{ q or '' }}">
                     <input type="hidden" name="renumber" value="1">
                     <button class="btn btn-sm btn-outline-danger"
                             onclick="return confirm('Teilnehmer Nr {{ p.player_no }} entfernen und ab dieser Nr neu durchnummerieren?');"
@@ -306,6 +309,7 @@
                   <!-- Optional: Entfernen ohne Renummerieren -->
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                    <input type="hidden" name="q" value="{{ q or '' }}">
                     <input type="hidden" name="renumber" value="0">
                     <button class="btn btn-sm btn-outline-secondary"
                             onclick="return confirm('Teilnehmer Nr {{ p.player_no }} wirklich entfernen?\\n\\nOK = Entfernen (Nummer bleibt frei)');"
