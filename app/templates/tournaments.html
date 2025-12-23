@@ -12,7 +12,7 @@
     <h3 class="mb-0">Turniere</h3>
     <div class="text-muted small">Übersicht aller angelegten Turniere</div>
     <div class="sk-kbd mt-1">
-      Tastatur: ↑/↓ wählen · Enter öffnen · N = Neues Turnier · B = Bearbeiten · Entf = Löschen
+      Tastatur: ↑/↓ wählen · Enter öffnen · N = Neues Turnier · B = Bearbeiten · Shift + Entf = Löschen
     </div>
   </div>
   <div>
@@ -189,7 +189,7 @@
     } else if (k === "b") {
       ev.preventDefault();
       editSel();
-    } else if (k === "delete" || k === "backspace") {
+    } else if (ev.shiftKey && k === "delete") {
       ev.preventDefault();
       deleteSel();
     }

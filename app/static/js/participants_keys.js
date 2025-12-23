@@ -1,6 +1,7 @@
 // app/static/js/participants_keys.js
 (function () {
-  let selectedIdx = -1;
+  let selectedIdx = -1;        // Treffer (Adressbuch)
+  let selectedPartIdx = -1;    // Turnierteilnehmer
 
   function qs(sel, root = document) { return root.querySelector(sel); }
   function qsa(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
@@ -15,6 +16,11 @@
     return (document.activeElement && document.activeElement.id)
       ? String(document.activeElement.id)
       : "";
+  }
+
+  function isTypingContext() {
+    const tag = activeTag();
+    return tag === "input" || tag === "textarea" || tag === "select";
   }
 
   function isQuickAddOpen() {
@@ -39,6 +45,9 @@
     if (q) q.focus();
   }
 
+  // ---------------------------------------------------------------------------
+  // Treffer (Adressbuch)
+  // ---------------------------------------------------------------------------
   function clearSelection() {
     const rows = qsa("#hitsBody tr.sk-hit");
     rows.forEach(r => r.classList.remove("sk-selected"));
@@ -111,16 +120,14 @@
     if (rows.length) setSelection(0);
   }
 
-  // --- Neue Helfer: Buttons/Formulare über Tastatur auslösen ---
+  // --- Helfer: Buttons/Formulare über Tastatur auslösen ---
 
   function submitCheckNumbers() {
-    // Erstes Formular im Block "Teilnehmernummern": Prüfen
     const btn = qs("form[action*='check-numbers'] button");
     if (btn) btn.click();
   }
 
   function focusRenumberFrom() {
-    // Input heißt start_no im Renumber-From-Formular
     const input = qs("form[action*='renumber-from'] input[name='start_no']");
     if (input) {
       input.focus();
@@ -129,11 +136,10 @@
   }
 
   function submitRenumberFromIfFocused(ev) {
-    // Wenn Fokus im start_no-Feld und Enter -> Form absenden
     const el = document.activeElement;
     if (!el) return false;
+
     if (el.tagName && el.tagName.toLowerCase() === "input" && el.name === "start_no") {
-      // Wenn leer, nicht absenden (sonst kommt Flash-Error)
       const v = String(el.value || "").trim();
       if (!v) return false;
 
@@ -143,6 +149,71 @@
       return true;
     }
     return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Turnierteilnehmer: Auswahl + Shift+Entf (Standard-Entfernen)
+  // ---------------------------------------------------------------------------
+  function partRows() {
+    return qsa("#participantsBody tr.sk-part");
+  }
+
+  function setPartSelection(i) {
+    const r = partRows();
+    if (!r.length) return;
+
+    if (i < 0) i = 0;
+    if (i >= r.length) i = r.length - 1;
+
+    r.forEach(x => x.classList.remove("sk-selected"));
+    r[i].classList.add("sk-selected");
+    selectedPartIdx = i;
+
+    r[i].scrollIntoView({ block: "nearest" });
+  }
+
+  function movePartSelection(delta) {
+    const r = partRows();
+    if (!r.length) return;
+
+    if (selectedPartIdx === -1) {
+      setPartSelection(0);
+      return;
+    }
+    setPartSelection(selectedPartIdx + delta);
+  }
+
+  function wireParticipantSelection() {
+    const r = partRows();
+    r.forEach((row, i) => {
+      row.addEventListener("mouseenter", () => setPartSelection(i));
+      row.addEventListener("click", (ev) => {
+        const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : "";
+        if (tag === "button" || tag === "input" || tag === "a" || tag === "select" || tag === "textarea") return;
+        setPartSelection(i);
+      });
+    });
+  }
+
+  function initDefaultParticipantSelection() {
+    const r = partRows();
+    if (r.length) setPartSelection(0);
+  }
+
+  function deleteSelectedParticipant() {
+    const r = partRows();
+    if (!r.length) return;
+    if (selectedPartIdx < 0 || selectedPartIdx >= r.length) return;
+
+    const row = r[selectedPartIdx];
+    const formId = row.dataset.deleteFormId;
+    if (!formId) return;
+
+    const form = document.getElementById(formId);
+    if (!form) return;
+
+    const btn = form.querySelector("button[type='submit']");
+    if (btn) btn.click(); // confirm() steckt am onclick
   }
 
   function onKeyDown(ev) {
@@ -182,42 +253,84 @@
     // Enter im start_no-Feld -> Renummerieren absenden
     if (ev.key === "Enter") {
       if (submitRenumberFromIfFocused(ev)) return;
+      // Wichtig: Enter soll in der Teilnehmerliste sonst NICHTS tun.
     }
 
-    // Tastatursteuerung Treffer:
-    const rows = qsa("#hitsBody tr.sk-hit");
-    if (!rows.length) return;
+    // ✅ Löschen NUR mit Shift + Delete (Entf)
+    // Mac: Taste heißt oft "Delete"; Windows: "Delete"
+    if (ev.shiftKey && String(ev.key || "").toLowerCase() === "delete") {
+      if (isTypingContext()) return; // nie in Eingabefeldern
+      ev.preventDefault();
+      deleteSelectedParticipant();
+      return;
+    }
 
-    // Pfeile: erlaubt, wenn Fokus NICHT in Eingabefeld ist
-    // Ausnahme: im Suchfeld (#qInput) erlauben wir es ausdrücklich
+    // -----------------------------------------------------------------------
+    // Pfeilnavigation:
+    // - Im Suchfeld (#qInput): Trefferliste steuern
+    // - Sonst (nicht tippen): Teilnehmerliste steuern
+    // -----------------------------------------------------------------------
     const tag = activeTag();
     const id = activeId();
     const inInput = (tag === "input" || tag === "textarea" || tag === "select");
 
-    const allowNav =
-      !inInput || id === "qInput"; // nur Suchfeld darf nav trotz input-fokus
+    // Im Suchfeld dürfen Pfeile die Trefferliste bewegen
+    const inSearch = (id === "qInput");
 
-    if (ev.key === "ArrowDown" && allowNav) {
-      ev.preventDefault();
-      moveSelection(+1);
+    if (ev.key === "ArrowDown") {
+      if (inSearch) {
+        const rows = qsa("#hitsBody tr.sk-hit");
+        if (rows.length) {
+          ev.preventDefault();
+          moveSelection(+1);
+        }
+        return;
+      }
+
+      // Teilnehmerliste nur, wenn man nicht gerade tippt
+      if (!inInput) {
+        const r = partRows();
+        if (r.length) {
+          ev.preventDefault();
+          movePartSelection(+1);
+        }
+      }
       return;
     }
-    if (ev.key === "ArrowUp" && allowNav) {
-      ev.preventDefault();
-      moveSelection(-1);
+
+    if (ev.key === "ArrowUp") {
+      if (inSearch) {
+        const rows = qsa("#hitsBody tr.sk-hit");
+        if (rows.length) {
+          ev.preventDefault();
+          moveSelection(-1);
+        }
+        return;
+      }
+
+      if (!inInput) {
+        const r = partRows();
+        if (r.length) {
+          ev.preventDefault();
+          movePartSelection(-1);
+        }
+      }
       return;
     }
 
+    // Treffer: Enter übernimmt (wie bisher), aber nur wenn NICHT in Input
+    // (Enter soll NICHT die Teilnehmerliste triggern)
     if (ev.key === "Enter") {
-      // Enter übernimmt nur, wenn Fokus NICHT in einem Eingabefeld/Textarea/Select ist
       if (inInput) return;
-
+      const rows = qsa("#hitsBody tr.sk-hit");
+      if (!rows.length) return;
       ev.preventDefault();
       takeSelected();
       return;
     }
 
     if (ev.key === "Escape") {
+      // Escape löscht Markierung (Treffer)
       clearSelection();
       return;
     }
@@ -225,8 +338,15 @@
 
   function init() {
     wireQuickAddButtons();
+
+    // Treffer
     wireMouseSelection();
     initDefaultSelection();
+
+    // Teilnehmer
+    wireParticipantSelection();
+    initDefaultParticipantSelection();
+
     document.addEventListener("keydown", onKeyDown);
   }
 

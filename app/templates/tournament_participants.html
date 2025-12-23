@@ -7,6 +7,9 @@
   .sk-selected { outline: 3px solid rgba(13,110,253,.45); border-radius: 10px; }
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+  /* Teilnehmerzeilen wählbar machen */
+  .sk-part { cursor: pointer; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -14,7 +17,7 @@
     <h3 class="mb-0">{{ t.title }} – Teilnehmer</h3>
     <div class="text-muted small">{{ t.event_date }} · {{ t.start_time }}</div>
     <div class="sk-kbd mt-1">
-      Tastatur: ↑/↓ wählen · Enter übernimmt · Alt+N = Quick-Add öffnen · Esc = Quick-Add schließen
+      Tastatur: ↑/↓ wählen · Enter (Teilnehmerliste) = keine Aktion · Alt+N = Quick-Add öffnen · Esc = Quick-Add schließen · Shift+Entf = Teilnehmer entfernen
     </div>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">Turnier</a>
@@ -264,9 +267,10 @@
               <th class="text-end" style="width:520px;">Aktionen</th>
             </tr>
           </thead>
-          <tbody>
+
+          <tbody id="participantsBody">
           {% for p in participants %}
-            <tr>
+            <tr class="sk-part" data-delete-form-id="rmForm{{ p.id }}">
               <td class="sk-mono"><strong>{{ p.player_no }}</strong></td>
               <td>
                 <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
@@ -296,6 +300,7 @@
 
                   <!-- Entfernen (STANDARD: Renummerieren ab dieser Nr) -->
                   <form method="post"
+                        id="rmForm{{ p.id }}"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
                     <input type="hidden" name="q" value="{{ q or '' }}">
                     <input type="hidden" name="renumber" value="1">

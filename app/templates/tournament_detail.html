@@ -13,7 +13,7 @@
       <span class="fw-semibold">E</span> = Teilnehmer erfassen ·
       <span class="fw-semibold">L</span> = Turnierliste ·
       <span class="fw-semibold">B</span> = Bearbeiten ·
-      <span class="fw-semibold">Entf</span> = Löschen
+      <span class="fw-semibold">Shift + Entf</span> = Löschen
     </div>
   </div>
 
@@ -102,28 +102,16 @@
     return tag === "input" || tag === "textarea" || tag === "select";
   }
 
-  function isInteractiveFocus() {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = (el.tagName || "").toLowerCase();
-    return tag === "a" || tag === "button" || tag === "input" || tag === "textarea" || tag === "select";
-  }
-
   function clickIf(id) {
     const el = document.getElementById(id);
     if (el) el.click();
-  }
-
-  function confirmDelete() {
-    return confirm("Turnier wirklich löschen?\n\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.");
   }
 
   document.addEventListener("keydown", function (ev) {
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (isTypingContext()) return;
 
-    const kRaw = (ev.key || "");
-    const k = kRaw.toLowerCase();
+    const k = (ev.key || "").toLowerCase();
 
     if (k === "e") {
       ev.preventDefault();
@@ -141,22 +129,12 @@
       return;
     }
 
-    // Löschen über Tastatur nur, wenn kein interaktives Element gerade fokussiert ist
-    // (reduziert Risiko versehentlicher Löschaktionen).
-    const isDeleteKey =
-      k === "delete" || k === "backspace" || kRaw === "Delete" || kRaw === "Backspace";
-
-    if (isDeleteKey) {
-      if (isInteractiveFocus()) return;
-
+    // 🔒 Löschen NUR mit Shift + Delete
+    if (ev.shiftKey && k === "delete") {
       const btn = document.getElementById("btnDeleteTournament");
       if (btn) {
         ev.preventDefault();
-
-        // Doppelt abgesichert: Confirm auch hier, unabhängig vom onclick.
-        if (confirmDelete()) {
-          btn.click();
-        }
+        btn.click(); // Confirm steckt am onclick
       }
     }
   });
