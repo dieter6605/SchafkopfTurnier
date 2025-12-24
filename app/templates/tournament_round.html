@@ -5,6 +5,60 @@
 <style>
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   .sk-kbd  { font-size: .95rem; color: rgba(0,0,0,.55); }
+
+  /* Druck: Cards ausblenden, alphabetische Liste einblenden */
+  @media print {
+    nav, .btn, .alert, .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    .no-break { break-inside: avoid; page-break-inside: avoid; }
+
+    /* kompakt drucken */
+    @page { margin: 10mm; }
+    body { background: #fff !important; }
+    .container { max-width: none !important; }
+
+    /* 2 Spalten nebeneinander (zwei Blöcke) */
+    .sk-print-columns {
+      column-count: 2;
+      column-gap: 10mm;
+      column-fill: auto;
+    }
+
+    /* Überschrift kompakt */
+    .sk-print-title h2 { font-size: 14pt; margin: 0; }
+    .sk-print-title .meta { font-size: 10pt; margin: 0 0 4mm 0; color: #000; }
+
+    /* Zeilenlayout: links Nameblock, rechts Tisch/Sitz */
+    .sk-print-line {
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6mm;
+
+      font-size: 9.5pt;
+      line-height: 1.15;
+      padding: 1.2mm 0;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .sk-print-left {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .sk-print-right {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .sk-print-muted { color: #333; font-weight: 400; }
+  }
+
+  .print-only { display: none; }
 </style>
 
 {# Neu: ist diese Runde bereits ausgelost? #}
@@ -13,7 +67,7 @@
 {# Neu: "nächste Runde auslosen" nur erlauben, wenn diese Runde die letzte existierende ist #}
 {% set allow_draw_next = (current_drawn and (round_no|int == (last_round_no or 0)|int)) %}
 
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 no-print">
   <div>
     <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }}</h3>
     <div class="text-muted small">{{ t.event_date }} · {{ t.start_time }}</div>
@@ -51,6 +105,12 @@
        href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">
       Turnier
     </a>
+
+    <button class="btn btn-outline-secondary"
+            type="button"
+            onclick="window.print()">
+      Drucken
+    </button>
 
     {# Draw/Redraw aktuelle Runde #}
     <form method="post"
@@ -143,62 +203,52 @@
 </div>
 
 {% if current_drawn %}
-  {% set cur = namespace(table_no=None) %}
 
-  <div class="row g-3">
-    {% for r in seats %}
-      {% if cur.table_no != r.table_no %}
-        {% if cur.table_no is not none %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </div>
-        {% endif %}
-
-        {% set cur.table_no = r.table_no %}
-
-        <div class="col-md-6 col-lg-4">
-          <div class="card shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="fw-semibold">Tisch {{ r.table_no }}</div>
-                <div class="text-muted small sk-mono">R{{ round_no }}</div>
-              </div>
-              <div class="table-responsive">
-                <table class="table table-sm mb-0">
-                  <thead>
+  {# ----------------------- #}
+  {# 1) Kartenansicht (UI)   #}
+  {# ----------------------- #}
+  <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 no-print">
+    {% for grp in seats|groupby('table_no') %}
+      {% set table_no = grp.grouper %}
+      {% set rows = grp.list %}
+      <div class="col">
+        <div class="card shadow-sm h-100 no-break">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-semibold">Tisch {{ table_no }}</div>
+              <div class="text-muted small sk-mono">R{{ round_no }}</div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th style="width:60px;">Platz</th>
+                    <th style="width:70px;">Nr</th>
+                    <th>Name</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in rows %}
                     <tr>
-                      <th style="width:60px;">Platz</th>
-                      <th style="width:70px;">Nr</th>
-                      <th>Name</th>
+                      <td class="sk-mono"><strong>{{ r.seat }}</strong></td>
+                      <td class="sk-mono">{{ r.player_no }}</td>
+                      <td>
+                        <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+                        <span class="text-muted">· {{ r.wohnort }}</span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-      {% endif %}
-
-      <tr>
-        <td class="sk-mono"><strong>{{ r.seat }}</strong></td>
-        <td class="sk-mono">{{ r.player_no }}</td>
-        <td>
-          <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
-          <span class="text-muted">· {{ r.wohnort }}</span>
-        </td>
-      </tr>
-
-      {% if loop.last %}
-                  </tbody>
-                </table>
-              </div>
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-      {% endif %}
+      </div>
     {% endfor %}
   </div>
 
   {% if reserve and reserve|length > 0 %}
-    <div class="card shadow-sm mt-3">
+    <div class="card shadow-sm mt-3 no-print">
       <div class="card-body">
         <h5 class="mb-2">Reserve (nicht gesetzt)</h5>
         <div class="text-muted small mb-2">
@@ -228,6 +278,37 @@
       </div>
     </div>
   {% endif %}
+
+  {# ------------------------------- #}
+  {# 2) Druckansicht (alphabetisch)  #}
+  {# ------------------------------- #}
+  <div class="print-only">
+    <div class="sk-print-title">
+      <h2>{{ t.title }}</h2>
+      <div class="meta">
+        Runde {{ round_no }} · {{ t.event_date }} · {{ t.start_time }}
+        {% if now %} · Stand: {{ now }}{% endif %}
+      </div>
+    </div>
+
+    {# seats_alpha muss aus Python kommen. Fallback: seats. #}
+    {% set _print_rows = seats_alpha if seats_alpha is defined else seats %}
+
+    <div class="sk-print-columns">
+      {% for r in _print_rows %}
+        <div class="sk-print-line">
+          <div class="sk-print-left">
+            <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+            <span class="sk-print-muted">· {{ r.wohnort }}</span>
+            <span class="sk-print-muted"> ({{ r.player_no }})</span>
+          </div>
+          <div class="sk-print-right sk-mono">
+            {{ r.table_no }}/{{ r.seat }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
 
 {% else %}
   <div class="alert alert-secondary d-flex justify-content-between align-items-start flex-wrap gap-2">
