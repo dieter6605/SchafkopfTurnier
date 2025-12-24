@@ -1,0 +1,298 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<style>
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+  .sk-sum-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .25rem .5rem;
+    border-radius: .5rem;
+    font-weight: 600;
+    border: 1px solid rgba(0,0,0,.15);
+    background: rgba(0,0,0,.03);
+  }
+  .sk-sum-ok {
+    border-color: rgba(25,135,84,.35);
+    background: rgba(25,135,84,.08);
+  }
+  .sk-sum-bad {
+    border-color: rgba(220,53,69,.35);
+    background: rgba(220,53,69,.08);
+  }
+  .sk-help {
+    font-size: .9rem;
+    color: rgba(0,0,0,.6);
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }} – Tisch {{ table_no }}</h3>
+    <div class="text-muted small">
+      Punkte müssen in Summe <span class="fw-semibold">0</span> ergeben · Soli leer = 0
+      {% if now %}· Stand: {{ now }}{% endif %}
+    </div>
+    <div class="sk-help mt-1">
+      Tastatur: <span class="fw-semibold">Enter/↓</span> nächstes Feld · <span class="fw-semibold">↑</span> vorheriges Feld
+    </div>
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
+      Tischübersicht
+    </a>
+    {% if next_table %}
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">
+        Nächster Tisch
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    {# Live-Summe-Anzeige + Hinweis #}
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+      <div class="sk-sum-badge" id="skSumBadge" aria-live="polite">
+        Summe Punkte: <span class="sk-mono" id="skSumValue">—</span>
+        <span id="skSumState" class="small text-muted"></span>
+      </div>
+      <div class="text-muted small" id="skSumHint">
+        Bitte alle 4 Punkte eingeben – danach muss die Summe <span class="fw-semibold">0</span> sein.
+      </div>
+    </div>
+
+    <form method="post" id="skResultsForm">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:70px;">Sitz</th>
+              <th>Name</th>
+              <th style="width:140px;">Punkte</th>
+              <th style="width:140px;">Soli</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in players %}
+              {% set tp_id = p.tp_id %}
+              <tr>
+                <td class="sk-mono fw-bold">{{ p.seat }}</td>
+                <td>
+                  <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
+                  <span class="text-muted">· {{ p.wohnort }}</span>
+                  <span class="text-muted sk-mono"> (#{{ p.player_no }})</span>
+                </td>
+                <td>
+                  <input class="form-control form-control-sm sk-points"
+                         name="points_{{ tp_id }}"
+                         value="{{ p.points if p.points is not none else '' }}"
+                         inputmode="numeric"
+                         autocomplete="off"
+                         required
+                         data-skt="points">
+                </td>
+                <td>
+                  <input class="form-control form-control-sm sk-soli"
+                         name="soli_{{ tp_id }}"
+                         value="{{ p.soli if p.soli is not none else '' }}"
+                         inputmode="numeric"
+                         autocomplete="off"
+                         placeholder="0"
+                         data-skt="soli">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        <button class="btn btn-primary" id="btnSave" type="submit">Speichern</button>
+
+        <button class="btn btn-outline-primary"
+                id="btnSaveNext"
+                type="submit"
+                name="go_next"
+                value="1">
+          Speichern & nächster Tisch
+        </button>
+
+        <a class="btn btn-outline-secondary"
+           href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=round_no) }}">
+          Zurück zur Runde
+        </a>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  const form = document.getElementById("skResultsForm");
+  const pointsInputs = Array.from(document.querySelectorAll("input.sk-points"));
+  const soliInputs = Array.from(document.querySelectorAll("input.sk-soli"));
+
+  const badge = document.getElementById("skSumBadge");
+  const sumValueEl = document.getElementById("skSumValue");
+  const sumStateEl = document.getElementById("skSumState");
+  const sumHintEl = document.getElementById("skSumHint");
+
+  const btnSave = document.getElementById("btnSave");
+  const btnSaveNext = document.getElementById("btnSaveNext");
+
+  function parseIntLoose(v) {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (s === "") return null;
+    // nur Ganzzahlen, optional mit Vorzeichen
+    if (!/^[+-]?\d+$/.test(s)) return NaN;
+    return parseInt(s, 10);
+  }
+
+  function updateSumUI() {
+    let total = 0;
+    let filled = 0;
+    let hasInvalid = false;
+
+    for (const inp of pointsInputs) {
+      const n = parseIntLoose(inp.value);
+      inp.classList.remove("is-invalid", "is-valid");
+
+      if (n === null) {
+        // leer => noch nicht fertig, aber ok
+        continue;
+      }
+      if (Number.isNaN(n)) {
+        hasInvalid = true;
+        inp.classList.add("is-invalid");
+        continue;
+      }
+
+      filled += 1;
+      total += n;
+      inp.classList.add("is-valid");
+    }
+
+    // Anzeige
+    if (filled === 0 && !hasInvalid) {
+      sumValueEl.textContent = "—";
+      sumStateEl.textContent = "";
+      badge.classList.remove("sk-sum-ok", "sk-sum-bad");
+      sumHintEl.textContent = "Bitte alle 4 Punkte eingeben – danach muss die Summe 0 sein.";
+      btnSave.disabled = true;
+      btnSaveNext.disabled = true;
+      return;
+    }
+
+    if (hasInvalid) {
+      sumValueEl.textContent = "!";
+      sumStateEl.textContent = " Ungültige Eingabe";
+      badge.classList.add("sk-sum-bad");
+      badge.classList.remove("sk-sum-ok");
+      sumHintEl.textContent = "Nur ganze Zahlen bei Punkte zulässig (z.B. 12, -8).";
+      btnSave.disabled = true;
+      btnSaveNext.disabled = true;
+      return;
+    }
+
+    sumValueEl.textContent = String(total);
+
+    // Speichern erst erlauben wenn alle 4 gefüllt sind und total==0
+    const ready = (filled === 4);
+
+    if (!ready) {
+      sumStateEl.textContent = " (noch nicht komplett)";
+      badge.classList.remove("sk-sum-ok");
+      badge.classList.add("sk-sum-bad");
+      sumHintEl.textContent = "Bitte alle 4 Punktefelder ausfüllen.";
+      btnSave.disabled = true;
+      btnSaveNext.disabled = true;
+      return;
+    }
+
+    if (total === 0) {
+      sumStateEl.textContent = " ✓";
+      badge.classList.add("sk-sum-ok");
+      badge.classList.remove("sk-sum-bad");
+      sumHintEl.textContent = "OK – Summe ist 0. Du kannst speichern.";
+      btnSave.disabled = false;
+      btnSaveNext.disabled = false;
+    } else {
+      sumStateEl.textContent = " ✗";
+      badge.classList.remove("sk-sum-ok");
+      badge.classList.add("sk-sum-bad");
+      sumHintEl.textContent = `Fehler: Summe ist ${total} (muss 0 sein). Eingaben bleiben erhalten.`;
+      btnSave.disabled = true;
+      btnSaveNext.disabled = true;
+    }
+  }
+
+  // Tastatur: Enter/↓ = nächstes Feld, ↑ = vorheriges
+  function moveFocus(cur, dir) {
+    const all = [...pointsInputs, ...soliInputs];
+    const idx = all.indexOf(cur);
+    if (idx === -1) return;
+    const next = all[idx + dir];
+    if (next) {
+      next.focus();
+      next.select?.();
+    }
+  }
+
+  function onKeyDown(e) {
+    const target = e.target;
+    if (!(target instanceof HTMLInputElement)) return;
+
+    // Enter soll NICHT submitten, sondern weiter
+    if (e.key === "Enter") {
+      e.preventDefault();
+      moveFocus(target, +1);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveFocus(target, +1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveFocus(target, -1);
+      return;
+    }
+  }
+
+  // Live-Update beim Tippen
+  for (const inp of pointsInputs) {
+    inp.addEventListener("input", updateSumUI);
+    inp.addEventListener("change", updateSumUI);
+    inp.addEventListener("keydown", onKeyDown);
+  }
+  for (const inp of soliInputs) {
+    inp.addEventListener("keydown", onKeyDown);
+  }
+
+  // Initial: Buttons sperren bis ok
+  updateSumUI();
+
+  // Zusätzliche Sicherheit: falls jemand per Enter doch submit versucht etc.
+  form.addEventListener("submit", function(e) {
+    updateSumUI();
+    if (btnSave.disabled) {
+      e.preventDefault();
+      // Fokus auf erstes ungültiges oder erstes Punktefeld
+      const bad = document.querySelector("input.sk-points.is-invalid") || pointsInputs[0];
+      if (bad) { bad.focus(); bad.select?.(); }
+    }
+  });
+})();
+</script>
+
+{% endblock %}

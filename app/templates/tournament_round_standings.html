@@ -1,0 +1,148 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<style>
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  .no-print { display: block; }
+  .print-only { display: none; }
+
+  @media print {
+    nav, .btn, .alert, .no-print { display: none !important; }
+    .print-only { display: block !important; }
+
+    @page { margin: 10mm; }
+    body { background: #fff !important; }
+    .container { max-width: none !important; }
+
+    .sk-print-columns {
+      column-count: 2;
+      column-gap: 10mm;
+      column-fill: auto;
+    }
+
+    .sk-print-title h2 { font-size: 14pt; margin: 0; }
+    .sk-print-title .meta { font-size: 10pt; margin: 0 0 4mm 0; color: #000; }
+
+    .sk-line {
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      display: flex;
+      justify-content: space-between;
+      gap: 6mm;
+      font-size: 9.5pt;
+      line-height: 1.15;
+      padding: 1.2mm 0;
+      border-bottom: 1px solid #ddd;
+    }
+    .sk-left { flex: 1 1 auto; min-width: 0; }
+    .sk-right { flex: 0 0 auto; white-space: nowrap; font-weight: 700; }
+    .sk-muted { color: #333; font-weight: 400; }
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 no-print">
+  <div>
+    <h3 class="mb-0">{{ t.title }} – Rundenwertung {{ round_no }}</h3>
+    <div class="text-muted small">
+      Sortierung: Punkte ↓, Soli ↓ (Tie-Breaker), dann Name
+      {% if now %}· Stand: {{ now }}{% endif %}
+    </div>
+
+    {% if total_tables is defined %}
+      <div class="text-muted small mt-1">
+        Einzelwerte: <span class="fw-semibold">{{ scores_count }}</span>/{{ expected_scores }}
+        {% if scores_count < expected_scores %}
+          · Hinweis: Noch nicht alle Tische erfasst.
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
+      Zurück zur Eingabe
+    </a>
+    <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Drucken</button>
+  </div>
+</div>
+
+{# экран-Ansicht #}
+<div class="card shadow-sm no-print">
+  <div class="card-body">
+    {% if not rows %}
+      <div class="text-muted">Noch keine Ergebnisse für diese Runde vorhanden.</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:70px;">Platz</th>
+              <th>Name</th>
+              <th style="width:90px;">Punkte</th>
+              <th style="width:80px;">Soli</th>
+              <th style="width:90px;">Tisch/Sitz</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr>
+                <td class="sk-mono fw-bold">{{ r.place }}</td>
+                <td>
+                  <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+                  <span class="text-muted">· {{ r.wohnort }}</span>
+                  <span class="text-muted sk-mono"> ({{ r.player_no }})</span>
+                </td>
+                <td class="sk-mono fw-bold">{{ r.points }}</td>
+                <td class="sk-mono">{{ r.soli }}</td>
+                <td class="sk-mono">{{ r.table_no }}/{{ r.seat }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# Druckansicht: 2 Spalten, extrem kompakt #}
+<div class="print-only">
+  <div class="sk-print-title">
+    <h2>{{ t.title }}</h2>
+    <div class="meta">
+      Rundenwertung Runde {{ round_no }} · {{ t.event_date }} · {{ t.start_time }}
+      {% if now %} · Stand: {{ now }}{% endif %}
+    </div>
+    <div class="meta">
+      Einzelwerte: {{ scores_count }}/{{ expected_scores }}
+    </div>
+  </div>
+
+  {% if rows and rows|length > 0 %}
+    <div class="sk-print-columns">
+      {% for r in rows %}
+        <div class="sk-line">
+          <div class="sk-left">
+            <span class="sk-mono fw-bold">{{ r.place }}</span>
+            <span class="sk-muted">·</span>
+            <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+            <span class="sk-muted">· {{ r.wohnort }}</span>
+            <span class="sk-muted"> ({{ r.player_no }})</span>
+            <span class="sk-muted">·</span>
+            <span class="sk-mono fw-bold">{{ r.points }}</span>
+            <span class="sk-muted">P</span>
+            <span class="sk-muted">·</span>
+            <span class="sk-mono">{{ r.soli }}</span><span class="sk-muted">S</span>
+          </div>
+          <div class="sk-right sk-mono">
+            {{ r.table_no }}/{{ r.seat }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-muted">Noch keine Ergebnisse.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

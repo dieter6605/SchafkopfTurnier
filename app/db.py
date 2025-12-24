@@ -64,6 +64,7 @@ def init_db(db_path: Path) -> None:
     - addressbooks, wohnorte, addresses
     - tournaments, tournament_participants
     - tournament_rounds, tournament_seats (Auslosung Sitzplan pro Runde)
+    - tournament_scores (Ergebnisse)
     """
     set_db_path(db_path)
 
@@ -197,6 +198,30 @@ def init_db(db_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_ts_round ON tournament_seats(tournament_id, round_no);
             CREATE INDEX IF NOT EXISTS idx_ts_tp ON tournament_seats(tp_id);
+
+            -- -----------------------------------------------------------------
+            -- Ergebnisse pro Runde / Spieler (Punkte + Soli)
+            -- -----------------------------------------------------------------
+            CREATE TABLE IF NOT EXISTS tournament_scores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tournament_id INTEGER NOT NULL,
+                round_no INTEGER NOT NULL,
+                table_no INTEGER NOT NULL,
+                tp_id INTEGER NOT NULL,                -- tournament_participants.id
+
+                points INTEGER NOT NULL DEFAULT 0,
+                soli   INTEGER NOT NULL DEFAULT 0,
+
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+                UNIQUE(tournament_id, round_no, tp_id),
+
+                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_sc_round ON tournament_scores(tournament_id, round_no, table_no);
+            CREATE INDEX IF NOT EXISTS idx_sc_tp    ON tournament_scores(tp_id);
             """
         )
 
