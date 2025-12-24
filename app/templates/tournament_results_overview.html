@@ -1,0 +1,59 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">{{ t.title }} – Ergebnisse Runde {{ round_no }}</h3>
+    <div class="text-muted small">
+      Tisch auswählen → Punkte/Soli eingeben · {% if now %}Stand: {{ now }}{% endif %}
+    </div>
+
+    {# NEU: Counter / Status #}
+    {% if total_tables is defined %}
+      <div class="text-muted small mt-1">
+        Tische: <span class="fw-semibold">{{ done_count }}</span> fertig ·
+        <span class="fw-semibold">{{ open_count }}</span> offen ·
+        gesamt <span class="fw-semibold">{{ total_tables }}</span>
+        {% if expected_scores is defined %}
+          · Einzelwerte: <span class="fw-semibold">{{ scores_count }}</span>/{{ expected_scores }}
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=round_no) }}">
+      Runde
+    </a>
+
+    {# NEU: Rundenwertung #}
+    <a class="btn btn-outline-primary"
+       href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
+      Rundenwertung
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    {% if not table_nos %}
+      <div class="text-muted">Noch keine Auslosung für diese Runde.</div>
+    {% else %}
+      <div class="row row-cols-2 row-cols-md-4 row-cols-lg-6 g-2">
+        {% for tn in table_nos %}
+          {% set is_done = (tn in done_tables) %}
+          <div class="col">
+            <a class="btn w-100 {% if is_done %}btn-success{% else %}btn-outline-primary{% endif %}"
+               href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=tn) }}">
+              Tisch {{ tn }}
+              {% if is_done %}✓{% endif %}
+            </a>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

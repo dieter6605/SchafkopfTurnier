@@ -9,3 +9,4 @@ bp = Blueprint("tournaments", __name__)
 from . import pages  # noqa: E402,F401
 from . import rounds  # noqa: E402,F401
 from . import participants  # noqa: E402,F401
+from . import results  # noqa: E402,F401
