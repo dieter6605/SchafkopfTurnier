@@ -487,7 +487,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
 
         # ✅ Workflow-Schutz:
         # - neu auslosen ist immer ok (wenn Runde existiert)
-        # - neue Runde darf nur "als nächste" (last+1) ausgelost werden
+        # - neue Runde darf nur "als nächste" (last+1) ausgelost werden (kein Überspringen)
         rounds = db.q(
             con,
             "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
@@ -507,10 +507,13 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                         f"Runde {round_no - 1} wurde noch nicht ausgelost.",
                         "error",
                     )
-                    # sinnvoller Zielpunkt: die letzte existierende Runde oder Turnier
                     if last_round_no > 0:
                         return redirect(
-                            url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no)
+                            url_for(
+                                "tournaments.tournament_round_view",
+                                tournament_id=tournament_id,
+                                round_no=last_round_no,
+                            )
                         )
                     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
@@ -522,7 +525,11 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                         "error",
                     )
                     return redirect(
-                        url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no + 1)
+                        url_for(
+                            "tournaments.tournament_round_view",
+                            tournament_id=tournament_id,
+                            round_no=last_round_no + 1,
+                        )
                     )
 
         rows = db.q(
@@ -622,7 +629,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
                     prev_round_no = None
                     next_round_no = first_round_no
                 else:
-                    # vorbereitet zwischen existierenden Runden (z.B. nur 1 und 3 existieren, rn=2)
+                    # vorbereitet zwischen existierenden Runden (sollte durch Workflow-Schutz selten sein)
                     lower = [x for x in round_list if x < rn]
                     higher = [x for x in round_list if x > rn]
                     prev_round_no = max(lower) if lower else None

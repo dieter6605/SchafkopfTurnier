@@ -29,6 +29,14 @@
     return clickIfEnabled("btnPrepareNext");
   }
 
+  function allowDrawNext() {
+    try {
+      return !!(window.__SKT_ALLOW_DRAW_NEXT__ === 1 || window.__SKT_ALLOW_DRAW_NEXT__ === true);
+    } catch (e) {
+      return false;
+    }
+  }
+
   document.addEventListener("keydown", function (ev) {
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (isTypingContext()) return;
@@ -75,17 +83,20 @@
     }
 
     // R = aktuelle Runde auslosen/neu auslosen
-    // Shift+R = nächste Runde auslosen (falls Button vorhanden), sonst aktuelle Runde
+    // Shift+R = nächste Runde auslosen (nur wenn erlaubt), sonst aktuelle Runde
     if (k === "r") {
       ev.preventDefault();
+
       if (ev.shiftKey) {
-        // Neu: wenn "nächste Runde auslosen" nicht vorhanden/disabled -> aktuelle auslosen
-        if (!clickIfEnabled("btnDrawNext")) {
-          clickIfEnabled("btnRedraw");
+        if (allowDrawNext() && clickIfEnabled("btnDrawNext")) {
+          return;
         }
-      } else {
-        clickIfEnabled("btnRedraw"); // confirm hängt am formDraw
+        // Fallback: aktuelle Runde auslosen
+        clickIfEnabled("btnRedraw");
+        return;
       }
+
+      clickIfEnabled("btnRedraw"); // confirm hängt am formDraw
       return;
     }
 

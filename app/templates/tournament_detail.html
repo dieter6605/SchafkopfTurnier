@@ -1,7 +1,11 @@
 {% extends "layout.html" %}
 {% block content %}
 
-{% set next_round_no = (last_round_no + 1) if (last_round_no and last_round_no > 0) else 1 %}
+{% set last_rn = (last_round_no or 0) | int %}
+{% set next_round_no = (last_rn + 1) if (last_rn > 0) else 1 %}
+
+{# ✅ Neu: "nächste Runde auslosen" nur aus der letzten ausgelosten Runde heraus #}
+{% set allow_draw_next = (last_rn > 0) %}
 
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
@@ -21,7 +25,13 @@
       <span class="fw-semibold">1</span> = Runde 1 anzeigen ·
       <span class="fw-semibold">A</span> = Runde anzeigen ·
       <span class="fw-semibold">R</span> = Runde auslosen ·
-      <span class="fw-semibold">Shift+R</span> = nächste Runde auslosen ·
+      <span class="fw-semibold">Shift+R</span> =
+      {% if allow_draw_next %}
+        nächste Runde auslosen
+      {% else %}
+        Runde 1 auslosen
+      {% endif %}
+      ·
       <span class="fw-semibold">N</span> = nächste Runde vorbereiten ·
       <span class="fw-semibold">+ / -</span> = Runde ändern
     </div>
@@ -111,8 +121,8 @@
         <h5 class="mb-1">Runden / Auslosung</h5>
         <div class="text-muted small">
           Auslosen überschreibt (mit Bestätigung) eine vorhandene Auslosung derselben Runde.
-          {% if last_round_no and last_round_no > 0 %}
-            · Letzte Runde: <strong>{{ last_round_no }}</strong>
+          {% if last_rn > 0 %}
+            · Letzte Runde: <strong>{{ last_rn }}</strong>
           {% endif %}
         </div>
       </div>
@@ -140,21 +150,32 @@
           Nächste Runde ({{ next_round_no }}) vorbereiten
         </a>
 
-        <!-- ✅ Nächste Runde direkt auslosen -->
-        <form method="post"
-              id="formDrawNext"
-              action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_round_no) }}"
-              class="d-inline"
-              onsubmit="return confirm('Runde {{ next_round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-          <button class="btn btn-outline-warning" id="btnDrawNext" type="submit">
+        <!-- ✅ Nächste Runde direkt auslosen (nur sinnvoll/erlaubt wenn es bereits eine letzte Runde gibt) -->
+        {% if allow_draw_next %}
+          <form method="post"
+                id="formDrawNext"
+                action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_round_no) }}"
+                class="d-inline"
+                onsubmit="return confirm('Runde {{ next_round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+            <button class="btn btn-outline-warning" id="btnDrawNext" type="submit">
+              Runde {{ next_round_no }} auslosen
+            </button>
+          </form>
+        {% else %}
+          <button class="btn btn-outline-warning disabled"
+                  id="btnDrawNext"
+                  type="button"
+                  aria-disabled="true"
+                  tabindex="-1"
+                  title="Erst Runde 1 auslosen, dann ist „nächste Runde auslosen“ möglich.">
             Runde {{ next_round_no }} auslosen
           </button>
-        </form>
+        {% endif %}
 
-        {% if last_round_no and last_round_no > 0 %}
+        {% if last_rn > 0 %}
           <a class="btn btn-outline-secondary"
              id="btnLastRound"
-             href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=last_round_no) }}">
+             href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=last_rn) }}">
             Letzte Runde anzeigen
           </a>
         {% endif %}
@@ -166,11 +187,7 @@
     <div class="d-flex gap-2 flex-wrap align-items-center">
       <form method="get"
             id="roundShowForm"
-            class="d-flex gap-2 align-items-center"
-            onsubmit="
-              var rn = document.getElementById('roundNo').value || '1';
-              this.action = '{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}'.replace('/1', '/' + rn);
-              return true;">
+            class="d-flex gap-2 align-items-center">
         <label class="text-muted small mb-0" for="roundNo">Runde</label>
 
         <input id="roundNo" class="form-control form-control-sm"
@@ -183,11 +200,7 @@
 
       <form method="post"
             id="roundDrawForm"
-            class="d-flex gap-2 align-items-center"
-            onsubmit="
-              var rn = document.getElementById('roundNo').value || '1';
-              this.action = '{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=1) }}'.replace('/1/', '/' + rn + '/');
-              return confirm('Runde ' + rn + ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
+            class="d-flex gap-2 align-items-center">
         <button class="btn btn-sm btn-warning" id="btnRoundDraw" type="submit">Runde auslosen (überschreiben)</button>
       </form>
     </div>
@@ -196,8 +209,16 @@
 
 <script>
 (function () {
-  const lastRoundNo = {{ (last_round_no or 0) | int }};
+  const lastRoundNo = {{ last_rn }};
   const nextRoundNo = {{ next_round_no | int }};
+
+  // ✅ robust: Actions per Platzhalter-URL statt fragilem replace('/1', ...)
+  const viewBase = "{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=999999) }}";
+  const drawBase = "{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=999999) }}";
+
+  function buildUrl(base, rn) {
+    return String(base).replace("999999", String(rn));
+  }
 
   function isTypingContext() {
     const el = document.activeElement;
@@ -225,6 +246,27 @@
     inp.value = String(nn);
     inp.focus();
     try { inp.select(); } catch (e) {}
+  }
+
+  // ✅ Form-Action dynamisch setzen
+  const showForm = document.getElementById("roundShowForm");
+  if (showForm) {
+    showForm.addEventListener("submit", function () {
+      const rn = getRoundNo();
+      showForm.action = buildUrl(viewBase, rn);
+    });
+  }
+
+  const drawForm = document.getElementById("roundDrawForm");
+  if (drawForm) {
+    drawForm.addEventListener("submit", function (ev) {
+      const rn = getRoundNo();
+      drawForm.action = buildUrl(drawBase, rn);
+      const ok = confirm(
+        "Runde " + rn + " auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben."
+      );
+      if (!ok) ev.preventDefault();
+    });
   }
 
   document.addEventListener("keydown", function (ev) {
@@ -264,14 +306,20 @@
       return;
     }
 
-    // Shift+R = nächste Runde direkt auslosen
+    // Shift+R = nächste Runde direkt auslosen (nur wenn erlaubt/aktiv)
     if (!typing && ev.shiftKey && k === "r") {
       ev.preventDefault();
-      clickIf("btnDrawNext");
+      // wenn disabled/nicht vorhanden -> fällt auf Runde 1 auslosen zurück
+      const btn = document.getElementById("btnDrawNext");
+      if (btn && !btn.classList.contains("disabled") && btn.getAttribute("aria-disabled") !== "true") {
+        btn.click();
+      } else {
+        clickIf("btnRound1Draw");
+      }
       return;
     }
 
-    // + / - = Runde im Feld hoch/runter (nur im roundNo Feld oder wenn nicht getippt wird)
+    // + / - = Runde im Feld hoch/runter
     if ((inRoundField || !typing) && (k === "+" || ev.key === "=")) {
       ev.preventDefault();
       setRoundNo(getRoundNo() + 1);
