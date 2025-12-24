@@ -485,6 +485,46 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             flash("Ungültige Rundennummer.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
+        # ✅ Workflow-Schutz:
+        # - neu auslosen ist immer ok (wenn Runde existiert)
+        # - neue Runde darf nur "als nächste" (last+1) ausgelost werden
+        rounds = db.q(
+            con,
+            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
+            (tournament_id,),
+        )
+        round_list = [int(r["round_no"]) for r in rounds]
+        last_round_no = max(round_list) if round_list else 0
+        has_round = int(round_no) in round_list
+
+        if not has_round:
+            # Runde 1 ist als Start immer erlaubt
+            if int(round_no) != 1:
+                # Vorherige Runde muss existieren
+                if int(round_no) - 1 not in round_list:
+                    flash(
+                        f"Runde {round_no} kann noch nicht ausgelost werden: "
+                        f"Runde {round_no - 1} wurde noch nicht ausgelost.",
+                        "error",
+                    )
+                    # sinnvoller Zielpunkt: die letzte existierende Runde oder Turnier
+                    if last_round_no > 0:
+                        return redirect(
+                            url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no)
+                        )
+                    return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+                # Nur "nächste" Runde (last+1) erlauben (kein Überspringen)
+                if last_round_no > 0 and int(round_no) != (last_round_no + 1):
+                    flash(
+                        f"Runde {round_no} kann nicht übersprungen werden. "
+                        f"Bitte zuerst Runde {last_round_no + 1} auslosen.",
+                        "error",
+                    )
+                    return redirect(
+                        url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no + 1)
+                    )
+
         rows = db.q(
             con,
             """
@@ -547,6 +587,47 @@ def tournament_round_view(tournament_id: int, round_no: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
+        # vorhandene Runden (für Navigation)
+        rounds = db.q(
+            con,
+            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
+            (tournament_id,),
+        )
+        round_list = [int(r["round_no"]) for r in rounds]
+        last_round_no = max(round_list) if round_list else 0
+
+        prev_round_no: int | None = None
+        next_round_no: int | None = None
+
+        rn = int(round_no)
+
+        if round_list:
+            if rn in round_list:
+                # Runde existiert: normale Navigation innerhalb der existierenden Runden
+                pos = round_list.index(rn)
+                if pos > 0:
+                    prev_round_no = round_list[pos - 1]
+                if pos < len(round_list) - 1:
+                    next_round_no = round_list[pos + 1]
+            else:
+                # Runde existiert nicht: "vorbereiten"-Ansicht
+                first_round_no = round_list[0]
+
+                if rn > last_round_no:
+                    # vorbereitet hinter der letzten existierenden Runde
+                    prev_round_no = last_round_no if last_round_no > 0 else None
+                    next_round_no = None
+                elif rn < first_round_no:
+                    # vorbereitet vor der ersten existierenden Runde
+                    prev_round_no = None
+                    next_round_no = first_round_no
+                else:
+                    # vorbereitet zwischen existierenden Runden (z.B. nur 1 und 3 existieren, rn=2)
+                    lower = [x for x in round_list if x < rn]
+                    higher = [x for x in round_list if x > rn]
+                    prev_round_no = max(lower) if lower else None
+                    next_round_no = min(higher) if higher else None
+
         seats = db.q(
             con,
             """
@@ -578,26 +659,8 @@ def tournament_round_view(tournament_id: int, round_no: int):
         )
         reserve = [r for r in reserve if int(r["tp_id"]) not in seated_tp]
 
-        rounds = db.q(
-            con,
-            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
-            (tournament_id,),
-        )
-        round_list = [int(r["round_no"]) for r in rounds]
-        last_round_no = max(round_list) if round_list else 0
-
-        prev_round_no = None
-        next_round_no = None
-        if round_list:
-            try:
-                pos = round_list.index(int(round_no))
-            except ValueError:
-                pos = -1
-            if pos != -1:
-                if pos > 0:
-                    prev_round_no = round_list[pos - 1]
-                if pos < len(round_list) - 1:
-                    next_round_no = round_list[pos + 1]
+        if not seats:
+            flash(f"Für Runde {round_no} ist noch keine Auslosung vorhanden.", "info")
 
     return render_template(
         "tournament_round.html",
