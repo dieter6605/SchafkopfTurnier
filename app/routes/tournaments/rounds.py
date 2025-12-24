@@ -47,7 +47,11 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                     )
                     if last_round_no > 0:
                         return redirect(
-                            url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no)
+                            url_for(
+                                "tournaments.tournament_round_view",
+                                tournament_id=tournament_id,
+                                round_no=last_round_no,
+                            )
                         )
                     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
@@ -59,7 +63,11 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                         "error",
                     )
                     return redirect(
-                        url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no + 1)
+                        url_for(
+                            "tournaments.tournament_round_view",
+                            tournament_id=tournament_id,
+                            round_no=last_round_no + 1,
+                        )
                     )
 
         rows = db.q(
@@ -158,6 +166,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
                     prev_round_no = max(lower) if lower else None
                     next_round_no = min(higher) if higher else None
 
+        # Kartenansicht: nach Tisch/Sitz (A-D) sortiert
         seats = db.q(
             con,
             """
@@ -170,6 +179,24 @@ def tournament_round_view(tournament_id: int, round_no: int):
             WHERE s.tournament_id=? AND s.round_no=?
             ORDER BY s.table_no ASC,
                      CASE s.seat WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END
+            """,
+            (tournament_id, round_no),
+        )
+
+        # Druckansicht: alphabetisch nach Name (stabil, case-insensitive)
+        seats_alpha = db.q(
+            con,
+            """
+            SELECT s.table_no, s.seat, s.tp_id,
+                   tp.player_no,
+                   a.nachname, a.vorname, a.wohnort
+            FROM tournament_seats s
+            JOIN tournament_participants tp ON tp.id=s.tp_id
+            JOIN addresses a ON a.id=tp.address_id
+            WHERE s.tournament_id=? AND s.round_no=?
+            ORDER BY a.nachname COLLATE NOCASE ASC,
+                     a.vorname COLLATE NOCASE ASC,
+                     tp.player_no ASC
             """,
             (tournament_id, round_no),
         )
@@ -196,6 +223,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
         t=t,
         round_no=round_no,
         seats=seats,
+        seats_alpha=seats_alpha,
         reserve=reserve,
         last_round_no=last_round_no,
         prev_round_no=prev_round_no,
