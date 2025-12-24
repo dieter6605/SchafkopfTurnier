@@ -1,9 +1,20 @@
 # app/routes/addresses.py
 from __future__ import annotations
 
+import csv
+import io
+from datetime import datetime
 from typing import Any
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from .. import db
 
@@ -21,6 +32,15 @@ def _to_int(v: Any, default: int = 0) -> int:
 
 def _is_used_in_any_tournament(con, address_id: int) -> bool:
     r = db.one(con, "SELECT 1 FROM tournament_participants WHERE address_id=? LIMIT 1", (address_id,))
+    return bool(r)
+
+
+def _has_any_tournament_refs(con) -> bool:
+    """
+    Import-Replace ist nur sicher, wenn keine Turnier-Referenzen existieren.
+    Sonst würden FK-Restriktionen und/oder Historienbrüche auftreten.
+    """
+    r = db.one(con, "SELECT 1 FROM tournament_participants LIMIT 1")
     return bool(r)
 
 
@@ -69,6 +89,49 @@ def _upsert_wohnort(con, wohnort: str, plz: str | None, ort: str | None) -> None
         """,
         (w, p, o),
     )
+
+
+def _addresses_columns(con) -> list[str]:
+    """
+    Liefert alle Spaltennamen der Tabelle 'addresses' in DB-Reihenfolge.
+    """
+    rows = con.execute("PRAGMA table_info(addresses);").fetchall()
+    return [str(r["name"]) for r in rows]
+
+
+def _norm_none(v: Any) -> Any:
+    """
+    CSV liefert Strings. Wir wandeln leere Strings in None um (für nullable Felder).
+    """
+    if v is None:
+        return None
+    s = str(v)
+    if s.strip() == "":
+        return None
+    return s
+
+
+def _int_or_none(v: Any) -> int | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if s == "":
+        return None
+    try:
+        return int(s)
+    except Exception:
+        return None
+
+
+def _csv_text_response(filename: str, text: str) -> Response:
+    """
+    Liefert CSV als Download. Optional BOM für Excel-Freundlichkeit.
+    """
+    bom = "\ufeff"  # UTF-8 BOM (Excel)
+    data = (bom + text).encode("utf-8")
+    resp = Response(data, mimetype="text/csv; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
 
 
 # -----------------------------------------------------------------------------
@@ -145,6 +208,157 @@ def addresses_list():
         hits=hits,
         latest=latest,
     )
+
+
+# -----------------------------------------------------------------------------
+# Import/Export (CSV)
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/export")
+def addresses_export():
+    """
+    Exportiert alle Adressen des Default-Adressbuchs als CSV.
+    Trennzeichen ';', Header = DB-Spaltennamen, UTF-8 (+BOM).
+    """
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+        cols = _addresses_columns(con)
+
+        rows = db.q(
+            con,
+            f"SELECT {', '.join(cols)} FROM addresses WHERE addressbook_id=? ORDER BY nachname, vorname, id",
+            (default_ab_id,),
+        )
+
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=cols, delimiter=";", lineterminator="\n")
+    w.writeheader()
+    for r in rows:
+        d = {c: (r[c] if c in r.keys() else None) for c in cols}
+        w.writerow(d)
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"addresses-export-{ts}.csv"
+    return _csv_text_response(filename, buf.getvalue())
+
+
+@bp.get("/addresses/import")
+def addresses_import():
+    """
+    Seite für CSV-Import (Replace All).
+    """
+    return render_template("address_import.html")
+
+
+@bp.post("/addresses/import")
+def addresses_import_post():
+    """
+    Importiert CSV (Semikolon, UTF-8) und ersetzt *komplett* alle Adressen
+    im Default-Adressbuch. Niemals Merge/Overwrite.
+    """
+    file = request.files.get("file")
+    if not file:
+        flash("Bitte eine CSV-Datei auswählen.", "error")
+        return redirect(url_for("addresses.addresses_import"))
+
+    # CSV einlesen (UTF-8; BOM optional)
+    raw = file.read()
+    try:
+        text = raw.decode("utf-8-sig")  # akzeptiert UTF-8 mit/ohne BOM
+    except Exception:
+        flash("CSV konnte nicht als UTF-8 gelesen werden.", "error")
+        return redirect(url_for("addresses.addresses_import"))
+
+    buf = io.StringIO(text)
+    reader = csv.DictReader(buf, delimiter=";")
+
+    if not reader.fieldnames:
+        flash("CSV hat keinen Header (Spaltennamen fehlen).", "error")
+        return redirect(url_for("addresses.addresses_import"))
+
+    with db.connect() as con:
+        # Sicherheitsbremse: keine Import-Ersetzung, wenn Turnier-Referenzen existieren
+        if _has_any_tournament_refs(con):
+            flash(
+                "Import ist gesperrt: Es existieren bereits Turnier-Teilnehmerdaten. "
+                "Ein 'Replace All' würde FK-Restriktionen verletzen bzw. Historie zerstören.",
+                "error",
+            )
+            return redirect(url_for("addresses.addresses_import"))
+
+        default_ab_id = _default_ab_id(con)
+        db_cols = _addresses_columns(con)
+
+        csv_cols = [c.strip() for c in reader.fieldnames if c and str(c).strip() != ""]
+
+        # Muss mindestens die Pflichtfelder liefern
+        required = {"nachname", "vorname", "wohnort"}
+        missing_req = [x for x in sorted(required) if x not in set(csv_cols)]
+        if missing_req:
+            flash(f"CSV fehlt Pflichtspalten: {', '.join(missing_req)}.", "error")
+            return redirect(url_for("addresses.addresses_import"))
+
+        # Wir akzeptieren nur DB-Spalten; unbekannte Spalten werden abgewiesen (Planungssicherheit)
+        unknown = [c for c in csv_cols if c not in set(db_cols)]
+        if unknown:
+            flash(f"CSV enthält unbekannte Spalten: {', '.join(unknown)}.", "error")
+            return redirect(url_for("addresses.addresses_import"))
+
+        # Replace All: alle Adressen des Default-Adressbuchs löschen
+        con.execute("DELETE FROM addresses WHERE addressbook_id=?", (default_ab_id,))
+        # wohnorte neu aufbauen (sauber)
+        con.execute("DELETE FROM wohnorte")
+
+        inserted = 0
+        skipped = 0
+
+        # Insert vorbereiten:
+        # - wir setzen addressbook_id IMMER auf default_ab_id
+        # - id wird NICHT importiert (damit keine Kollisionen/Autoincrement-Probleme)
+        insert_cols = [c for c in db_cols if c not in ("id",)]
+        placeholders = ",".join(["?"] * len(insert_cols))
+        sql_ins = f"INSERT INTO addresses({', '.join(insert_cols)}) VALUES ({placeholders})"
+
+        for row in reader:
+            # Pflichtfelder
+            nachname = (row.get("nachname") or "").strip()
+            vorname = (row.get("vorname") or "").strip()
+            wohnort = (row.get("wohnort") or "").strip()
+            if not nachname or not vorname or not wohnort:
+                skipped += 1
+                continue
+
+            # Zeile -> Insert-Werte
+            values: list[Any] = []
+            for c in insert_cols:
+                if c == "addressbook_id":
+                    values.append(default_ab_id)
+                    continue
+
+                v = row.get(c)
+
+                # Integer-Felder (stabil & explizit)
+                if c in ("invite", "participation_count"):
+                    values.append(_int_or_none(v) if _int_or_none(v) is not None else 0 if c == "participation_count" else 1)
+                    continue
+                if c in ("created_at", "updated_at"):
+                    # wenn leer → now
+                    vv = _norm_none(v)
+                    values.append(vv if vv is not None else datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    continue
+
+                # Alles andere als Text/Nullable
+                values.append(_norm_none(v))
+
+            con.execute(sql_ins, tuple(values))
+            inserted += 1
+
+            # wohnorte pflegen (nur wenn wohnort+plz+ort vollständig)
+            _upsert_wohnort(con, wohnort, _norm_none(row.get("plz")), _norm_none(row.get("ort")))
+
+        con.commit()
+
+    flash(f"Import abgeschlossen: {inserted} Adressen importiert, {skipped} Zeilen übersprungen.", "ok")
+    return redirect(url_for("addresses.addresses_list"))
 
 
 # -----------------------------------------------------------------------------
