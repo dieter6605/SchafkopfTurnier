@@ -11,7 +11,6 @@ from .routes.home import bp as home_bp
 from .routes.addresses import bp as addresses_bp
 from .routes.tournaments import bp as tournaments_bp
 from .routes.api import bp as api_bp
-from .routes.wohnorte import bp as wohnorte_bp
 
 
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
@@ -26,7 +25,6 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app.register_blueprint(home_bp)
     app.register_blueprint(addresses_bp)
     app.register_blueprint(tournaments_bp)
-    app.register_blueprint(wohnorte_bp)
     app.register_blueprint(api_bp)
 
     return app
