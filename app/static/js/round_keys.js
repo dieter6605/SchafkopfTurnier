@@ -15,69 +15,57 @@
     return false;
   }
 
-  function clickIf(id) {
+  function clickIfEnabled(id) {
     const el = document.getElementById(id);
-    if (!el || isDisabled(el)) return false;
+    if (!el) return false;
+    if (isDisabled(el)) return false;
     el.click();
     return true;
   }
 
-  // Wenn "Nächste" nicht existiert (disabled), dann "Vorbereiten" nutzen
   function goNextOrPrepare() {
-    if (clickIf("btnNextRound")) return;
-    clickIf("btnPrepareNext");
+    // Wenn "Nächste" existiert -> dahin, sonst "Vorbereiten"
+    if (clickIfEnabled("btnNextRound")) return true;
+    return clickIfEnabled("btnPrepareNext");
   }
 
   document.addEventListener("keydown", function (ev) {
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
     if (isTypingContext()) return;
 
-    const k = String(ev.key || "").toLowerCase();
+    const key = String(ev.key || "");
+    const k = key.toLowerCase();
 
-    // Navigation per Pfeiltasten
-    if (ev.key === "ArrowLeft") {
+    // ESC = zurück zum Turnier
+    if (key === "Escape") {
       ev.preventDefault();
-      clickIf("btnPrevRound");
+      clickIfEnabled("btnBackTournament");
       return;
     }
-    if (ev.key === "ArrowRight") {
+
+    // Pfeile: ←/→ = Vor/Zurück (→ nutzt Vorbereiten, wenn Nächste nicht existiert)
+    if (key === "ArrowLeft") {
+      ev.preventDefault();
+      clickIfEnabled("btnPrevRound");
+      return;
+    }
+    if (key === "ArrowRight") {
       ev.preventDefault();
       goNextOrPrepare();
       return;
     }
 
-    // Escape -> Turnier
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      clickIf("btnBackTournament");
-      return;
-    }
-
-    // T -> Turnier
+    // T = Turnier
     if (k === "t") {
       ev.preventDefault();
-      clickIf("btnBackTournament");
+      clickIfEnabled("btnBackTournament");
       return;
     }
 
-    // Shift+R -> nächste Runde auslosen (confirm hängt am form/onsubmit)
-    if (k === "r" && ev.shiftKey) {
-      ev.preventDefault();
-      clickIf("btnDrawNext");
-      return;
-    }
-
-    // R -> aktuelle Runde auslosen/neu auslosen
-    if (k === "r") {
-      ev.preventDefault();
-      clickIf("btnRedraw");
-      return;
-    }
-
-    // P/N -> Vor/Zurück
+    // P / N = Vor/Zurück (N nutzt Vorbereiten, wenn Nächste nicht existiert)
     if (k === "p") {
       ev.preventDefault();
-      clickIf("btnPrevRound");
+      clickIfEnabled("btnPrevRound");
       return;
     }
     if (k === "n") {
@@ -86,13 +74,26 @@
       return;
     }
 
-    // L -> letzte Runde
-    if (k === "l") {
-      const el = document.getElementById("btnLastRound");
-      if (el && !isDisabled(el)) {
-        ev.preventDefault();
-        el.click();
+    // R = aktuelle Runde auslosen/neu auslosen
+    // Shift+R = nächste Runde auslosen (falls Button vorhanden), sonst aktuelle Runde
+    if (k === "r") {
+      ev.preventDefault();
+      if (ev.shiftKey) {
+        // Neu: wenn "nächste Runde auslosen" nicht vorhanden/disabled -> aktuelle auslosen
+        if (!clickIfEnabled("btnDrawNext")) {
+          clickIfEnabled("btnRedraw");
+        }
+      } else {
+        clickIfEnabled("btnRedraw"); // confirm hängt am formDraw
       }
+      return;
+    }
+
+    // L = letzte Runde
+    if (k === "l") {
+      ev.preventDefault();
+      clickIfEnabled("btnLastRound");
+      return;
     }
   });
 })();

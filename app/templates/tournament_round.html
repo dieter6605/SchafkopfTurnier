@@ -19,8 +19,8 @@
       <span class="fw-semibold">T</span> = Turnier ·
       <span class="fw-semibold">R</span> = Runde auslosen/neu auslosen ·
       <span class="fw-semibold">Shift+R</span> = nächste Runde auslosen ·
-      <span class="fw-semibold">P</span>/<span class="fw-semibold">N</span> = Vor/Zurück ·
-      <span class="fw-semibold">←/→</span> = Vor/Zurück ·
+      <span class="fw-semibold">P</span>/<span class="fw-semibold">←</span> = Zurück ·
+      <span class="fw-semibold">N</span>/<span class="fw-semibold">→</span> = Weiter ·
       <span class="fw-semibold">Esc</span> = Turnier ·
       <span class="fw-semibold">L</span> = Letzte Runde
       <br>
@@ -68,19 +68,11 @@
       </a>
     {% endif %}
 
-    {# Nächste existierende Runde #}
+    {# ✅ Nächste existierende Runde: nur anzeigen, wenn sie existiert #}
     {% if next_round_no %}
       <a class="btn btn-outline-secondary"
          id="btnNextRound"
          href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_round_no) }}">
-        Nächste
-      </a>
-    {% else %}
-      <a class="btn btn-outline-secondary disabled"
-         id="btnNextRound"
-         href="#"
-         aria-disabled="true"
-         tabindex="-1">
         Nächste
       </a>
     {% endif %}
@@ -92,7 +84,7 @@
       Runde {{ round_no + 1 }} vorbereiten
     </a>
 
-    {# Neu: nächste Runde direkt auslosen (mit confirm) #}
+    {# nächste Runde direkt auslosen (mit confirm) #}
     <form method="post"
           id="formDrawNext"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=(round_no + 1)) }}"
