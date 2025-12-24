@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">Adressbuch – Import (CSV)</h3>
+    <div class="text-muted small">
+      Import ersetzt immer komplett alle Adressen im Standard-Adressbuch. Kein Überschreiben/Merge.
+    </div>
+    <div class="text-muted small mt-1">
+      Tastatur:
+      <span class="fw-semibold">Esc</span> zurück ·
+      <span class="fw-semibold">X</span> Export (Vorlage)
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
+    <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    <div class="alert alert-warning">
+      <div class="fw-semibold">Achtung: Replace-All</div>
+      <div class="small">
+        - Die vorhandenen Adressen werden vor dem Import gelöscht und anschließend neu importiert.<br>
+        - Trennzeichen: <strong>;</strong> · Zeichensatz: <strong>UTF-8</strong> · Header: <strong>DB-Feldnamen</strong><br>
+        - Pflichtspalten: <code>nachname</code>, <code>vorname</code>, <code>wohnort</code><br>
+        - Import ist gesperrt, wenn es bereits Turnier-Teilnehmerdaten gibt.
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('addresses.addresses_import_post') }}" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label class="form-label">CSV-Datei auswählen</label>
+        <input class="form-control" type="file" name="file" accept=".csv,text/csv" required>
+        <div class="form-text">
+          Tipp: Nutze zuerst <strong>Export</strong>, bearbeite die Datei, importiere sie dann wieder.
+        </div>
+      </div>
+
+      <button class="btn btn-danger"
+              id="btnAddrImportStart"
+              type="submit"
+              onclick="return confirm('Wirklich importieren?\n\nHinweis: Alle vorhandenen Adressen im Standard-Adressbuch werden gelöscht und neu importiert.');">
+        Import starten (Replace All)
+      </button>
+    </form>
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/addresses_keys.js') }}"></script>
+{% endblock %}
