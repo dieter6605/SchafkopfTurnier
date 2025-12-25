@@ -26,7 +26,7 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     # Globales Standard-Logo (liegt unter app/static/branding/)
     # - Einmal hier konfigurieren, dann in allen Templates verfügbar.
     # -------------------------------------------------------------------------
-    app.config["SKT_SITE_LOGO"] = "branding/logo.png"  # z.B. "branding/sfb-wappen.jpeg"
+    app.config["SKT_SITE_LOGO"] = "branding/image.png"  # z.B. "branding/sfb-wappen.jpeg"
 
     @app.context_processor
     def inject_branding():

@@ -1,6 +1,16 @@
 {% extends "layout.html" %}
 {% block content %}
 
+{% if site_logo %}
+  <div class="text-center mb-4">
+    <img
+      src="{{ url_for('static', filename=site_logo) }}"
+      alt="Logo"
+      class="img-fluid"
+      style="max-height: 280px; width: auto;">
+  </div>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-body">
     <h3 class="mb-2">Start</h3>
