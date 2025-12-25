@@ -27,10 +27,14 @@
       Runde
     </a>
 
-    {# NEU: Rundenwertung #}
     <a class="btn btn-outline-primary"
        href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
       Rundenwertung
+    </a>
+
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+      Gesamtwertung
     </a>
   </div>
 </div>

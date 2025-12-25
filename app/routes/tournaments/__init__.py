@@ -10,3 +10,4 @@ from . import pages  # noqa: E402,F401
 from . import rounds  # noqa: E402,F401
 from . import participants  # noqa: E402,F401
 from . import results  # noqa: E402,F401
+from . import standings  # noqa: E402,F401

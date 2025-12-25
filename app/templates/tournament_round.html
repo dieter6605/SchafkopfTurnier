@@ -112,13 +112,23 @@
       Drucken
     </button>
 
-    {# ✅ Neu: Ergebnisse erfassen #}
+    {# ✅ Direkt-Links von Runde #}
     {% if current_drawn %}
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
-        Ergebnisse erfassen
+        Ergebnisseingabe
+      </a>
+
+      <a class="btn btn-outline-primary"
+         href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
+        Rundenwertung
       </a>
     {% endif %}
+
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+      Gesamtwertung
+    </a>
 
     {# Draw/Redraw aktuelle Runde #}
     <form method="post"
@@ -342,6 +352,11 @@
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
         Runde {{ round_no + 1 }} vorbereiten
+      </a>
+
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+        Gesamtwertung
       </a>
     </div>
   </div>

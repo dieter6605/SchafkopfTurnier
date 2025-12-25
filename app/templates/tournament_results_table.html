@@ -45,6 +45,17 @@
        href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
       Tischübersicht
     </a>
+
+    <a class="btn btn-outline-primary"
+       href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
+      Rundenwertung
+    </a>
+
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+      Gesamtwertung
+    </a>
+
     {% if next_table %}
       <a class="btn btn-outline-secondary"
          href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">
@@ -167,7 +178,6 @@
       inp.classList.remove("is-invalid", "is-valid");
 
       if (n === null) {
-        // leer => noch nicht fertig, aber ok
         continue;
       }
       if (Number.isNaN(n)) {
@@ -181,7 +191,6 @@
       inp.classList.add("is-valid");
     }
 
-    // Anzeige
     if (filled === 0 && !hasInvalid) {
       sumValueEl.textContent = "—";
       sumStateEl.textContent = "";
@@ -205,7 +214,6 @@
 
     sumValueEl.textContent = String(total);
 
-    // Speichern erst erlauben wenn alle 4 gefüllt sind und total==0
     const ready = (filled === 4);
 
     if (!ready) {
@@ -235,7 +243,6 @@
     }
   }
 
-  // Tastatur: Enter/↓ = nächstes Feld, ↑ = vorheriges
   function moveFocus(cur, dir) {
     const all = [...pointsInputs, ...soliInputs];
     const idx = all.indexOf(cur);
@@ -251,7 +258,6 @@
     const target = e.target;
     if (!(target instanceof HTMLInputElement)) return;
 
-    // Enter soll NICHT submitten, sondern weiter
     if (e.key === "Enter") {
       e.preventDefault();
       moveFocus(target, +1);
@@ -269,7 +275,6 @@
     }
   }
 
-  // Live-Update beim Tippen
   for (const inp of pointsInputs) {
     inp.addEventListener("input", updateSumUI);
     inp.addEventListener("change", updateSumUI);
@@ -279,15 +284,12 @@
     inp.addEventListener("keydown", onKeyDown);
   }
 
-  // Initial: Buttons sperren bis ok
   updateSumUI();
 
-  // Zusätzliche Sicherheit: falls jemand per Enter doch submit versucht etc.
   form.addEventListener("submit", function(e) {
     updateSumUI();
     if (btnSave.disabled) {
       e.preventDefault();
-      // Fokus auf erstes ungültiges oder erstes Punktefeld
       const bad = document.querySelector("input.sk-points.is-invalid") || pointsInputs[0];
       if (bad) { bad.focus(); bad.select?.(); }
     }
