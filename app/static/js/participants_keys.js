@@ -152,7 +152,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Turnierteilnehmer: Auswahl + Shift+Entf (Standard-Entfernen)
+  // Turnierteilnehmer: Auswahl + Shift+Entf (Entfernen ohne Renummerierung)
   // ---------------------------------------------------------------------------
   function partRows() {
     return qsa("#participantsBody tr.sk-part");
@@ -212,8 +212,9 @@
     const form = document.getElementById(formId);
     if (!form) return;
 
+    // Wichtig: Confirm-Dialog hängt am Button onclick im Template.
     const btn = form.querySelector("button[type='submit']");
-    if (btn) btn.click(); // confirm() steckt am onclick
+    if (btn) btn.click();
   }
 
   function onKeyDown(ev) {
@@ -256,7 +257,7 @@
       // Wichtig: Enter soll in der Teilnehmerliste sonst NICHTS tun.
     }
 
-    // ✅ Löschen NUR mit Shift + Delete (Entf)
+    // ✅ Löschen NUR mit Shift + Delete (Entf) -> Entfernen (ohne Renummerierung)
     // Mac: Taste heißt oft "Delete"; Windows: "Delete"
     if (ev.shiftKey && String(ev.key || "").toLowerCase() === "delete") {
       if (isTypingContext()) return; // nie in Eingabefeldern

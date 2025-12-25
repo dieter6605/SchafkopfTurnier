@@ -191,7 +191,10 @@ def tournament_participant_quickadd(tournament_id: int):
 
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
 def tournament_participant_remove(tournament_id: int, tp_id: int):
-    renumber = _to_int(request.form.get("renumber"), 1)  # Default = 1
+    # ✅ NEU: Standard ist "NICHT renummerieren" -> Nummernlücke bleibt bestehen.
+    # Renummerierung passiert nur noch, wenn explizit renumber=1 gesendet wird
+    # (z.B. falls du später wieder eine Option einbauen willst).
+    renumber = _to_int(request.form.get("renumber"), 0)  # Default = 0
     q = (request.form.get("q") or request.args.get("q") or "").strip()
 
     with db.connect() as con:
