@@ -2,130 +2,359 @@
 {% extends "layout.html" %}
 {% block content %}
 
-{% if home_image %}
-  <div class="text-center mb-4">
-    <img
-      src="{{ url_for('static', filename=home_image) }}"
-      alt="Startbild"
-      class="img-fluid"
-      style="max-height: 280px; width: auto;">
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">SchafkopfTurnier</h3>
+    <div class="text-muted small">Dashboard · nächster sinnvoller Schritt zuerst</div>
   </div>
-{% endif %}
 
-<div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <h3 class="mb-2">Start</h3>
-    <div class="text-muted mb-3">
-      Basis läuft. Nächster Schritt: Adressbuch + Turniere als Module.
-    </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if dash.next_tournament %}
+      <a class="btn btn-primary"
+         href="{{ url_for('tournaments.tournament_participants', tournament_id=dash.next_tournament.id) }}">
+        Weiterarbeiten (Teilnehmer erfassen)
+      </a>
+    {% else %}
+      <a class="btn btn-primary" href="{{ url_for('tournaments.tournaments_list') }}">
+        Turniere öffnen
+      </a>
+    {% endif %}
 
-    <form method="post" action="{{ url_for('home.backup') }}">
-      <button class="btn btn-outline-primary">DB-Backup jetzt erstellen</button>
-    </form>
+    <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('home.help_readme') }}">Hilfe</a>
   </div>
 </div>
 
-<!-- Backup-Upload nur sinnvoll, wenn backup_dir gesetzt ist -->
-<div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <h5 class="mb-2">Backup hochladen</h5>
+<div class="row g-3 mb-3">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="text-muted small">Nächstes Turnier</div>
+          {% if dash.next_tournament %}
+            <span class="badge text-bg-primary">{{ day_label(dash.next_tournament.event_date) }}</span>
+          {% endif %}
+        </div>
 
-    {% if not backup_dir %}
-      <div class="text-muted">Backup-Verzeichnis ist nicht gesetzt.</div>
-    {% else %}
-      <div class="text-muted small mb-2">
-        Upload-Ziel: <span class="font-monospace">{{ backup_dir }}</span>
+        {% if dash.next_tournament %}
+          <div class="mt-1" style="font-size:1.35rem;font-weight:800;">
+            {{ dash.next_tournament.title }}
+          </div>
+          <div class="text-muted">
+            {{ dash.next_tournament.event_date }} · {{ dash.next_tournament.start_time }}
+          </div>
+
+          <div class="mt-2 d-flex justify-content-between">
+            <div class="text-muted">Teilnehmer erfasst</div>
+            <div class="fw-semibold">{{ dash.next_participants }}</div>
+          </div>
+
+          <div class="mt-3 d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-primary"
+               href="{{ url_for('tournaments.tournament_participants', tournament_id=dash.next_tournament.id) }}">
+              Teilnehmer erfassen
+            </a>
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('tournaments.tournament_detail', tournament_id=dash.next_tournament.id) }}">
+              Turnier öffnen
+            </a>
+          </div>
+        {% else %}
+          <div class="mt-2 text-muted">Kein zukünftiges Turnier gefunden.</div>
+          <div class="mt-3">
+            <a class="btn btn-sm btn-primary" href="{{ url_for('tournaments.tournaments_list') }}">
+              Turnier anlegen / auswählen
+            </a>
+          </div>
+        {% endif %}
       </div>
+    </div>
+  </div>
 
-      <form method="post"
-            enctype="multipart/form-data"
-            class="d-flex gap-2 flex-wrap align-items-center">
-        <input class="form-control"
-               type="file"
-               name="backup_file"
-               accept=".sqlite3"
-               required
-               style="max-width: 520px;">
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="text-muted small">Letztes Turnier</div>
+          {% if dash.last_tournament %}
+            <span class="badge text-bg-secondary">{{ day_label(dash.last_tournament.event_date) }}</span>
+          {% endif %}
+        </div>
 
-        <button class="btn btn-outline-secondary"
-                formaction="{{ url_for('home.upload_only') }}">
-          Nur hochladen
-        </button>
+        {% if dash.last_tournament %}
+          <div class="mt-1" style="font-size:1.35rem;font-weight:800;">
+            {{ dash.last_tournament.title }}
+          </div>
+          <div class="text-muted">
+            {{ dash.last_tournament.event_date }} · {{ dash.last_tournament.start_time }}
+          </div>
 
-        <button class="btn btn-outline-danger"
-                formaction="{{ url_for('home.restore_upload') }}"
-                onclick="return confirm('Backup hochladen und wiederherstellen?\\n\\nACHTUNG: Aktuelle Daten werden ersetzt.');">
-          Hochladen + wiederherstellen
-        </button>
-      </form>
+          <div class="mt-2 d-flex justify-content-between">
+            <div class="text-muted">Teilnehmer erfasst</div>
+            <div class="fw-semibold">{{ dash.last_participants }}</div>
+          </div>
 
-      <div class="text-muted small mt-2">
-        Hinweis: Es wird eine <span class="font-monospace">*.sqlite3</span>-Datei erwartet.
+          <div class="mt-3 d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-primary"
+               href="{{ url_for('tournaments.tournament_participants', tournament_id=dash.last_tournament.id) }}">
+              Teilnehmerliste
+            </a>
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('tournaments.tournament_detail', tournament_id=dash.last_tournament.id) }}">
+              Turnier öffnen
+            </a>
+          </div>
+        {% else %}
+          <div class="mt-2 text-muted">Noch kein Turnier vorhanden.</div>
+        {% endif %}
       </div>
-    {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small mb-2">Überblick</div>
+
+        <div class="d-flex justify-content-between">
+          <div class="text-muted">Turniere</div>
+          <div class="fw-semibold">{{ dash.tournaments_total }}</div>
+        </div>
+        <div class="d-flex justify-content-between">
+          <div class="text-muted">Adressen (gesamt)</div>
+          <div class="fw-semibold">{{ dash.addresses_total }}</div>
+        </div>
+        <div class="d-flex justify-content-between">
+          <div class="text-muted">Adressen (aktiv)</div>
+          <div class="fw-semibold">{{ dash.addresses_active }}</div>
+        </div>
+
+        <hr>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_import') }}">CSV-Import</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_export') }}">CSV-Export</a>
+          <form method="post" action="{{ url_for('home.backup') }}">
+            <button class="btn btn-sm btn-outline-primary" {% if not backup_dir %}disabled{% endif %}>
+              Backup
+            </button>
+          </form>
+        </div>
+
+        {% if not backup_dir %}
+          <div class="text-muted small mt-2">
+            Hinweis: <span class="font-monospace">SKT_BACKUP_DIR</span> ist nicht gesetzt.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="mb-2">Nächste Turniere</h5>
+
+        {% if dash.upcoming and dash.upcoming|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-striped mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Turnier</th>
+                  <th style="width:160px;">Datum</th>
+                  <th class="text-end" style="width:110px;">Teiln.</th>
+                  <th class="text-end" style="width:220px;">Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trow in dash.upcoming %}
+                  <tr>
+                    <td class="fw-semibold">{{ trow.title }}</td>
+                    <td class="text-muted">
+                      {{ trow.event_date }} · {{ trow.start_time }}
+                      <span class="badge text-bg-light border ms-2">{{ day_label(trow.event_date) }}</span>
+                    </td>
+                    <td class="text-end fw-semibold">
+                      {{ dash.counts_by_tid.get(trow.id, 0) }}
+                    </td>
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2 flex-wrap">
+                        <a class="btn btn-sm btn-primary"
+                           href="{{ url_for('tournaments.tournament_participants', tournament_id=trow.id) }}">
+                          Teilnehmer
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('tournaments.tournament_detail', tournament_id=trow.id) }}">
+                          Turnier
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted">Keine zukünftigen Turniere.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="mb-2">Zuletzt</h5>
+
+        {% if dash.recent and dash.recent|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-striped mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Turnier</th>
+                  <th style="width:160px;">Datum</th>
+                  <th class="text-end" style="width:110px;">Teiln.</th>
+                  <th class="text-end" style="width:220px;">Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trow in dash.recent %}
+                  <tr>
+                    <td class="fw-semibold">{{ trow.title }}</td>
+                    <td class="text-muted">
+                      {{ trow.event_date }} · {{ trow.start_time }}
+                      <span class="badge text-bg-light border ms-2">{{ day_label(trow.event_date) }}</span>
+                    </td>
+                    <td class="text-end fw-semibold">
+                      {{ dash.counts_by_tid.get(trow.id, 0) }}
+                    </td>
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2 flex-wrap">
+                        <a class="btn btn-sm btn-outline-primary"
+                           href="{{ url_for('tournaments.tournament_participants', tournament_id=trow.id) }}">
+                          Teilnehmer
+                        </a>
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('tournaments.tournament_detail', tournament_id=trow.id) }}">
+                          Turnier
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted">Noch keine Turniere vorhanden.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="card shadow-sm">
   <div class="card-body">
-    <h5 class="mb-2">Backups</h5>
-
-    {% if not backup_dir %}
-      <div class="text-muted">Backup-Verzeichnis ist nicht gesetzt.</div>
-    {% else %}
-      <div class="text-muted small mb-2">
-        Verzeichnis: <span class="font-monospace">{{ backup_dir }}</span>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <h5 class="mb-0">Backups</h5>
+        {% if backup_dir %}
+          <div class="text-muted small">Verzeichnis: <span class="font-monospace">{{ backup_dir }}</span></div>
+        {% else %}
+          <div class="text-muted small">Backup-Verzeichnis ist nicht gesetzt.</div>
+        {% endif %}
       </div>
 
-      {% if backups and backups|length > 0 %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Datei</th>
-                <th style="width:120px;">Größe</th>
-                <th style="width:190px;">Datum</th>
-                <th style="width:320px;" class="text-end">Aktionen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for b in backups %}
-                <tr>
-                  <td class="font-monospace">{{ b.name }}</td>
-                  <td class="font-monospace">{{ b.size_h if b.size_h is defined else b.size }}</td>
-                  <td class="font-monospace">{{ b.mtime_h if b.mtime_h is defined else b.mtime }}</td>
-                  <td class="text-end">
-                    <div class="d-flex gap-2 justify-content-end flex-wrap">
+      <button class="btn btn-sm btn-outline-secondary"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#backupTools"
+              aria-expanded="false"
+              aria-controls="backupTools">
+        Upload / Restore
+      </button>
+    </div>
 
-                      <a class="btn btn-sm btn-outline-secondary"
-                         href="{{ url_for('home.download_backup', filename=b.name) }}">
-                        Download
-                      </a>
-
-                      <form method="post" action="{{ url_for('home.restore', filename=b.name) }}" class="d-inline">
-                        <button class="btn btn-sm btn-outline-danger"
-                                onclick="return confirm('Backup wiederherstellen?\\n\\n{{ b.name }}\\n\\nACHTUNG: Aktuelle Daten werden ersetzt.');">
-                          Wiederherstellen
-                        </button>
-                      </form>
-
-                      <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}" class="d-inline">
-                        <button class="btn btn-sm btn-outline-dark"
-                                onclick="return confirm('Backup wirklich löschen?\\n\\n{{ b.name }}');">
-                          Löschen
-                        </button>
-                      </form>
-
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+    <div class="collapse mt-3" id="backupTools">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="border rounded p-3">
+            <div class="fw-semibold mb-2">Backup hochladen (nur speichern)</div>
+            <form method="post" action="{{ url_for('home.upload_only') }}" enctype="multipart/form-data">
+              <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
+              <button class="btn btn-sm btn-outline-secondary mt-2" {% if not backup_dir %}disabled{% endif %}>
+                Hochladen
+              </button>
+            </form>
+          </div>
         </div>
-      {% else %}
-        <div class="text-muted">Noch keine Backups vorhanden.</div>
-      {% endif %}
+
+        <div class="col-lg-6">
+          <div class="border rounded p-3">
+            <div class="fw-semibold mb-2">Upload + sofort wiederherstellen</div>
+            <form method="post" action="{{ url_for('home.restore_upload') }}" enctype="multipart/form-data">
+              <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
+              <button class="btn btn-sm btn-outline-danger mt-2"
+                      {% if not backup_dir %}disabled{% endif %}
+                      onclick="return confirm('Upload wirklich einspielen?\\n\\nTipp: App ggf. neu starten');">
+                Upload wiederherstellen
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if backups and backups|length > 0 %}
+      <hr class="my-3">
+      <div class="table-responsive">
+        <table class="table table-striped mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>Datei</th>
+              <th style="width:170px;">Datum</th>
+              <th style="width:120px;">Größe</th>
+              <th class="text-end" style="width:260px;">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in backups %}
+              <tr>
+                <td class="font-monospace">{{ b.name }}</td>
+                <td class="text-muted">{{ b.mtime_h }}</td>
+                <td class="text-muted">{{ b.size_h }}</td>
+                <td class="text-end">
+                  <div class="d-flex justify-content-end gap-2 flex-wrap">
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('home.download_backup', filename=b.name) }}">
+                      Download
+                    </a>
+
+                    <form method="post" action="{{ url_for('home.restore', filename=b.name) }}">
+                      <button class="btn btn-sm btn-outline-warning"
+                              onclick="return confirm('Backup wirklich wiederherstellen?\\n\\nTipp: App ggf. neu starten');">
+                        Restore
+                      </button>
+                    </form>
+
+                    <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}">
+                      <button class="btn btn-sm btn-outline-danger"
+                              onclick="return confirm('Backup wirklich löschen?');">
+                        Löschen
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-muted mt-3">Noch keine Backups vorhanden.</div>
     {% endif %}
   </div>
 </div>

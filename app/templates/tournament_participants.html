@@ -7,9 +7,10 @@
   .sk-selected { outline: 3px solid rgba(13,110,253,.45); border-radius: 10px; }
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
-  /* Teilnehmerzeilen wählbar machen */
   .sk-part { cursor: pointer; }
+
+  /* Dezent: Edit-Zeile */
+  .sk-edit-row td { background: rgba(13,110,253,.04); }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -39,7 +40,6 @@
         <div class="text-muted small mb-1">Teilnehmernummern</div>
 
         <div class="d-flex gap-2 flex-wrap align-items-center">
-          <!-- Prüfen -->
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
             <input type="hidden" name="q" value="{{ q or '' }}">
@@ -49,7 +49,6 @@
             </button>
           </form>
 
-          <!-- Komplett neu 1..N -->
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
             <input type="hidden" name="q" value="{{ q or '' }}">
@@ -60,7 +59,6 @@
             </button>
           </form>
 
-          <!-- Neu: ab Nummer X -->
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_renumber_from', tournament_id=t.id) }}"
                 class="d-flex gap-2 align-items-center">
@@ -277,7 +275,6 @@
                 <span class="text-muted">· {{ p.wohnort }}</span>
                 <div class="text-muted small">
                   <span class="sk-mono">#{{ p.address_id }}</span>
-                  {% if p.telefon %} · ☎ {{ p.telefon }}{% endif %}
                   {% if p.email %} · ✉ {{ p.email }}{% endif %}
                 </div>
               </td>
@@ -285,11 +282,21 @@
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2 flex-wrap">
 
-                  <!-- Adresse bearbeiten + Rücksprung zur markierten Zeile -->
-                  <a class="btn btn-sm btn-outline-primary"
+                  <!-- Inline-Edit Toggle -->
+                  <button class="btn btn-sm btn-outline-primary"
+                          type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#editAddr{{ p.id }}"
+                          aria-expanded="false"
+                          aria-controls="editAddr{{ p.id }}">
+                    Inline bearbeiten
+                  </button>
+
+                  <!-- Optional: Vollmaske -->
+                  <a class="btn btn-sm btn-outline-secondary"
                      href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
-                     title="Adressdaten bearbeiten">
-                    Adresse bearbeiten
+                     title="Adressmaske öffnen">
+                    Maske
                   </a>
 
                   <!-- Swap (Nummer bleibt) -->
@@ -317,6 +324,69 @@
                     </button>
                   </form>
 
+                </div>
+              </td>
+            </tr>
+
+            {# Inline-Edit Row #}
+            <tr class="sk-edit-row">
+              <td colspan="3" class="p-0">
+                <div class="collapse" id="editAddr{{ p.id }}">
+                  <div class="p-3 border-top">
+                    <form method="post"
+                          action="{{ url_for('tournaments.tournament_participant_address_update', tournament_id=t.id, tp_id=p.id) }}"
+                          class="row g-2">
+                      <input type="hidden" name="q" value="{{ q or '' }}">
+                      <input type="hidden" name="next" value="{{ request.full_path ~ '#tp' ~ p.id }}">
+
+                      <div class="col-md-3">
+                        <label class="form-label">Nachname *</label>
+                        <input class="form-control" name="nachname" value="{{ p.nachname }}" required>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Vorname *</label>
+                        <input class="form-control" name="vorname" value="{{ p.vorname }}" required>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">Wohnort *</label>
+                        <input class="form-control sk-wohnort-input"
+                               name="wohnort" value="{{ p.wohnort }}" required autocomplete="off"
+                               data-plz-id="plz{{ p.id }}"
+                               data-ort-id="ort{{ p.id }}">
+                        <div class="form-text">Autocomplete aus Wohnort-Tabelle</div>
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label">E-Mail</label>
+                        <input class="form-control" name="email" value="{{ p.email or '' }}">
+                      </div>
+
+                      <div class="col-md-2">
+                        <label class="form-label">PLZ</label>
+                        <input class="form-control" id="plz{{ p.id }}" name="plz" value="{{ p.plz or '' }}">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label">Ort</label>
+                        <input class="form-control" id="ort{{ p.id }}" name="ort" value="{{ p.ort or '' }}">
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label">Straße</label>
+                        <input class="form-control" name="strasse" value="{{ p.strasse or '' }}">
+                      </div>
+                      <div class="col-md-2">
+                        <label class="form-label">Hausnr.</label>
+                        <input class="form-control" name="hausnummer" value="{{ p.hausnummer or '' }}">
+                      </div>
+
+                      <div class="col-12 d-flex gap-2 flex-wrap mt-2">
+                        <button class="btn btn-primary" type="submit">Speichern</button>
+                        <button class="btn btn-outline-secondary" type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#editAddr{{ p.id }}">
+                          Schließen
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               </td>
             </tr>

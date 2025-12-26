@@ -45,12 +45,12 @@ def tournament_participants(tournament_id: int):
         hits = [h for h in hits if int(h["id"]) not in already_ids]
 
         # ✅ Sortierung: neueste erfasste Teilnehmer oben
-        # Primär: created_at (neueste zuerst), sekundär id (falls Zeitstempel gleich)
         participants = db.q(
             con,
             """
             SELECT tp.*,
                    a.nachname, a.vorname, a.wohnort,
+                   a.plz, a.ort, a.strasse, a.hausnummer,
                    a.telefon, a.email, a.status
             FROM tournament_participants tp
             JOIN addresses a ON a.id=tp.address_id
@@ -191,11 +191,87 @@ def tournament_participant_quickadd(tournament_id: int):
     return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
 
+# -----------------------------------------------------------------------------
+# Inline-Edit: Adressdaten direkt aus Teilnehmerliste bearbeiten
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/address/update")
+def tournament_participant_address_update(tournament_id: int, tp_id: int):
+    f = request.form
+    q = (f.get("q") or "").strip()
+    nxt = (f.get("next") or "").strip()
+
+    nachname = (f.get("nachname") or "").strip()
+    vorname = (f.get("vorname") or "").strip()
+    wohnort = (f.get("wohnort") or "").strip()
+
+    if not nachname or not vorname or not wohnort:
+        flash("Pflichtfelder fehlen (Nachname, Vorname, Wohnort).", "error")
+        return redirect(nxt or url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
+    plz = (f.get("plz") or "").strip() or None
+    ort = (f.get("ort") or "").strip() or None
+    strasse = (f.get("strasse") or "").strip() or None
+    hausnummer = (f.get("hausnummer") or "").strip() or None
+    email = (f.get("email") or "").strip() or None
+
+    with db.connect() as con:
+        tp = db.one(
+            con,
+            """
+            SELECT id, tournament_id, address_id
+            FROM tournament_participants
+            WHERE id=? AND tournament_id=?
+            """,
+            (tp_id, tournament_id),
+        )
+        if not tp:
+            flash("Teilnehmer nicht gefunden.", "error")
+            return redirect(nxt or url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
+        address_id = int(tp["address_id"])
+
+        # Adresse aktualisieren
+        con.execute(
+            """
+            UPDATE addresses
+            SET nachname=?,
+                vorname=?,
+                wohnort=?,
+                plz=?,
+                ort=?,
+                strasse=?,
+                hausnummer=?,
+                email=?,
+                updated_at=datetime('now')
+            WHERE id=?
+            """,
+            (nachname, vorname, wohnort, plz, ort, strasse, hausnummer, email, address_id),
+        )
+
+        # Wohnort-Lookup pflegen (nur wenn wohnort+plz+ort vollständig)
+        _upsert_wohnort(con, wohnort, plz, ort)
+
+        # display_name im Turnier aktualisieren (damit es konsistent bleibt)
+        a = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
+        if a:
+            con.execute(
+                """
+                UPDATE tournament_participants
+                SET display_name=?,
+                    updated_at=datetime('now')
+                WHERE id=? AND tournament_id=?
+                """,
+                (_display_name(a), tp_id, tournament_id),
+            )
+
+        con.commit()
+
+    flash("Adressdaten gespeichert.", "ok")
+    return redirect(nxt or url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
+
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
 def tournament_participant_remove(tournament_id: int, tp_id: int):
-    # ✅ NEU: Standard ist "NICHT renummerieren" -> Nummernlücke bleibt bestehen.
-    # Renummerierung passiert nur noch, wenn explizit renumber=1 gesendet wird
-    # (z.B. falls du später wieder eine Option einbauen willst).
     renumber = _to_int(request.form.get("renumber"), 0)  # Default = 0
     q = (request.form.get("q") or request.args.get("q") or "").strip()
 
