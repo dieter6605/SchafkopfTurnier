@@ -108,10 +108,13 @@
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
           <li>
-            <a class="dropdown-item" href="{{ url_for('help.readme') }}">Lies mich</a>
+            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='readme') }}">Lies mich</a>
           </li>
           <li>
-            <a class="dropdown-item" href="{{ url_for('help.anleitung') }}">Anleitung</a>
+            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='anleitung') }}">Anleitung</a>
+          </li>
+          <li>
+            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='installation') }}">Installation</a>
           </li>
         </ul>
       </div>

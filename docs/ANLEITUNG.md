@@ -113,9 +113,9 @@ Gesamtwertung
 Druckausgabe
 - Zwei Spalten (A4)
 - Format:
-'''text
+```text
 Platz | Name | Punkte (Soli)
-'''
+```
 
 ## 10. Tastatur-Shortcuts (wichtig!)
 
