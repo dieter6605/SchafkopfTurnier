@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
+from typing import Iterable
 
 from flask import (
     Blueprint,
@@ -33,7 +34,6 @@ _DOCS_MAP = {
 
 
 def _project_root() -> Path:
-    # .../app/routes/home.py -> .../<projektroot>
     return Path(__file__).resolve().parents[2]
 
 
@@ -45,20 +45,138 @@ def _render_markdown_file(md_path: Path) -> str:
     md_text = md_path.read_text(encoding="utf-8")
     return markdown.markdown(
         md_text,
-        extensions=[
-            "fenced_code",
-            "tables",
-            "toc",
-            "sane_lists",
-        ],
+        extensions=["fenced_code", "tables", "toc", "sane_lists"],
     )
+
+
+# -----------------------------------------------------------------------------
+# Dashboard-Helpers
+# -----------------------------------------------------------------------------
+def _default_ab_id(con) -> int:
+    dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
+    return int(dab["id"]) if dab else 1
+
+
+def _count(con, sql: str, params: tuple = ()) -> int:
+    r = db.one(con, sql, params)
+    try:
+        return int((r["c"] if r else 0) or 0)
+    except Exception:
+        return 0
+
+
+def _parse_iso_date(d: str | None) -> date | None:
+    if not d:
+        return None
+    s = str(d).strip()
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s)
+    except Exception:
+        return None
+
+
+def _day_label(iso_date: str | None) -> str:
+    d = _parse_iso_date(iso_date)
+    if not d:
+        return ""
+    today = date.today()
+    delta = (d - today).days
+    if delta == 0:
+        return "Heute"
+    if delta == 1:
+        return "Morgen"
+    if delta == -1:
+        return "Gestern"
+    if delta > 1:
+        return f"in {delta} Tagen"
+    return f"vor {abs(delta)} Tagen"
+
+
+def _get_next_tournament(con) -> dict | None:
+    today = date.today().isoformat()
+    return db.one(
+        con,
+        """
+        SELECT *
+        FROM tournaments
+        WHERE event_date >= ?
+        ORDER BY event_date ASC, start_time ASC, id ASC
+        LIMIT 1
+        """,
+        (today,),
+    )
+
+
+def _get_last_tournament(con) -> dict | None:
+    today = date.today().isoformat()
+    return db.one(
+        con,
+        """
+        SELECT *
+        FROM tournaments
+        WHERE event_date < ?
+        ORDER BY event_date DESC, start_time DESC, id DESC
+        LIMIT 1
+        """,
+        (today,),
+    )
+
+
+def _list_upcoming(con, limit: int = 5) -> list[dict]:
+    today = date.today().isoformat()
+    return db.q(
+        con,
+        """
+        SELECT *
+        FROM tournaments
+        WHERE event_date >= ?
+        ORDER BY event_date ASC, start_time ASC, id ASC
+        LIMIT ?
+        """,
+        (today, int(limit)),
+    )
+
+
+def _list_recent(con, limit: int = 5) -> list[dict]:
+    return db.q(
+        con,
+        """
+        SELECT *
+        FROM tournaments
+        ORDER BY event_date DESC, start_time DESC, id DESC
+        LIMIT ?
+        """,
+        (int(limit),),
+    )
+
+
+def _participants_counts_for(con, tournament_ids: Iterable[int]) -> dict[int, int]:
+    ids = [int(x) for x in tournament_ids if int(x) > 0]
+    if not ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(ids))
+    rows = db.q(
+        con,
+        f"""
+        SELECT tournament_id, COUNT(*) AS c
+        FROM tournament_participants
+        WHERE tournament_id IN ({placeholders})
+        GROUP BY tournament_id
+        """,
+        tuple(ids),
+    )
+    out: dict[int, int] = {int(r["tournament_id"]): int(r["c"] or 0) for r in rows}
+    return out
 
 
 # -----------------------------------------------------------------------------
 # Backups
 # -----------------------------------------------------------------------------
 def _is_allowed_backup_name(name: str) -> bool:
-    safe = Path(name).name  # keine Pfade zulassen
+    safe = Path(name).name
     if not safe.lower().endswith(".sqlite3"):
         return False
     return safe.startswith("skt-backup-") or safe.startswith("skt-upload-")
@@ -108,13 +226,83 @@ def _list_backups(backup_dir: Path) -> list[dict]:
     return out
 
 
+# -----------------------------------------------------------------------------
+# Startseite
+# -----------------------------------------------------------------------------
 @bp.get("/")
 def home():
+    # Backups
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     backups: list[dict] = []
     if bdir:
         backups = _list_backups(Path(bdir))
-    return render_template("home.html", backups=backups, backup_dir=bdir)
+
+    dash = {
+        "tournaments_total": 0,
+        "addresses_total": 0,
+        "addresses_active": 0,
+        "next_tournament": None,
+        "last_tournament": None,
+        "next_participants": 0,
+        "last_participants": 0,
+        "upcoming": [],
+        "recent": [],
+        "counts_by_tid": {},
+    }
+
+    try:
+        with db.connect() as con:
+            dash["tournaments_total"] = _count(con, "SELECT COUNT(*) AS c FROM tournaments")
+
+            ab_id = _default_ab_id(con)
+            dash["addresses_total"] = _count(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?",
+                (ab_id,),
+            )
+            dash["addresses_active"] = _count(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status='aktiv'",
+                (ab_id,),
+            )
+
+            nt = _get_next_tournament(con)
+            lt = _get_last_tournament(con)
+
+            dash["next_tournament"] = nt
+            dash["last_tournament"] = lt
+
+            upcoming = _list_upcoming(con, 5)
+            recent = _list_recent(con, 5)
+
+            dash["upcoming"] = upcoming
+            dash["recent"] = recent
+
+            all_ids = []
+            if nt:
+                all_ids.append(int(nt["id"]))
+            if lt:
+                all_ids.append(int(lt["id"]))
+            all_ids.extend([int(x["id"]) for x in upcoming])
+            all_ids.extend([int(x["id"]) for x in recent])
+
+            counts_by_tid = _participants_counts_for(con, all_ids)
+            dash["counts_by_tid"] = counts_by_tid
+
+            if nt:
+                dash["next_participants"] = int(counts_by_tid.get(int(nt["id"]), 0))
+            if lt:
+                dash["last_participants"] = int(counts_by_tid.get(int(lt["id"]), 0))
+    except Exception:
+        pass
+
+    return render_template(
+        "home.html",
+        backups=backups,
+        backup_dir=bdir,
+        dash=dash,
+        day_label=_day_label,  # Jinja kann die Funktion direkt nutzen
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -122,7 +310,6 @@ def home():
 # -----------------------------------------------------------------------------
 @bp.get("/hilfe")
 def help_readme():
-    # Abwärtskompatibel: /hilfe zeigt "Lies mich"
     return redirect(url_for("home.help_docs", doc="readme"))
 
 
@@ -138,13 +325,12 @@ def help_docs(doc: str):
 
     html = _render_markdown_file(md_path)
 
-    return render_template(
-        "help_readme.html",
-        title=cfg["title"],
-        content=html,
-    )
+    return render_template("help_readme.html", title=cfg["title"], content=html)
 
 
+# -----------------------------------------------------------------------------
+# Backups: create / download / delete / restore / upload
+# -----------------------------------------------------------------------------
 @bp.post("/backup")
 def backup():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
@@ -207,7 +393,7 @@ def restore(filename: str):
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
         return redirect(url_for("home.home"))
 
-    safe_name = Path(filename).name  # keine Pfade zulassen
+    safe_name = Path(filename).name
     if not _is_allowed_backup_name(safe_name):
         flash("Ungültiger Backup-Dateiname.", "error")
         return redirect(url_for("home.home"))

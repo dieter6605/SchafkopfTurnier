@@ -3,9 +3,11 @@
 <div class="card shadow-sm">
   <div class="card-body">
     <h3 class="mb-1">SchafkopfTurnier (offline)</h3>
-    <div class="text-muted">Startpunkt. Gehe zu „Turniere“.</div>
-    <div class="mt-3">
-      <a class="btn btn-primary" href="{{ url_for('tournaments.tournaments_list') }}">Turniere öffnen</a>
+    <div class="text-muted">Startpunkt.</div>
+    <div class="mt-3 d-flex gap-2 flex-wrap">
+      <a class="btn btn-primary" href="{{ url_for('home.home') }}">Dashboard</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
     </div>
   </div>
 </div>
