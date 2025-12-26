@@ -241,7 +241,7 @@ def init_db(db_path: Path) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Backup
+# Backup / Restore
 # -----------------------------------------------------------------------------
 def backup_db(backup_dir: Path) -> Path:
     """
@@ -255,3 +255,30 @@ def backup_db(backup_dir: Path) -> Path:
     target = backup_dir / f"skt-backup-{ts}.sqlite3"
     shutil.copy2(_DB_PATH, target)
     return target
+
+
+def restore_db(backup_file: Path) -> None:
+    """
+    Stellt ein Backup wieder her, indem es die aktuelle DB-Datei ersetzt.
+
+    Hinweis:
+    - Es darf dabei keine offene Verbindung auf die DB-Datei bestehen.
+    - Danach ggf. die App neu starten/neu laden.
+    """
+    if _DB_PATH is None:
+        raise RuntimeError("DB path not set.")
+
+    backup_file = Path(backup_file)
+    if not backup_file.exists() or not backup_file.is_file():
+        raise FileNotFoundError(str(backup_file))
+
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    # Safety copy der aktuellen DB
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    safety = _DB_PATH.with_name(f"{_DB_PATH.stem}.before-restore-{ts}{_DB_PATH.suffix}")
+    if _DB_PATH.exists():
+        shutil.copy2(_DB_PATH, safety)
+
+    # Restore
+    shutil.copy2(backup_file, _DB_PATH)

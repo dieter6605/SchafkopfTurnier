@@ -11,6 +11,7 @@ from .routes.home import bp as home_bp
 from .routes.addresses import bp as addresses_bp
 from .routes.tournaments import bp as tournaments_bp
 from .routes.api import bp as api_bp
+from .routes.help import bp as help_bp
 
 
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
@@ -23,18 +24,24 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app.config["SKT_BACKUP_DIR"] = str(backup_dir) if backup_dir else ""
 
     # -------------------------------------------------------------------------
-    # Globales Standard-Logo (liegt unter app/static/branding/)
-    # - Einmal hier konfigurieren, dann in allen Templates verfügbar.
+    # Branding:
+    # - Home/Hero-Bild (z.B. Startseite groß)
+    # - Print-Logo (für Ausdrucke / Print-Header)
     # -------------------------------------------------------------------------
-    app.config["SKT_SITE_LOGO"] = "branding/image.png"  # z.B. "branding/sfb-wappen.jpeg"
+    app.config["SKT_HOME_IMAGE"] = "branding/image.png"  # groß auf Startseite
+    app.config["SKT_PRINT_LOGO"] = "branding/logo.png"   # nur auf Ausdrucken
 
     @app.context_processor
     def inject_branding():
-        return {"site_logo": app.config.get("SKT_SITE_LOGO", "")}
+        return {
+            "home_image": app.config.get("SKT_HOME_IMAGE", ""),
+            "print_logo": app.config.get("SKT_PRINT_LOGO", ""),
+        }
 
     app.register_blueprint(home_bp)
     app.register_blueprint(addresses_bp)
     app.register_blueprint(tournaments_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(help_bp)
 
     return app
