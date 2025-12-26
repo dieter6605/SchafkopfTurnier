@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 import sqlite3
 
@@ -56,7 +56,6 @@ def _rebuild_wohnorte_from_addresses(con: sqlite3.Connection, *, addressbook_id:
     WICHTIG: wohnorte.wohnort ist UNIQUE -> daher UPSERT, um Duplikate abzufangen.
     Nur vollständige Tripel (wohnort+plz+ort) werden übernommen.
     """
-    # sauber neu aufbauen
     con.execute("DELETE FROM wohnorte")
 
     rows = con.execute(
@@ -98,7 +97,6 @@ def export_addresses_csv(*, con: sqlite3.Connection, addressbook_id: int | None 
     ab_id = int(addressbook_id) if addressbook_id is not None else _default_ab_id(con)
 
     cols = _addresses_columns(con)
-    # Export: wir geben exakt die DB-Spalten aus (inkl. id), weil du "DB-Feldnamen übernehmen" wolltest.
     rows = con.execute(
         f"SELECT {', '.join(cols)} FROM addresses WHERE addressbook_id=? ORDER BY nachname, vorname, id",
         (ab_id,),
@@ -122,23 +120,36 @@ def import_addresses_replace_default_from_csv_text(
     csv_text: str,
 ) -> tuple[int, int, int]:
     """
-    Importiert CSV (Semikolon, UTF-8) und ersetzt das *aktive* Adressbuch
-    ohne Historie zu zerstören:
+    HARD-REPLACE Import (mit optionaler ID-Wiederverwendung)
 
-    - Es wird ein NEUES Addressbook angelegt
-    - Alle importierten addresses landen in diesem neuen Addressbook
-    - Dieses neue Addressbook wird default (is_default=1)
-    - wohnorte wird aus den neuen addresses neu aufgebaut
+    Ziel (nach deiner Anforderung):
+    - Alle bestehenden Adressen (und das Adressbuch) werden vor dem Import gelöscht.
+    - IDs aus der CSV können wiederverwendet werden (wenn Spalte 'id' vorhanden).
+
+    SICHERHEIT:
+    - Import ist gesperrt, sobald Turnierhistorie existiert (tournament_participants > 0),
+      weil sonst Fremdschlüssel/Referenzen brechen würden.
 
     Rückgabe: (new_ab_id, inserted, skipped)
 
     Erwartung:
     - Header enthält DB-Feldnamen
     - Pflichtfelder: nachname, vorname, wohnort
-    - Import ist "Replace Default", aber nicht "Delete Old": alte Adressbücher bleiben erhalten.
     """
     if csv_text is None:
         raise ValueError("CSV ist leer.")
+
+    # ✅ Sperre wenn Turnierhistorie existiert
+    try:
+        r = con.execute("SELECT COUNT(*) AS c FROM tournament_participants").fetchone()
+        if r and int(r["c"] or 0) > 0:
+            raise ValueError(
+                "Import gesperrt: Es existieren bereits Turnier-Teilnehmerdaten. "
+                "Ein Hard-Replace würde Referenzen/Historie zerstören."
+            )
+    except sqlite3.OperationalError:
+        # Tabelle ggf. noch nicht vorhanden -> ok
+        pass
 
     buf = io.StringIO(csv_text)
     reader = csv.DictReader(buf, delimiter=";")
@@ -146,7 +157,6 @@ def import_addresses_replace_default_from_csv_text(
     if not reader.fieldnames:
         raise ValueError("CSV hat keinen Header (Spaltennamen fehlen).")
 
-    # DB-Spalten
     db_cols = _addresses_columns(con)
     db_colset = set(db_cols)
 
@@ -162,16 +172,37 @@ def import_addresses_replace_default_from_csv_text(
     if unknown:
         raise ValueError(f"CSV enthält unbekannte Spalten: {', '.join(unknown)}.")
 
-    # Neues Addressbook anlegen
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    name = f"Import {ts}"
-    con.execute("INSERT INTO addressbooks(name, is_default) VALUES (?,0)", (name,))
+    # ✅ Alles löschen, bevor neu importiert wird
+    # Reihenfolge wegen FK: erst wohnorte (unabhängig), dann addresses, dann addressbooks
+    con.execute("DELETE FROM wohnorte")
+    con.execute("DELETE FROM addresses")
+    con.execute("DELETE FROM addressbooks")
+
+    # Optional: sqlite_sequence resetten (falls AUTOINCREMENT genutzt wird)
+    try:
+        con.execute("DELETE FROM sqlite_sequence WHERE name IN ('addresses','addressbooks','wohnorte')")
+    except sqlite3.OperationalError:
+        pass
+
+    # Neues Standard-Adressbuch
+    con.execute("INSERT INTO addressbooks(name, is_default) VALUES (?,1)", ("Standard",))
     new_ab_id = int(con.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
 
     # Insert vorbereiten:
-    # - id NIE importieren (Autoincrement)
     # - addressbook_id IMMER new_ab_id
-    insert_cols = [c for c in db_cols if c != "id"]
+    # - id NUR setzen, wenn CSV 'id' hat UND DB-Spalte 'id' existiert
+    can_set_id = ("id" in csv_colset) and ("id" in db_colset)
+
+    # Wir bauen Insert-Spalten so, dass addressbook_id immer drin ist, id optional:
+    insert_cols: list[str] = ["addressbook_id"]
+    if can_set_id:
+        insert_cols.append("id")
+
+    for c in db_cols:
+        if c in ("id", "addressbook_id"):
+            continue
+        insert_cols.append(c)
+
     placeholders = ",".join(["?"] * len(insert_cols))
     sql_ins = f"INSERT INTO addresses({', '.join(insert_cols)}) VALUES ({placeholders})"
 
@@ -193,6 +224,17 @@ def import_addresses_replace_default_from_csv_text(
                 values.append(new_ab_id)
                 continue
 
+            if c == "id":
+                # ✅ ID wiederverwenden (wenn CSV id hat)
+                iv = _int_or_none(row.get("id"))
+                if iv is None:
+                    # CSV hat id-Spalte, aber Zeile ohne id -> skip (sonst unklare Mischung)
+                    skipped += 1
+                    values = []
+                    break
+                values.append(iv)
+                continue
+
             v = row.get(c)
 
             if c in ("invite", "participation_count"):
@@ -210,13 +252,13 @@ def import_addresses_replace_default_from_csv_text(
 
             values.append(_norm_none(v))
 
+        if not values:
+            continue
+
         con.execute(sql_ins, tuple(values))
         inserted += 1
 
-    # Neues Addressbook als Default setzen
-    _set_default_addressbook(con, new_ab_id)
-
-    # Wohnorte neu aufbauen (UPSERT -> kein UNIQUE-Crash mehr)
+    # wohnorte neu aufbauen
     _rebuild_wohnorte_from_addresses(con, addressbook_id=new_ab_id)
 
     return new_ab_id, inserted, skipped

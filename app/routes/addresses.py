@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
@@ -18,6 +19,16 @@ def _to_int(v: Any, default: int = 0) -> int:
         return int(str(v).strip())
     except Exception:
         return default
+
+
+def _to_int_none(v: Any) -> int | None:
+    try:
+        s = str(v).strip()
+        if s == "":
+            return None
+        return int(s)
+    except Exception:
+        return None
 
 
 def _is_used_in_any_tournament(con, address_id: int) -> bool:
@@ -75,6 +86,56 @@ def _csv_text_response(filename: str, text: str) -> Response:
     resp = Response(data, mimetype="text/csv; charset=utf-8")
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+def _parse_years(s: Any) -> list[int]:
+    """
+    Erwartet z.B. "2018,2019,2024" (kommasepariert).
+    Gibt sortierte, eindeutige Jahreszahlen zurück.
+    """
+    if s is None:
+        return []
+    raw = str(s).strip()
+    if not raw:
+        return []
+    years: set[int] = set()
+    for part in raw.split(","):
+        p = part.strip()
+        if not p:
+            continue
+        if not p.isdigit():
+            continue
+        y = int(p)
+        if 1900 <= y <= 3000:
+            years.add(y)
+    return sorted(years)
+
+
+def _bucket_participation(n: int) -> str:
+    if n <= 0:
+        return "0"
+    if n <= 2:
+        return "1–2"
+    if n <= 5:
+        return "3–5"
+    if n <= 10:
+        return "6–10"
+    return ">10"
+
+
+def _bucket_recency(last_year: int | None, now_year: int) -> str:
+    if not last_year:
+        return "nie"
+    d = now_year - int(last_year)
+    if d <= 0:
+        return "dieses Jahr"
+    if d == 1:
+        return "letztes Jahr"
+    if d <= 3:
+        return "vor 2–3 Jahren"
+    if d <= 5:
+        return "vor 4–5 Jahren"
+    return "vor >5 Jahren"
 
 
 # -----------------------------------------------------------------------------
@@ -153,6 +214,122 @@ def addresses_list():
 
 
 # -----------------------------------------------------------------------------
+# NEU: Statistik fürs Adressbuch
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/stats")
+def addresses_stats():
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+
+        has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
+
+        total = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
+        active = db.one(
+            con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status='aktiv'", (default_ab_id,)
+        )
+        inactive = db.one(
+            con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status!='aktiv'", (default_ab_id,)
+        )
+
+        total_i = int((total["c"] or 0) if total else 0)
+        active_i = int((active["c"] or 0) if active else 0)
+        inactive_i = int((inactive["c"] or 0) if inactive else 0)
+
+        invite_yes = invite_no = None
+        if has_invite:
+            r1 = db.one(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND invite=1",
+                (default_ab_id,),
+            )
+            r0 = db.one(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND (invite=0 OR invite IS NULL)",
+                (default_ab_id,),
+            )
+            invite_yes = int((r1["c"] or 0) if r1 else 0)
+            invite_no = int((r0["c"] or 0) if r0 else 0)
+
+        cols = ["status"]
+        if has_pc:
+            cols.append("participation_count")
+        if has_last:
+            cols.append("last_tournament_at")
+        if has_years:
+            cols.append("tournament_years")
+
+        rows = con.execute(
+            f"SELECT {', '.join(cols)} FROM addresses WHERE addressbook_id=?",
+            (default_ab_id,),
+        ).fetchall()
+
+        now_year = datetime.now().year
+
+        part_buckets: dict[str, int] = {"0": 0, "1–2": 0, "3–5": 0, "6–10": 0, ">10": 0}
+        recency_buckets: dict[str, int] = {
+            "nie": 0,
+            "dieses Jahr": 0,
+            "letztes Jahr": 0,
+            "vor 2–3 Jahren": 0,
+            "vor 4–5 Jahren": 0,
+            "vor >5 Jahren": 0,
+        }
+        year_counts: dict[int, int] = {}
+
+        for r in rows:
+            pc = 0
+            if has_pc:
+                try:
+                    pc = int(r["participation_count"] or 0)
+                except Exception:
+                    pc = 0
+
+            years_list: list[int] = []
+            if has_years:
+                years_list = _parse_years(r["tournament_years"])
+                if not has_pc:
+                    pc = len(years_list)
+
+                for y in years_list:
+                    year_counts[y] = year_counts.get(y, 0) + 1
+
+            last_year: int | None = None
+            if has_last:
+                try:
+                    v = r["last_tournament_at"]
+                    if v is not None and str(v).strip() != "":
+                        last_year = int(str(v).strip())
+                except Exception:
+                    last_year = None
+            if last_year is None and years_list:
+                last_year = max(years_list)
+
+            part_buckets[_bucket_participation(pc)] = part_buckets.get(_bucket_participation(pc), 0) + 1
+            recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(
+                _bucket_recency(last_year, now_year), 0
+            ) + 1
+
+        years_sorted = sorted(year_counts.items(), key=lambda t: t[0])
+
+    return render_template(
+        "addresses_stats.html",
+        total=total_i,
+        active=active_i,
+        inactive=inactive_i,
+        has_invite=has_invite,
+        invite_yes=invite_yes,
+        invite_no=invite_no,
+        has_participation=has_pc or has_years,
+        part_buckets=part_buckets,
+        recency_buckets=recency_buckets,
+        years_sorted=years_sorted,
+    )
+
+
+# -----------------------------------------------------------------------------
 # Import/Export (CSV)
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/export")
@@ -175,9 +352,8 @@ def addresses_import():
 @bp.post("/addresses/import")
 def addresses_import_post():
     """
-    Importiert CSV (Semikolon, UTF-8) und ersetzt das *aktive* Adressbuch,
-    indem ein neues Addressbook erstellt und als Default gesetzt wird.
-    Turnierhistorie bleibt konsistent.
+    Importiert CSV (Semikolon, UTF-8) und ersetzt das Standard-Adressbuch
+    als HARD-REPLACE (nur erlaubt, wenn KEINE Turnierdaten existieren).
     """
     file = request.files.get("file")
     if not file:
@@ -205,7 +381,7 @@ def addresses_import_post():
 
     flash(
         f"Import abgeschlossen: {inserted} Adressen importiert, {skipped} Zeilen übersprungen. "
-        f"(Neues Adressbuch #{new_ab_id} ist jetzt Standard.)",
+        f"(Adressbuch #{new_ab_id} ist jetzt Standard.)",
         "ok",
     )
     return redirect(url_for("addresses.addresses_list"))
@@ -233,6 +409,11 @@ def address_new():
         "email": "",
         "status": "aktiv",
         "notizen": "",
+        # Turnier-/Einladungsfelder
+        "invite": 1,
+        "participation_count": 0,
+        "last_tournament_at": "",
+        "tournament_years": "",
     }
     return render_template("address_form.html", a=defaults, mode="new", used=False, next=next_url)
 
@@ -259,66 +440,56 @@ def address_create():
     status = (f.get("status") or "aktiv").strip() or "aktiv"
     notizen = (f.get("notizen") or "").strip() or None
 
+    invite_val = 1 if (f.get("invite") == "1") else 0
+    participation_count = _to_int(f.get("participation_count"), 0)
+    last_tournament_at = (f.get("last_tournament_at") or "").strip() or None
+    tournament_years = (f.get("tournament_years") or "").strip() or None
+
     with db.connect() as con:
         default_ab_id = _default_ab_id(con)
+
         has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
+
+        cols = [
+            "addressbook_id", "nachname", "vorname", "wohnort",
+            "plz", "ort", "strasse", "hausnummer",
+        ]
+        vals: list[Any] = [
+            default_ab_id, nachname, vorname, wohnort,
+            plz, ort, strasse, hausnummer,
+        ]
 
         if has_invite:
-            con.execute(
-                """
-                INSERT INTO addresses(
-                  addressbook_id, nachname, vorname, wohnort,
-                  plz, ort, strasse, hausnummer,
-                  invite,
-                  email, telefon, status, notizen,
-                  created_at, updated_at
-                )
-                VALUES (?,?,?,?, ?,?,?,?, ?, ?,?,?,?, datetime('now'), datetime('now'))
-                """,
-                (
-                    default_ab_id,
-                    nachname,
-                    vorname,
-                    wohnort,
-                    plz,
-                    ort,
-                    strasse,
-                    hausnummer,
-                    1,
-                    email,
-                    telefon,
-                    status,
-                    notizen,
-                ),
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO addresses(
-                  addressbook_id, nachname, vorname, wohnort,
-                  plz, ort, strasse, hausnummer,
-                  email, telefon, status, notizen,
-                  created_at, updated_at
-                )
-                VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, datetime('now'), datetime('now'))
-                """,
-                (
-                    default_ab_id,
-                    nachname,
-                    vorname,
-                    wohnort,
-                    plz,
-                    ort,
-                    strasse,
-                    hausnummer,
-                    email,
-                    telefon,
-                    status,
-                    notizen,
-                ),
-            )
+            cols.append("invite")
+            vals.append(invite_val)
 
-        # ✅ Wohnort-Lookup pflegen (nur wenn wohnort+plz+ort vollständig)
+        cols.extend(["email", "telefon", "status", "notizen"])
+        vals.extend([email, telefon, status, notizen])
+
+        if has_pc:
+            cols.append("participation_count")
+            vals.append(participation_count)
+
+        if has_last:
+            cols.append("last_tournament_at")
+            vals.append(last_tournament_at)
+
+        if has_years:
+            cols.append("tournament_years")
+            vals.append(tournament_years)
+
+        cols.extend(["created_at", "updated_at"])
+        placeholders = ", ".join(["?"] * (len(cols) - 2)) + ", datetime('now'), datetime('now')"
+        sql = f"""
+            INSERT INTO addresses({', '.join(cols)})
+            VALUES ({placeholders})
+        """
+
+        con.execute(sql, tuple(vals))
+
         _upsert_wohnort(con, wohnort, plz, ort)
 
         con.commit()
@@ -362,46 +533,76 @@ def address_update(address_id: int):
     plz = (f.get("plz") or "").strip() or None
     ort = (f.get("ort") or "").strip() or None
 
+    invite_val = 1 if (f.get("invite") == "1") else 0
+    participation_count = _to_int(f.get("participation_count"), 0)
+    last_tournament_at = (f.get("last_tournament_at") or "").strip() or None
+    tournament_years = (f.get("tournament_years") or "").strip() or None
+
     with db.connect() as con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
             return redirect(nxt or url_for("addresses.addresses_list"))
 
-        con.execute(
-            """
-            UPDATE addresses
-            SET nachname=?,
-                vorname=?,
-                wohnort=?,
-                plz=?,
-                ort=?,
-                strasse=?,
-                hausnummer=?,
-                telefon=?,
-                email=?,
-                status=?,
-                notizen=?,
-                updated_at=datetime('now')
-            WHERE id=?
-            """,
-            (
-                nachname,
-                vorname,
-                wohnort,
-                plz,
-                ort,
-                (f.get("strasse") or "").strip() or None,
-                (f.get("hausnummer") or "").strip() or None,
-                (f.get("telefon") or "").strip() or None,
-                (f.get("email") or "").strip() or None,
-                (f.get("status") or "aktiv").strip() or "aktiv",
-                (f.get("notizen") or "").strip() or None,
-                address_id,
-            ),
-        )
+        has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
 
-        # ✅ Wohnort-Lookup pflegen (nur wenn wohnort+plz+ort vollständig)
+        sets = [
+            "nachname=?",
+            "vorname=?",
+            "wohnort=?",
+            "plz=?",
+            "ort=?",
+            "strasse=?",
+            "hausnummer=?",
+            "telefon=?",
+            "email=?",
+            "status=?",
+            "notizen=?",
+        ]
+        params: list[Any] = [
+            nachname,
+            vorname,
+            wohnort,
+            plz,
+            ort,
+            (f.get("strasse") or "").strip() or None,
+            (f.get("hausnummer") or "").strip() or None,
+            (f.get("telefon") or "").strip() or None,
+            (f.get("email") or "").strip() or None,
+            (f.get("status") or "aktiv").strip() or "aktiv",
+            (f.get("notizen") or "").strip() or None,
+        ]
+
+        if has_invite:
+            sets.append("invite=?")
+            params.append(invite_val)
+
+        if has_pc:
+            sets.append("participation_count=?")
+            params.append(participation_count)
+
+        if has_last:
+            sets.append("last_tournament_at=?")
+            params.append(last_tournament_at)
+
+        if has_years:
+            sets.append("tournament_years=?")
+            params.append(tournament_years)
+
+        sets.append("updated_at=datetime('now')")
+
+        sql = f"""
+            UPDATE addresses
+            SET {', '.join(sets)}
+            WHERE id=?
+        """
+        params.append(address_id)
+
+        con.execute(sql, tuple(params))
+
         _upsert_wohnort(con, wohnort, plz, ort)
 
         con.commit()

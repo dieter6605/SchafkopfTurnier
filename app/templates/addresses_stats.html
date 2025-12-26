@@ -1,0 +1,156 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">Adressbuch – Statistik</h3>
+    <div class="text-muted small">Auswertung aus dem Standard-Adressbuch</div>
+  </div>
+  <div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Adressen gesamt</div>
+        <div class="fs-3 fw-semibold">{{ total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Aktiv</div>
+        <div class="fs-3 fw-semibold">{{ active }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="text-muted small">Nicht aktiv</div>
+        <div class="fs-3 fw-semibold">{{ inactive }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if has_invite %}
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <h5 class="mb-2">Einladungen</h5>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Kategorie</th>
+              <th class="text-end">Anzahl</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Einladbar (invite=1)</td><td class="text-end">{{ invite_yes }}</td></tr>
+            <tr><td>Nicht einladbar (invite=0 / leer)</td><td class="text-end">{{ invite_no }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% if has_participation %}
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="mb-2">Teilnahmen (Häufigkeit)</h5>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Teilnahmen</th>
+                  <th class="text-end">Personen</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>0</td><td class="text-end">{{ part_buckets["0"] }}</td></tr>
+                <tr><td>1–2</td><td class="text-end">{{ part_buckets["1–2"] }}</td></tr>
+                <tr><td>3–5</td><td class="text-end">{{ part_buckets["3–5"] }}</td></tr>
+                <tr><td>6–10</td><td class="text-end">{{ part_buckets["6–10"] }}</td></tr>
+                <tr><td>&gt;10</td><td class="text-end">{{ part_buckets[">10"] }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="text-muted small mt-2">
+            participation_count wird genutzt; falls leer, wird aus tournament_years berechnet.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="mb-2">Letzte Teilnahme (Aktualität)</h5>
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Kategorie</th>
+                  <th class="text-end">Personen</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>nie</td><td class="text-end">{{ recency_buckets["nie"] }}</td></tr>
+                <tr><td>dieses Jahr</td><td class="text-end">{{ recency_buckets["dieses Jahr"] }}</td></tr>
+                <tr><td>letztes Jahr</td><td class="text-end">{{ recency_buckets["letztes Jahr"] }}</td></tr>
+                <tr><td>vor 2–3 Jahren</td><td class="text-end">{{ recency_buckets["vor 2–3 Jahren"] }}</td></tr>
+                <tr><td>vor 4–5 Jahren</td><td class="text-end">{{ recency_buckets["vor 4–5 Jahren"] }}</td></tr>
+                <tr><td>vor &gt;5 Jahren</td><td class="text-end">{{ recency_buckets["vor >5 Jahren"] }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="text-muted small mt-2">
+            last_tournament_at wird genutzt; falls leer, wird max(tournament_years) verwendet.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mt-3">
+    <div class="card-body">
+      <h5 class="mb-2">Teilnahmen pro Jahr</h5>
+      {% if years_sorted and years_sorted|length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Jahr</th>
+                <th class="text-end">Personen (mind. 1 Teilnahme)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for y,c in years_sorted %}
+                <tr>
+                  <td class="font-monospace">{{ y }}</td>
+                  <td class="text-end">{{ c }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted">Keine Jahresdaten vorhanden (tournament_years leer).</div>
+      {% endif %}
+    </div>
+  </div>
+{% else %}
+  <div class="alert alert-secondary">
+    Teilnahmefelder sind in dieser DB nicht vorhanden (participation_count/tournament_years).
+  </div>
+{% endif %}
+
+{% endblock %}

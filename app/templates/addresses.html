@@ -17,6 +17,7 @@
   <div class="d-flex gap-2 flex-wrap">
     <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrImport" href="{{ url_for('addresses.addresses_import') }}">Import (CSV)</a>
+    <a class="btn btn-outline-secondary" id="btnAddrStats" href="{{ url_for('addresses.addresses_stats') }}">Statistik</a>
     <a class="btn btn-outline-primary" id="btnAddrNew" href="{{ url_for('addresses.address_new') }}">Neue Adresse</a>
   </div>
 </div>
@@ -42,21 +43,35 @@
       <h5 class="mb-2">Treffer</h5>
       {% if hits %}
         <div class="table-responsive">
-          <table class="table table-striped mb-0">
+          <table class="table table-striped mb-0 align-middle">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Wohnort</th>
                 <th>Status</th>
-                <th class="text-end">Aktion</th>
+                <th class="text-center" style="width:90px;">Einlad.</th>
+                <th class="text-end" style="width:110px;">Teiln.</th>
+                <th style="width:140px;">Letztes</th>
+                <th class="text-end" style="width:160px;">Aktion</th>
               </tr>
             </thead>
             <tbody>
               {% for h in hits %}
                 <tr>
-                  <td><strong>{{ h.nachname }}</strong>, {{ h.vorname }} <span class="text-muted small">#{{ h.id }}</span></td>
+                  <td>
+                    <strong>{{ h.nachname }}</strong>, {{ h.vorname }}
+                    <span class="text-muted small">#{{ h.id }}</span>
+                    {% if h.tournament_years %}
+                      <div class="text-muted small font-monospace" title="{{ h.tournament_years }}">
+                        Jahre: {{ h.tournament_years }}
+                      </div>
+                    {% endif %}
+                  </td>
                   <td>{{ h.wohnort }}</td>
                   <td>{{ h.status }}</td>
+                  <td class="text-center font-monospace">{{ 1 if (h.invite or 0)|int == 1 else 0 }}</td>
+                  <td class="text-end font-monospace">{{ (h.participation_count or 0) }}</td>
+                  <td class="font-monospace">{{ h.last_tournament_at or '' }}</td>
                   <td class="text-end">
                     <div class="d-flex justify-content-end gap-2">
 
@@ -101,21 +116,35 @@
       <h5 class="mb-2">Zuletzt bearbeitet</h5>
       {% if latest %}
         <div class="table-responsive">
-          <table class="table table-striped mb-0">
+          <table class="table table-striped mb-0 align-middle">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Wohnort</th>
                 <th>Status</th>
-                <th class="text-end">Aktion</th>
+                <th class="text-center" style="width:90px;">Einlad.</th>
+                <th class="text-end" style="width:110px;">Teiln.</th>
+                <th style="width:140px;">Letztes</th>
+                <th class="text-end" style="width:160px;">Aktion</th>
               </tr>
             </thead>
             <tbody>
               {% for a in latest %}
                 <tr>
-                  <td><strong>{{ a.nachname }}</strong>, {{ a.vorname }} <span class="text-muted small">#{{ a.id }}</span></td>
+                  <td>
+                    <strong>{{ a.nachname }}</strong>, {{ a.vorname }}
+                    <span class="text-muted small">#{{ a.id }}</span>
+                    {% if a.tournament_years %}
+                      <div class="text-muted small font-monospace" title="{{ a.tournament_years }}">
+                        Jahre: {{ a.tournament_years }}
+                      </div>
+                    {% endif %}
+                  </td>
                   <td>{{ a.wohnort }}</td>
                   <td>{{ a.status }}</td>
+                  <td class="text-center font-monospace">{{ 1 if (a.invite or 0)|int == 1 else 0 }}</td>
+                  <td class="text-end font-monospace">{{ (a.participation_count or 0) }}</td>
+                  <td class="font-monospace">{{ a.last_tournament_at or '' }}</td>
                   <td class="text-end">
                     <div class="d-flex justify-content-end gap-2">
 

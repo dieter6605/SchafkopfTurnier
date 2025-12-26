@@ -88,6 +88,46 @@
         <input class="form-control" name="notizen" value="{{ a.notizen or '' }}">
       </div>
 
+      <hr class="my-3">
+
+      <!-- ✅ Neu: Einladungen / Turnierhistorie -->
+      <div class="col-12">
+        <h5 class="mb-2">Einladung / Turnierhistorie</h5>
+        <div class="text-muted small mb-2">
+          Diese Felder gehören zur Adresse (Adressbuch) und werden z.B. bei CSV-Import/Export mitgeführt.
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Einladen</label>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="inviteChk" name="invite" value="1"
+                 {% if (a.invite is not none and (a.invite|int)==1) or (a.invite is none and mode=='new') %}checked{% endif %}>
+          <label class="form-check-label" for="inviteChk">Einladung aktiv (invite=1)</label>
+        </div>
+        <div class="form-text">Wenn deaktiviert, bleibt die Adresse erhalten, wird aber nicht eingeladen.</div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Teilnahmen (Zähler)</label>
+        <input class="form-control" name="participation_count" inputmode="numeric"
+               value="{{ a.participation_count if a.participation_count is not none else 0 }}">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Letzte Teilnahme</label>
+        <input class="form-control font-monospace" name="last_tournament_at"
+               placeholder="z.B. 2024 oder 2024-12-26"
+               value="{{ a.last_tournament_at or '' }}">
+      </div>
+
+      <div class="col-md-12">
+        <label class="form-label">Teilnahmejahre</label>
+        <textarea class="form-control font-monospace" name="tournament_years" rows="2"
+                  placeholder="z.B. 2018,2019,2022,2024">{{ a.tournament_years or '' }}</textarea>
+        <div class="form-text">Kommagetrennte Liste der Jahre (oder anderer Marker). Keine automatische Validierung.</div>
+      </div>
+
       <div class="col-12 d-flex gap-2 mt-2 flex-wrap">
         <button class="btn btn-primary" type="submit">Speichern</button>
       </div>
