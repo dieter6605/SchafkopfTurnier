@@ -270,7 +270,7 @@
 
           <tbody id="participantsBody">
           {% for p in participants %}
-            <tr class="sk-part" data-delete-form-id="rmForm{{ p.id }}">
+            <tr id="tp{{ p.id }}" class="sk-part" data-delete-form-id="rmForm{{ p.id }}">
               <td class="sk-mono"><strong>{{ p.player_no }}</strong></td>
               <td>
                 <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
@@ -285,6 +285,13 @@
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2 flex-wrap">
 
+                  <!-- Adresse bearbeiten + Rücksprung zur markierten Zeile -->
+                  <a class="btn btn-sm btn-outline-primary"
+                     href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
+                     title="Adressdaten bearbeiten">
+                    Adresse bearbeiten
+                  </a>
+
                   <!-- Swap (Nummer bleibt) -->
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}"
@@ -298,7 +305,7 @@
                     <button class="btn btn-sm btn-outline-secondary" title="Ersetzt Person, behält Nr">Swap</button>
                   </form>
 
-                  <!-- Entfernen (Nummer bleibt frei / keine Renummerierung) -->
+                  <!-- Entfernen -->
                   <form method="post"
                         id="rmForm{{ p.id }}"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">

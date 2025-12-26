@@ -44,6 +44,8 @@ def tournament_participants(tournament_id: int):
         already_ids = {int(r["address_id"]) for r in already}
         hits = [h for h in hits if int(h["id"]) not in already_ids]
 
+        # ✅ Sortierung: neueste erfasste Teilnehmer oben
+        # Primär: created_at (neueste zuerst), sekundär id (falls Zeitstempel gleich)
         participants = db.q(
             con,
             """
@@ -53,7 +55,7 @@ def tournament_participants(tournament_id: int):
             FROM tournament_participants tp
             JOIN addresses a ON a.id=tp.address_id
             WHERE tp.tournament_id=?
-            ORDER BY tp.player_no
+            ORDER BY tp.created_at DESC, tp.id DESC
             """,
             (tournament_id,),
         )

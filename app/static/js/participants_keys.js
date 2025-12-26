@@ -212,9 +212,28 @@
     const form = document.getElementById(formId);
     if (!form) return;
 
-    // Wichtig: Confirm-Dialog hängt am Button onclick im Template.
+    // Confirm-Dialog hängt am Button onclick im Template.
     const btn = form.querySelector("button[type='submit']");
     if (btn) btn.click();
+  }
+
+  // ✅ NEU: Wenn URL-Hash gesetzt ist (z.B. #tp123), diese Zeile selektieren + scrollen
+  function restoreSelectionFromHash() {
+    const hash = String(location.hash || "").trim();
+    if (!hash || hash.length < 2) return false;
+
+    const el = document.getElementById(hash.slice(1)); // ohne "#"
+    if (!el) return false;
+
+    const rows = partRows();
+    if (!rows.length) return false;
+
+    const idx = rows.findIndex(r => r === el);
+    if (idx < 0) return false;
+
+    // erst nach Layout/Rendering selektieren
+    setPartSelection(idx);
+    return true;
   }
 
   function onKeyDown(ev) {
@@ -254,28 +273,21 @@
     // Enter im start_no-Feld -> Renummerieren absenden
     if (ev.key === "Enter") {
       if (submitRenumberFromIfFocused(ev)) return;
-      // Wichtig: Enter soll in der Teilnehmerliste sonst NICHTS tun.
+      // Enter soll in der Teilnehmerliste sonst NICHTS tun.
     }
 
-    // ✅ Löschen NUR mit Shift + Delete (Entf) -> Entfernen (ohne Renummerierung)
-    // Mac: Taste heißt oft "Delete"; Windows: "Delete"
+    // Löschen NUR mit Shift + Delete -> Entfernen
     if (ev.shiftKey && String(ev.key || "").toLowerCase() === "delete") {
-      if (isTypingContext()) return; // nie in Eingabefeldern
+      if (isTypingContext()) return;
       ev.preventDefault();
       deleteSelectedParticipant();
       return;
     }
 
-    // -----------------------------------------------------------------------
     // Pfeilnavigation:
-    // - Im Suchfeld (#qInput): Trefferliste steuern
-    // - Sonst (nicht tippen): Teilnehmerliste steuern
-    // -----------------------------------------------------------------------
     const tag = activeTag();
     const id = activeId();
     const inInput = (tag === "input" || tag === "textarea" || tag === "select");
-
-    // Im Suchfeld dürfen Pfeile die Trefferliste bewegen
     const inSearch = (id === "qInput");
 
     if (ev.key === "ArrowDown") {
@@ -288,7 +300,6 @@
         return;
       }
 
-      // Teilnehmerliste nur, wenn man nicht gerade tippt
       if (!inInput) {
         const r = partRows();
         if (r.length) {
@@ -319,8 +330,7 @@
       return;
     }
 
-    // Treffer: Enter übernimmt (wie bisher), aber nur wenn NICHT in Input
-    // (Enter soll NICHT die Teilnehmerliste triggern)
+    // Treffer: Enter übernimmt
     if (ev.key === "Enter") {
       if (inInput) return;
       const rows = qsa("#hitsBody tr.sk-hit");
@@ -331,7 +341,6 @@
     }
 
     if (ev.key === "Escape") {
-      // Escape löscht Markierung (Treffer)
       clearSelection();
       return;
     }
@@ -346,7 +355,13 @@
 
     // Teilnehmer
     wireParticipantSelection();
-    initDefaultParticipantSelection();
+
+    // ✅ NEU: Hash gewinnt (nach "Adresse bearbeiten" zurück)
+    // Falls kein Hash: Standardauswahl wie bisher
+    const restored = restoreSelectionFromHash();
+    if (!restored) {
+      initDefaultParticipantSelection();
+    }
 
     document.addEventListener("keydown", onKeyDown);
   }
