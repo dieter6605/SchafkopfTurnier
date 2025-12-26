@@ -1,17 +1,18 @@
+{# app/templates/home.html #}
 {% extends "layout.html" %}
 {% block content %}
 
-{% if site_logo %}
+{% if home_image %}
   <div class="text-center mb-4">
     <img
-      src="{{ url_for('static', filename=site_logo) }}"
-      alt="Logo"
+      src="{{ url_for('static', filename=home_image) }}"
+      alt="Startbild"
       class="img-fluid"
       style="max-height: 280px; width: auto;">
   </div>
 {% endif %}
 
-<div class="card shadow-sm">
+<div class="card shadow-sm mb-3">
   <div class="card-body">
     <h3 class="mb-2">Start</h3>
     <div class="text-muted mb-3">
@@ -21,6 +22,111 @@
     <form method="post" action="{{ url_for('home.backup') }}">
       <button class="btn btn-outline-primary">DB-Backup jetzt erstellen</button>
     </form>
+  </div>
+</div>
+
+<!-- Backup-Upload nur sinnvoll, wenn backup_dir gesetzt ist -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="mb-2">Backup hochladen</h5>
+
+    {% if not backup_dir %}
+      <div class="text-muted">Backup-Verzeichnis ist nicht gesetzt.</div>
+    {% else %}
+      <div class="text-muted small mb-2">
+        Upload-Ziel: <span class="font-monospace">{{ backup_dir }}</span>
+      </div>
+
+      <form method="post"
+            enctype="multipart/form-data"
+            class="d-flex gap-2 flex-wrap align-items-center">
+        <input class="form-control"
+               type="file"
+               name="backup_file"
+               accept=".sqlite3"
+               required
+               style="max-width: 520px;">
+
+        <button class="btn btn-outline-secondary"
+                formaction="{{ url_for('home.upload_only') }}">
+          Nur hochladen
+        </button>
+
+        <button class="btn btn-outline-danger"
+                formaction="{{ url_for('home.restore_upload') }}"
+                onclick="return confirm('Backup hochladen und wiederherstellen?\\n\\nACHTUNG: Aktuelle Daten werden ersetzt.');">
+          Hochladen + wiederherstellen
+        </button>
+      </form>
+
+      <div class="text-muted small mt-2">
+        Hinweis: Es wird eine <span class="font-monospace">*.sqlite3</span>-Datei erwartet.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="mb-2">Backups</h5>
+
+    {% if not backup_dir %}
+      <div class="text-muted">Backup-Verzeichnis ist nicht gesetzt.</div>
+    {% else %}
+      <div class="text-muted small mb-2">
+        Verzeichnis: <span class="font-monospace">{{ backup_dir }}</span>
+      </div>
+
+      {% if backups and backups|length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Datei</th>
+                <th style="width:120px;">Größe</th>
+                <th style="width:190px;">Datum</th>
+                <th style="width:320px;" class="text-end">Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for b in backups %}
+                <tr>
+                  <td class="font-monospace">{{ b.name }}</td>
+                  <td class="font-monospace">{{ b.size_h if b.size_h is defined else b.size }}</td>
+                  <td class="font-monospace">{{ b.mtime_h if b.mtime_h is defined else b.mtime }}</td>
+                  <td class="text-end">
+                    <div class="d-flex gap-2 justify-content-end flex-wrap">
+
+                      <a class="btn btn-sm btn-outline-secondary"
+                         href="{{ url_for('home.download_backup', filename=b.name) }}">
+                        Download
+                      </a>
+
+                      <form method="post" action="{{ url_for('home.restore', filename=b.name) }}" class="d-inline">
+                        <button class="btn btn-sm btn-outline-danger"
+                                onclick="return confirm('Backup wiederherstellen?\\n\\n{{ b.name }}\\n\\nACHTUNG: Aktuelle Daten werden ersetzt.');">
+                          Wiederherstellen
+                        </button>
+                      </form>
+
+                      <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}" class="d-inline">
+                        <button class="btn btn-sm btn-outline-dark"
+                                onclick="return confirm('Backup wirklich löschen?\\n\\n{{ b.name }}');">
+                          Löschen
+                        </button>
+                      </form>
+
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="text-muted">Noch keine Backups vorhanden.</div>
+      {% endif %}
+    {% endif %}
   </div>
 </div>
 
