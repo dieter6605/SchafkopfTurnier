@@ -1,34 +1,89 @@
 # SchafkopfTurnier
 
-Webbasierte, lokal betriebene Turnierverwaltung für Schafkopf-Turniere.
+**SchafkopfTurnier** ist eine **lokal betriebene, webbasierte Turnierverwaltung** für Schafkopf-Turniere.
+Die Anwendung ist speziell für **Vereine, Dorfturniere und private Veranstaltungen** konzipiert und funktioniert vollständig **offline**.
+
+Kein Cloud-Dienst, keine externen Abhängigkeiten – **alle Daten bleiben lokal**.
 
 ## Kurzüberblick
-- Teilnehmerverwaltung mit stabilen Startnummern
-- Runden-Auslosung, Ergebniserfassung
-- Runden- und Gesamtwertung
-- Druckoptimierte Listen
-- Umfangreiche Tastatursteuerung
-- Vollständig lokal (SQLite)
+- Verwaltung von Turnieren und Teilnehmern
+- **Stabile Startnummern** (bewusst ohne automatische Neunummerierung)
+- Rundenweise **Auslosung von Tischen und Sitzplätzen**
+- Erfassung von **Punkten und Soli**
+- Automatische **Runden- und Gesamtwertung**
+- **Druckoptimierte Listen** (Sitzpläne, Wertungen)
+- Umfangreiche **Tastatursteuerung** für schnellen Turnierbetrieb
+- Lokale SQLite-Datenbank mit **Backup & Restore**
+
+## Zielgruppe
+- Schafkopf-Vereine
+- Feuerwehr-, Dorf- und Kirchweihturniere
+- Turnierleiter, die **zügig, zuverlässig und ohne Internet** arbeiten möchten
+
+## Technische Grundlagen
+- Programmiersprache: **Python**
+- Webframework: **Flask**
+- Datenbank: **SQLite**
+- Frontend: **Bootstrap 5**
+- Betrieb: **lokaler Webserver**
 
 ## Voraussetzungen
-- Python >= 3.11
+- **Python ≥ 3.11**
+- Unterstützte Systeme:
+	- macOS
+	- Windows
+	- Linux
 
-## Installation
-'''bash
+# Installation
+
+## 1. Projekt herunterladen / entpacken
+
+```bash
+git clone <repository-url>
+cd SchafkopfTurnier
+```
+
+oder ZIP-Datei entpacken und ins Verzeichnis wechseln.
+
+## 2. Virtuelle Umgebung (empfohlen)
+
+**macOS / Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+## 3. Abhängigkeiten installieren
+
+```bash
 pip install -r requirements.txt
-'''
+```
 
-## Start
-'''bash
+# Start der Anwendung
+
+```bash
 python run.py
-'''
-Anschließend im Browser öffnen:
-'''code
-http://127.0.0.1:8000
-'''
+```
 
-## Projektstruktur (Auszug)
-'''text
+Danach im Browser öffnen:
+
+```text
+http://127.0.0.1:8000
+```
+
+Näheres in der Installationsanleitung.
+
+# Projektstruktur (Auszug)
+
+```text
 app/
 ├─ routes/
 │  ├─ home.py
@@ -45,48 +100,77 @@ app/
 │     └─ logo.png    # Druckausgaben
 ├─ db.py
 └─ web.py
-'''
+docs/
+├─ README.md
+├─ ANLEITUNG.md
+└─ INSTALLATION.md
+```
 
-## Branding / Logos
+# Branding / Logos
 
-Das Projekt unterstützt **getrennte Logos**:
-- Anzeige-Logo
-	- Datei: app/static/branding/image.png
-	- Verwendung: Startseite, Bildschirmdarstellung
-- Druck-Logo
-	- Datei: app/static/branding/logo.png
-	- Verwendung: Ausdrucke (Listen, Wertungen)
+Das Projekt unterstützt **getrennte Logos für Bildschirm und Druck**.
 
-Die Zuordnung erfolgt zentral in:
-'''python
+## Anzeige-Logo
+- Datei:
+app/static/branding/image.png
+- Verwendung:
+	- Startseite
+	- Bildschirmdarstellung
+
+## Druck-Logo
+- Datei:
+app/static/branding/logo.png
+- Verwendung:
+	- Ausdrucke (Sitzpläne, Wertungen)
+
+# Konfiguration
+
+```python
 # app/web.py
-app.config["SKT_SITE_LOGO"] = "branding/image.png"
+app.config["SKT_HOME_IMAGE"] = "branding/image.png"
 app.config["SKT_PRINT_LOGO"] = "branding/logo.png"
-'''
-(über context_processor in allen Templates verfügbar)
+```
+Die Logos stehen über einen context_processor automatisch in allen Templates zur Verfügung.
 
-## Datenbank
-- SQLite (.sqlite3)
+
+# Datenbank
+- Dateibasierte **SQLite-Datenbank**
 - Automatische Initialisierung beim Start
-- Schema-Versionierung vorbereitet
-- Backup-Funktion direkt aus der Startseite
+- Schema migrationsfähig vorbereitet
+- **Backup-Funktion direkt in der Anwendung**
+- Backup:
+	- Erstellen
+	- Download
+	- Wiederherstellen
+	- Löschen
+	- Upload externer Backups
 
-## Bedienkonzept
-- Maus und Tastatur vollständig nutzbar
-- Optimiert für Turnierleitung
-- Schnelle Eingabe & Navigation auch unter Zeitdruck
+# Bedienkonzept
+- Vollständig per **Maus und Tastatur** bedienbar
+- Optimiert für den **Turniertag**
+- Schnelle Navigation auch bei vielen Teilnehmern
+- Klare Trennung:
+	- Vorbereitung
+	- Auslosung
+	- Ergebniserfassung
+	- Auswertung
+- Zusätzliche Details siehe:
+	- **ANLEITUNG.md** (Turnierablauf)
+	- **INSTALLATION.md** (Inbetriebnahme)
 
-## Lizenz / Nutzung
+# Hilfe in der Anwendung
 
-Private Nutzung für Vereins-, Dorf- und Freundschaftsturniere.
-Keine Garantie, Nutzung auf eigene Verantwortung.
+Die Dokumentation ist direkt über das Menü **„Hilfe“** erreichbar:
+- **Lies mich** → README.md
+- **Anleitung** → ANLEITUNG.md
+- **Installation** → INSTALLATION.md
 
-## Ergebnis
+# Lizenz / Nutzung
+- Gedacht für **private, vereinsinterne und nicht-kommerzielle Nutzung**
+- Keine Gewährleistung
+- Nutzung auf eigene Verantwortung
 
-Du hast jetzt:
+# Status
 
-- ✔️ saubere **Dependency-Deklaration**
-- ✔️ eine **projektreife README**
-- ✔️ klare Trennung von **Anzeige- & Druck-Branding**
-- ✔️ gute Basis für Version **v1.0**
-
+**Stabiler Stand für reale Turniere.**
+Geeignet als Basis für Version **v1.0**.

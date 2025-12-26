@@ -22,7 +22,41 @@ from .. import db
 
 bp = Blueprint("home", __name__)
 
+# -----------------------------------------------------------------------------
+# Hilfe-Dokumente aus /docs/
+# -----------------------------------------------------------------------------
+_DOCS_MAP = {
+    "readme": {"file": "README.md", "title": "Lies mich"},
+    "anleitung": {"file": "ANLEITUNG.md", "title": "Anleitung"},
+    "installation": {"file": "INSTALLATION.md", "title": "Installation"},
+}
 
+
+def _project_root() -> Path:
+    # .../app/routes/home.py -> .../<projektroot>
+    return Path(__file__).resolve().parents[2]
+
+
+def _docs_dir() -> Path:
+    return _project_root() / "docs"
+
+
+def _render_markdown_file(md_path: Path) -> str:
+    md_text = md_path.read_text(encoding="utf-8")
+    return markdown.markdown(
+        md_text,
+        extensions=[
+            "fenced_code",
+            "tables",
+            "toc",
+            "sane_lists",
+        ],
+    )
+
+
+# -----------------------------------------------------------------------------
+# Backups
+# -----------------------------------------------------------------------------
 def _is_allowed_backup_name(name: str) -> bool:
     safe = Path(name).name  # keine Pfade zulassen
     if not safe.lower().endswith(".sqlite3"):
@@ -83,33 +117,30 @@ def home():
     return render_template("home.html", backups=backups, backup_dir=bdir)
 
 
+# -----------------------------------------------------------------------------
+# Hilfe /docs/*.md
+# -----------------------------------------------------------------------------
 @bp.get("/hilfe")
 def help_readme():
-    """
-    Zeigt die README.md als HTML-Seite an.
-    (Aktueller Stand: README.md im Projektroot)
-    """
-    project_root = Path(__file__).resolve().parents[2]
-    readme_path = project_root / "README.md"
+    # Abwärtskompatibel: /hilfe zeigt "Lies mich"
+    return redirect(url_for("home.help_docs", doc="readme"))
 
-    if not readme_path.exists():
+
+@bp.get("/hilfe/<doc>")
+def help_docs(doc: str):
+    cfg = _DOCS_MAP.get(doc)
+    if not cfg:
         abort(404)
 
-    md_text = readme_path.read_text(encoding="utf-8")
+    md_path = _docs_dir() / cfg["file"]
+    if not md_path.exists():
+        abort(404)
 
-    html = markdown.markdown(
-        md_text,
-        extensions=[
-            "fenced_code",
-            "tables",
-            "toc",
-            "sane_lists",
-        ],
-    )
+    html = _render_markdown_file(md_path)
 
     return render_template(
         "help_readme.html",
-        title="Hilfe / README",
+        title=cfg["title"],
         content=html,
     )
 
