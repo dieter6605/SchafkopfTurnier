@@ -10,33 +10,73 @@
     nav, .btn, .alert, .no-print { display: none !important; }
     .print-only { display: block !important; }
 
-    @page { margin: 10mm; }
+    /* etwas Luft unten für evtl. Drucker-Footer */
+    @page { margin: 12mm; }
+
     body { background: #fff !important; }
     .container { max-width: none !important; }
 
-    .sk-print-columns {
-      column-count: 2;
-      column-gap: 10mm;
-      column-fill: auto;
+    /* Kopf */
+    .sk-print-title {
+      margin: 0 0 6mm 0;
+      color: #000;
+    }
+    .sk-print-title .headline {
+      font-size: 22pt;      /* ✅ Wunsch: ca. 22pt */
+      font-weight: 900;
+      margin: 0;
+      line-height: 1.05;
+    }
+    .sk-print-title .meta {
+      font-size: 12pt;
+      margin: 1mm 0 0 0;
+      color: #000;
+      font-weight: 600;
     }
 
-    .sk-print-title h2 { font-size: 14pt; margin: 0; }
-    .sk-print-title .meta { font-size: 10pt; margin: 0 0 4mm 0; color: #000; }
-
+    /* 1-spaltig, zeilenweise, gut lesbar */
     .sk-line {
       break-inside: avoid;
-      -webkit-column-break-inside: avoid;
-      display: flex;
-      justify-content: space-between;
-      gap: 6mm;
-      font-size: 9.5pt;
-      line-height: 1.15;
-      padding: 1.2mm 0;
-      border-bottom: 1px solid #ddd;
+      page-break-inside: avoid;
+
+      display: grid;
+      grid-template-columns: 26mm 1fr 22mm 24mm; /* links Platz, Mitte Name, dann Tisch/Sitz, rechts Punkte */
+      gap: 4mm;
+
+      font-size: 13.5pt;    /* ✅ Wunsch: ca. 13.5pt */
+      line-height: 1.25;
+      padding: 2.0mm 0;
+      border-bottom: 1.5px solid #000; /* ✅ Kontrast */
+      color: #000;
+      align-items: baseline;
     }
-    .sk-left { flex: 1 1 auto; min-width: 0; }
-    .sk-right { flex: 0 0 auto; white-space: nowrap; font-weight: 700; }
-    .sk-muted { color: #333; font-weight: 400; }
+
+    .sk-place {
+      white-space: nowrap;
+      font-weight: 900;
+    }
+
+    .sk-name {
+      min-width: 0;
+    }
+    .sk-name .muted { color: #000; font-weight: 500; }
+
+    .sk-seat {
+      white-space: nowrap;
+      font-weight: 800;
+      color: #000;
+    }
+
+    .sk-points {
+      white-space: nowrap;
+      text-align: right;
+      font-weight: 900;
+      color: #000;
+    }
+
+    .sk-points .soli {
+      font-weight: 700;
+    }
   }
 </style>
 
@@ -78,7 +118,7 @@
   </div>
 </div>
 
-{# экран-Ansicht #}
+{# экран-Ansicht (unverändert, nur Spaltenreihenfolge angepasst wie gewünscht) #}
 <div class="card shadow-sm no-print">
   <div class="card-body">
     {% if not rows %}
@@ -89,24 +129,24 @@
           <thead>
             <tr>
               <th style="width:70px;">Platz</th>
-              <th>Name</th>
-              <th style="width:90px;">Punkte</th>
-              <th style="width:80px;">Soli</th>
-              <th style="width:90px;">Tisch/Sitz</th>
+              <th>Nachname</th>
+              <th>Vorname</th>
+              <th>Wohnort</th>
+              <th style="width:110px;">(Nr)</th>
+              <th style="width:110px;">Tisch/Sitz</th>
+              <th class="text-end" style="width:140px;">Punkte (Soli)</th>
             </tr>
           </thead>
           <tbody>
             {% for r in rows %}
               <tr>
                 <td class="sk-mono fw-bold">{{ r.place }}</td>
-                <td>
-                  <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
-                  <span class="text-muted">· {{ r.wohnort }}</span>
-                  <span class="text-muted sk-mono"> ({{ r.player_no }})</span>
-                </td>
-                <td class="sk-mono fw-bold">{{ r.points }}</td>
-                <td class="sk-mono">{{ r.soli }}</td>
+                <td><strong>{{ r.nachname }}</strong></td>
+                <td>{{ r.vorname }}</td>
+                <td><span class="text-muted">{{ r.wohnort }}</span></td>
+                <td class="sk-mono text-muted">({{ r.player_no }})</td>
                 <td class="sk-mono">{{ r.table_no }}/{{ r.seat }}</td>
+                <td class="sk-mono fw-bold text-end">{{ r.points }} ({{ r.soli }})</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -116,41 +156,35 @@
   </div>
 </div>
 
-{# Druckansicht: 2 Spalten, extrem kompakt #}
+{# Druckansicht: 1 Spalte, rechts Punkte (Soli) #}
 <div class="print-only">
   <div class="sk-print-title">
-    <h2>{{ t.title }}</h2>
-    <div class="meta">
-      Rundenwertung Runde {{ round_no }} · {{ t.event_date }} · {{ t.start_time }}
-      {% if now %} · Stand: {{ now }}{% endif %}
-    </div>
-    <div class="meta">
-      Einzelwerte: {{ scores_count }}/{{ expected_scores }}
-    </div>
+    <div class="headline">Rundenwertung – Runde {{ round_no }}</div>
+    <div class="meta">{{ t.title }}</div>
+    {% if scores_count is defined and expected_scores is defined %}
+      <div class="meta">Einzelwerte: {{ scores_count }}/{{ expected_scores }}</div>
+    {% endif %}
   </div>
 
   {% if rows and rows|length > 0 %}
-    <div class="sk-print-columns">
-      {% for r in rows %}
-        <div class="sk-line">
-          <div class="sk-left">
-            <span class="sk-mono fw-bold">{{ r.place }}</span>
-            <span class="sk-muted">·</span>
-            <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
-            <span class="sk-muted">· {{ r.wohnort }}</span>
-            <span class="sk-muted"> ({{ r.player_no }})</span>
-            <span class="sk-muted">·</span>
-            <span class="sk-mono fw-bold">{{ r.points }}</span>
-            <span class="sk-muted">P</span>
-            <span class="sk-muted">·</span>
-            <span class="sk-mono">{{ r.soli }}</span><span class="sk-muted">S</span>
-          </div>
-          <div class="sk-right sk-mono">
-            {{ r.table_no }}/{{ r.seat }}
-          </div>
+    {% for r in rows %}
+      <div class="sk-line">
+        <div class="sk-place sk-mono">{{ r.place }}</div>
+
+        <div class="sk-name">
+          <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+          <span class="muted">· {{ r.wohnort }}</span>
+          <span class="muted sk-mono"> ({{ r.player_no }})</span>
         </div>
-      {% endfor %}
-    </div>
+
+        <div class="sk-seat sk-mono">{{ r.table_no }}/{{ r.seat }}</div>
+
+        <div class="sk-points sk-mono">
+          {{ r.points }}
+          <span class="soli">({{ r.soli }})</span>
+        </div>
+      </div>
+    {% endfor %}
   {% else %}
     <div class="text-muted">Noch keine Ergebnisse.</div>
   {% endif %}

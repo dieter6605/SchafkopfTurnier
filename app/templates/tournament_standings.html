@@ -26,21 +26,24 @@
     .sk-line {
       break-inside: avoid;
       -webkit-column-break-inside: avoid;
+
       display: grid;
       grid-template-columns: 18mm 1fr auto; /* Platz | Name | Punkte(Soli) */
       align-items: baseline;
       gap: 4mm;
-      font-size: 9.5pt;
-      line-height: 1.15;
-      padding: 1.2mm 0;
-      border-bottom: 1px solid #ddd;
+
+      font-size: 12.0pt;     /* ✅ größer (vorher 9.5pt) */
+      line-height: 1.25;     /* ✅ luftiger */
+      padding: 1.6mm 0;      /* ✅ etwas mehr Abstand */
+      border-bottom: 1.2px solid #bbb; /* ✅ besserer Kontrast */
+      color: #000;
     }
 
-    .sk-place { text-align: right; font-weight: 700; }
+    .sk-place { text-align: right; font-weight: 800; }
     .sk-name  { min-width: 0; }
-    .sk-ps    { white-space: nowrap; font-weight: 700; text-align: right; }
+    .sk-ps    { white-space: nowrap; font-weight: 800; text-align: right; }
 
-    .sk-muted { color: #333; font-weight: 400; }
+    .sk-muted { color: #000; font-weight: 500; }
   }
 </style>
 
