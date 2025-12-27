@@ -32,10 +32,10 @@
       align-items: baseline;
       gap: 4mm;
 
-      font-size: 12.0pt;     /* ✅ größer (vorher 9.5pt) */
-      line-height: 1.25;     /* ✅ luftiger */
-      padding: 1.6mm 0;      /* ✅ etwas mehr Abstand */
-      border-bottom: 1.2px solid #bbb; /* ✅ besserer Kontrast */
+      font-size: 12.0pt;
+      line-height: 1.25;
+      padding: 1.6mm 0;
+      border-bottom: 1.2px solid #bbb;
       color: #000;
     }
 
@@ -44,6 +44,22 @@
     .sk-ps    { white-space: nowrap; font-weight: 800; text-align: right; }
 
     .sk-muted { color: #000; font-weight: 500; }
+  }
+
+  /* ✅ UI: Rundendetails kompakt/lesbar */
+  .sk-rounds {
+    margin-top: .15rem;
+    font-size: .85rem;
+    line-height: 1.15;
+    color: rgba(0,0,0,.65);
+    white-space: normal;
+  }
+  .sk-rounds .sk-r {
+    display: inline-block;
+    margin-right: .6rem;
+  }
+  .sk-rounds .sk-miss {
+    opacity: .55;
   }
 </style>
 
@@ -91,7 +107,7 @@
             <tr>
               <th style="width:70px;">Platz</th>
               <th>Name</th>
-              <th style="width:140px;">Punkte (Soli)</th>
+              <th style="width:260px;">Punkte (Soli)</th>
             </tr>
           </thead>
           <tbody>
@@ -103,8 +119,22 @@
                   <span class="text-muted">· {{ r.wohnort }}</span>
                   <span class="text-muted sk-mono"> ({{ r.player_no }})</span>
                 </td>
-                <td class="sk-mono fw-bold text-end">
-                  {{ r.points }} ({{ r.soli }})
+                <td class="sk-mono text-end">
+                  <div class="fw-bold">{{ r.points }} ({{ r.soli }})</div>
+
+                  {# ✅ Phase 1: je Runde anzeigen (nur UI) #}
+                  {% if round_numbers is defined and round_numbers and r.rounds is defined %}
+                    <div class="sk-rounds sk-mono text-end">
+                      {% for rn in round_numbers %}
+                        {% set rr = r.rounds.get(rn) %}
+                        {% if rr %}
+                          <span class="sk-r">R{{ rn }}: {{ rr.points }} ({{ rr.soli }})</span>
+                        {% else %}
+                          <span class="sk-r sk-miss">R{{ rn }}: —</span>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -115,7 +145,7 @@
   </div>
 </div>
 
-{# Druckansicht: 2 Spalten, kompakt #}
+{# Druckansicht: 2 Spalten, kompakt (unverändert) #}
 <div class="print-only">
   <div class="sk-print-title">
     <h2>{{ t.title }}</h2>
