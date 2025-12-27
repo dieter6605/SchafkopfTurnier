@@ -12,10 +12,20 @@
     .print-only { display: block !important; }
     .no-break { break-inside: avoid; page-break-inside: avoid; }
 
-    /* kompakt drucken */
-    @page { margin: 10mm; }
+    /* kompakt drucken + unten Platz für Seitenzahlen */
+    @page { margin: 12mm 12mm 18mm 12mm; }
+
     body { background: #fff !important; }
     .container { max-width: none !important; }
+
+    /* Seitenzahlen unten rechts */
+    @page {
+      @bottom-right {
+        content: "Seite " counter(page) " von " counter(pages);
+        font-size: 10pt;
+        font-weight: 600;
+      }
+    }
 
     /* 2 Spalten nebeneinander (zwei Blöcke) */
     .sk-print-columns {
@@ -24,9 +34,26 @@
       column-fill: auto;
     }
 
-    /* Überschrift kompakt */
-    .sk-print-title h2 { font-size: 14pt; margin: 0; }
-    .sk-print-title .meta { font-size: 10pt; margin: 0 0 4mm 0; color: #000; }
+    /* Druckkopf (Aushang-tauglich) */
+    .sk-print-title { margin: 0 0 6mm 0; color: #000; }
+    .sk-print-title .headline {
+      font-size: 24pt;     /* ✅ sehr groß */
+      font-weight: 900;
+      margin: 0;
+      color: #000;
+    }
+    .sk-print-title .round {
+      font-size: 22pt;     /* ✅ 20–24pt gewünscht */
+      font-weight: 900;
+      margin: 1mm 0 2mm 0;
+      color: #000;
+    }
+    .sk-print-title .title {
+      font-size: 14pt;
+      font-weight: 700;
+      margin: 0 0 6mm 0;
+      color: #000;
+    }
 
     /* Zeilenlayout: links Nameblock, rechts Tisch/Sitz */
     .sk-print-line {
@@ -38,24 +65,30 @@
       align-items: baseline;
       gap: 6mm;
 
-      font-size: 9.5pt;
-      line-height: 1.15;
-      padding: 1.2mm 0;
-      border-bottom: 1px solid #ddd;
+      font-size: 13.5pt;     /* ✅ gut lesbar aus 2–3 m */
+      line-height: 1.25;     /* ✅ Luft für Lesbarkeit */
+      padding: 1.6mm 0;      /* ✅ klar getrennte Zeilen */
+      border-bottom: 1.5px solid #000; /* ✅ maximaler Kontrast */
     }
 
     .sk-print-left {
       flex: 1 1 auto;
       min-width: 0;
+      color: #000;
     }
 
     .sk-print-right {
       flex: 0 0 auto;
       white-space: nowrap;
-      font-weight: 700;
+      font-weight: 900;
+      color: #000;
     }
 
-    .sk-print-muted { color: #333; font-weight: 400; }
+    /* ✅ Noch besserer Kontrast */
+    .sk-print-muted { color: #000; font-weight: 400; }
+
+    /* ✅ Spielernummer extra fett */
+    .sk-print-pno { font-weight: 900; color: #000; }
   }
 
   .print-only { display: none; }
@@ -302,11 +335,9 @@
   {# ------------------------------- #}
   <div class="print-only">
     <div class="sk-print-title">
-      <h2>{{ t.title }}</h2>
-      <div class="meta">
-        Runde {{ round_no }} · {{ t.event_date }} · {{ t.start_time }}
-        {% if now %} · Stand: {{ now }}{% endif %}
-      </div>
+      <div class="headline">Alphabetischer Sitzplan</div>
+      <div class="round">Runde {{ round_no }}</div>
+      <div class="title">{{ t.title }}</div>
     </div>
 
     {# seats_alpha muss aus Python kommen. Fallback: seats. #}
@@ -318,7 +349,7 @@
           <div class="sk-print-left">
             <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
             <span class="sk-print-muted">· {{ r.wohnort }}</span>
-            <span class="sk-print-muted"> ({{ r.player_no }})</span>
+            <span class="sk-print-muted"> (</span><span class="sk-print-pno">{{ r.player_no }}</span><span class="sk-print-muted">)</span>
           </div>
           <div class="sk-print-right sk-mono">
             {{ r.table_no }}/{{ r.seat }}
