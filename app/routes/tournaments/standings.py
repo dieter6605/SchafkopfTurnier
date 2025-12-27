@@ -15,7 +15,10 @@ def tournament_standings_overall(tournament_id: int):
     - Sum(points) je Spieler
     - Sum(soli) je Spieler
     - Platzierung nach points DESC, soli DESC, dann Name
-    UI/Druck: identisch zur Rundenwertung (Template: tournament_standings.html)
+
+    Phase 1:
+    - UI: zusätzlich pro Runde Punkte/Soli anzeigen (unter dem Gesamtwert)
+    - Druck: unverändert (weiterhin kompakt)
     """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
@@ -46,6 +49,20 @@ def tournament_standings_overall(tournament_id: int):
 
         expected_scores = participants_count * rounds_count
 
+        # ✅ Rundenliste (für UI-Anzeige pro Runde)
+        rn_rows = db.q(
+            con,
+            """
+            SELECT DISTINCT round_no
+            FROM tournament_rounds
+            WHERE tournament_id=?
+            ORDER BY round_no ASC
+            """,
+            (tournament_id,),
+        )
+        round_numbers = [int(r["round_no"]) for r in rn_rows] if rn_rows else []
+
+        # ✅ Gesamtwertung (wie bisher)
         rows = db.q(
             con,
             """
@@ -73,6 +90,31 @@ def tournament_standings_overall(tournament_id: int):
             (tournament_id,),
         )
 
+        # ✅ Rundendetails je Teilnehmer holen (points/soli pro Runde)
+        # Erwartung: tournament_scores hat Spalte round_no (wie bei Rundenwertung üblich)
+        detail = db.q(
+            con,
+            """
+            SELECT tp_id, round_no,
+                   COALESCE(points, 0) AS points,
+                   COALESCE(soli, 0)   AS soli
+            FROM tournament_scores
+            WHERE tournament_id=?
+            """,
+            (tournament_id,),
+        )
+
+        by_tp: dict[int, dict[int, dict[str, int]]] = {}
+        for d in detail or []:
+            try:
+                tp_id = int(d["tp_id"])
+                rn = int(d["round_no"])
+                p = int(d["points"] or 0)
+                s = int(d["soli"] or 0)
+            except Exception:
+                continue
+            by_tp.setdefault(tp_id, {})[rn] = {"points": p, "soli": s}
+
         # Platzierung vergeben (gleiches Punkte+Soli => gleicher Platz)
         out: list[dict] = []
         last_key: tuple[int, int] | None = None
@@ -81,6 +123,7 @@ def tournament_standings_overall(tournament_id: int):
 
         for r in rows:
             idx += 1
+            tp_id = int(r["tp_id"])
             p = int(r["points"] or 0)
             s = int(r["soli"] or 0)
             key = (p, s)
@@ -97,6 +140,8 @@ def tournament_standings_overall(tournament_id: int):
                     "wohnort": r["wohnort"],
                     "points": p,
                     "soli": s,
+                    # ✅ neu: je Runde Werte (kann leer sein)
+                    "rounds": by_tp.get(tp_id, {}),
                 }
             )
 
@@ -108,5 +153,6 @@ def tournament_standings_overall(tournament_id: int):
         rounds_count=rounds_count,
         scores_count=scores_count,
         expected_scores=expected_scores,
+        round_numbers=round_numbers,  # ✅ neu
         now=_now_local_iso(),
     )
