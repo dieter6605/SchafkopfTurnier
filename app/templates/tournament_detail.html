@@ -113,6 +113,33 @@
 
 </div>
 
+<!-- ✅ Turnier abschließen / Teilnahmen pflegen -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5 class="mb-1">Turnier abschließen</h5>
+        <div class="text-muted small">
+          Pflegt bei allen Turnierteilnehmern in den Adressdaten:
+          <strong>tournament_years</strong> (+2025), <strong>participation_count</strong> (+1) und <strong>last_tournament_at</strong> (=2025).
+          Doppelte Zählung wird verhindert.
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap justify-content-end">
+        <form method="post"
+              action="{{ url_for('tournaments.tournament_close_participations', tournament_id=t.id) }}"
+              class="d-inline"
+              onsubmit="return confirm('Turnier abschließen?\n\nTeilnahmejahr 2025 wird bei allen Teilnehmern gepflegt.\n(Zähler wird nur erhöht, wenn 2025 neu ist.)');">
+          <button class="btn btn-outline-danger" type="submit">
+            Turnier abschließen (Teilnahmen)
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Runden / Auslosung -->
 <div class="card shadow-sm mb-3">
   <div class="card-body">

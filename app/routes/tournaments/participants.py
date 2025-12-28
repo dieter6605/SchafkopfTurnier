@@ -192,6 +192,70 @@ def tournament_participant_quickadd(tournament_id: int):
 
 
 # -----------------------------------------------------------------------------
+# Turnier abschließen: Teilnahmejahr in addresses pflegen
+# -----------------------------------------------------------------------------
+@bp.post("/tournaments/<int:tournament_id>/close")
+def tournament_close_participations(tournament_id: int):
+    """
+    Nach Abschluss: bei allen Turnierteilnehmern (addresses):
+    - tournament_years: Jahr kommasepariert ergänzen (wenn noch nicht vorhanden)
+    - participation_count: +1 nur wenn Jahr neu ergänzt wurde (kein Doppelzählen)
+    - last_tournament_at: Jahr setzen (hier: "2025")
+    """
+    year = "2025"
+
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        # Wie viele Adressen wären betroffen?
+        affected_row = db.one(
+            con,
+            "SELECT COUNT(DISTINCT address_id) AS c FROM tournament_participants WHERE tournament_id=?",
+            (tournament_id,),
+        )
+        affected = int(affected_row["c"] or 0) if affected_row else 0
+        if affected <= 0:
+            flash("Keine Teilnehmer vorhanden – nichts zu aktualisieren.", "info")
+            return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        # Update: Jahr nur anhängen wenn nicht vorhanden; Zähler nur dann +1
+        con.execute(
+            """
+            UPDATE addresses
+            SET
+              tournament_years =
+                CASE
+                  WHEN COALESCE(tournament_years,'') = '' THEN ?
+                  WHEN instr(',' || tournament_years || ',', ',' || ? || ',') > 0 THEN tournament_years
+                  ELSE tournament_years || ',' || ?
+                END,
+
+              participation_count =
+                CASE
+                  WHEN instr(',' || COALESCE(tournament_years,'') || ',', ',' || ? || ',') > 0 THEN COALESCE(participation_count,0)
+                  ELSE COALESCE(participation_count,0) + 1
+                END,
+
+              last_tournament_at = ?,
+              updated_at = datetime('now')
+            WHERE id IN (
+              SELECT DISTINCT tp.address_id
+              FROM tournament_participants tp
+              WHERE tp.tournament_id = ?
+            )
+            """,
+            (year, year, year, year, year, tournament_id),
+        )
+        con.commit()
+
+    flash(f"Turnier abgeschlossen: Teilnahmejahr {year} gepflegt ({affected} Teilnehmer).", "ok")
+    return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+
+# -----------------------------------------------------------------------------
 # Inline-Edit: Adressdaten direkt aus Teilnehmerliste bearbeiten
 # -----------------------------------------------------------------------------
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/address/update")
