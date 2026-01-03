@@ -52,6 +52,55 @@ def _is_address_swap_blocked_status(status: str | None) -> bool:
     return False
 
 
+def _audit_log(
+    con,
+    *,
+    tournament_id: int,
+    action: str,
+    tp_id: int | None = None,
+    tp_id_2: int | None = None,
+    address_id_old: int | None = None,
+    address_id_new: int | None = None,
+    address_id_old_2: int | None = None,
+    address_id_new_2: int | None = None,
+    note: str | None = None,
+) -> None:
+    """
+    Audit-Log Eintrag schreiben (best effort).
+    Wichtig: Fehler im Audit-Log dürfen niemals die Fachfunktion blockieren.
+    Erwartet DB-Tabelle:
+      audit_log(id, created_at, tournament_id, action, tp_id, tp_id_2,
+                address_id_old, address_id_new, address_id_old_2, address_id_new_2, note)
+    """
+    try:
+        con.execute(
+            """
+            INSERT INTO audit_log(
+              tournament_id, action,
+              tp_id, tp_id_2,
+              address_id_old, address_id_new,
+              address_id_old_2, address_id_new_2,
+              note,
+              created_at
+            )
+            VALUES (?,?,?,?, ?,?,?,?, ?, datetime('now'))
+            """,
+            (
+                int(tournament_id),
+                str(action or "").strip() or "unknown",
+                (int(tp_id) if tp_id else None),
+                (int(tp_id_2) if tp_id_2 else None),
+                (int(address_id_old) if address_id_old else None),
+                (int(address_id_new) if address_id_new else None),
+                (int(address_id_old_2) if address_id_old_2 else None),
+                (int(address_id_new_2) if address_id_new_2 else None),
+                (str(note).strip() if note else None),
+            ),
+        )
+    except Exception:
+        pass
+
+
 @bp.get("/tournaments/<int:tournament_id>/participants")
 def tournament_participants(tournament_id: int):
     qtxt = (request.args.get("q") or "").strip()
@@ -87,6 +136,18 @@ def tournament_participants(tournament_id: int):
             """,
             (tournament_id,),
         )
+        
+        audit = db.q(
+            con,
+            """
+            SELECT *
+            FROM audit_log
+            WHERE tournament_id=?
+            ORDER BY id DESC
+            LIMIT 200
+            """,
+            (tournament_id,),
+        )
 
     return render_template(
         "tournament_participants.html",
@@ -98,6 +159,7 @@ def tournament_participants(tournament_id: int):
         cap_ok=cap_ok,
         show_gaps=show_gaps,
         gaps=gaps,
+        audit=audit,
     )
 
 
@@ -202,7 +264,7 @@ def tournament_participant_add(tournament_id: int, address_id: int):
 
         pno = _next_free_player_no(con, tournament_id)
 
-        con.execute(
+        cur = con.execute(
             """
             INSERT INTO tournament_participants
               (tournament_id, player_no, address_id, display_name, created_at, updated_at)
@@ -210,6 +272,17 @@ def tournament_participant_add(tournament_id: int, address_id: int):
             """,
             (tournament_id, pno, address_id, _display_name(a)),
         )
+        tp_id = int(cur.lastrowid or 0) if cur else 0
+
+        _audit_log(
+            con,
+            tournament_id=tournament_id,
+            action="add",
+            tp_id=(tp_id if tp_id > 0 else None),
+            address_id_new=address_id,
+            note=f"Teilnehmer übernommen (Nr {pno}).",
+        )
+
         con.commit()
 
     flash(f"Teilnehmer übernommen (Nr {pno}).", "ok")
@@ -284,7 +357,7 @@ def tournament_participant_quickadd(tournament_id: int):
         address_id = int(cur.lastrowid)
         pno = _next_free_player_no(con, tournament_id)
 
-        con.execute(
+        cur2 = con.execute(
             """
             INSERT INTO tournament_participants
               (tournament_id, player_no, address_id, display_name, created_at, updated_at)
@@ -292,6 +365,17 @@ def tournament_participant_quickadd(tournament_id: int):
             """,
             (tournament_id, pno, address_id, f"{nachname}, {vorname} · {wohnort}"),
         )
+        tp_id = int(cur2.lastrowid or 0) if cur2 else 0
+
+        _audit_log(
+            con,
+            tournament_id=tournament_id,
+            action="quickadd",
+            tp_id=(tp_id if tp_id > 0 else None),
+            address_id_new=address_id,
+            note=f"Adresse neu angelegt + übernommen (Nr {pno}).",
+        )
+
         con.commit()
 
     flash(f"Teilnehmer neu angelegt und übernommen (Nr {pno}).", "ok")
@@ -406,7 +490,7 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
 
         row = db.one(
             con,
-            "SELECT id, player_no FROM tournament_participants WHERE id=? AND tournament_id=?",
+            "SELECT id, player_no, address_id FROM tournament_participants WHERE id=? AND tournament_id=?",
             (tp_id, tournament_id),
         )
         if not row:
@@ -414,8 +498,18 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         removed_no = int(row["player_no"] or 0)
+        old_address_id = int(row["address_id"] or 0)
 
         con.execute("DELETE FROM tournament_participants WHERE id=? AND tournament_id=?", (tp_id, tournament_id))
+
+        _audit_log(
+            con,
+            tournament_id=tournament_id,
+            action="remove",
+            tp_id=tp_id,
+            address_id_old=(old_address_id if old_address_id > 0 else None),
+            note=f"Teilnehmer entfernt (Nr {removed_no}).",
+        )
 
         if renumber and removed_no > 0:
             _renumber_from(con, tournament_id, removed_no)
@@ -666,6 +760,19 @@ def tournament_participant_swap(tournament_id: int):
                 if created_tmp and tmp_id > 0:
                     con.execute("DELETE FROM addresses WHERE id=?", (tmp_id,))
 
+                _audit_log(
+                    con,
+                    tournament_id=tournament_id,
+                    action="swap_exchange",
+                    tp_id=tp_id,
+                    tp_id_2=other_tp_id,
+                    address_id_old=old_address_id,
+                    address_id_new=new_address_id,
+                    address_id_old_2=new_address_id,
+                    address_id_new_2=old_address_id,
+                    note=f"Teilnehmer getauscht (Nr {this_player_no} ↔ Nr {other_player_no}).",
+                )
+
                 con.commit()
 
             except Exception as e:
@@ -692,6 +799,17 @@ def tournament_participant_swap(tournament_id: int):
             """,
             (new_address_id, _display_name(a_new), tp_id, tournament_id),
         )
+
+        _audit_log(
+            con,
+            tournament_id=tournament_id,
+            action="swap_replace",
+            tp_id=tp_id,
+            address_id_old=old_address_id,
+            address_id_new=new_address_id,
+            note=f"Teilnehmer ersetzt (Nr {int(tp['player_no'] or 0)}).",
+        )
+
         con.commit()
 
     flash("Teilnehmer ersetzt (Nummer blieb gleich).", "ok")
