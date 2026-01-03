@@ -1,18 +1,12 @@
+<!-- app/templates/tournament_standings.html -->
 {% extends "layout.html" %}
 {% block content %}
 
 <style>
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  .no-print { display: block; }
-  .print-only { display: none; }
 
   @media print {
-    nav, .btn, .alert, .no-print { display: none !important; }
-    .print-only { display: block !important; }
-
     @page { margin: 10mm; }
-    body { background: #fff !important; }
-    .container { max-width: none !important; }
 
     .sk-print-columns {
       column-count: 2;
@@ -28,7 +22,7 @@
       -webkit-column-break-inside: avoid;
 
       display: grid;
-      grid-template-columns: 18mm 1fr auto; /* Platz | Name | Punkte(Soli) */
+      grid-template-columns: 18mm 1fr auto;
       align-items: baseline;
       gap: 4mm;
 
@@ -46,7 +40,7 @@
     .sk-muted { color: #000; font-weight: 500; }
   }
 
-  /* ✅ UI: Rundendetails kompakt/lesbar */
+  /* UI: Rundendetails kompakt/lesbar */
   .sk-rounds {
     margin-top: .15rem;
     font-size: .85rem;
@@ -95,7 +89,6 @@
   </div>
 </div>
 
-{# UI-Ansicht #}
 <div class="card shadow-sm no-print">
   <div class="card-body">
     {% if not rows %}
@@ -122,7 +115,6 @@
                 <td class="sk-mono text-end">
                   <div class="fw-bold">{{ r.points }} ({{ r.soli }})</div>
 
-                  {# ✅ Phase 1: je Runde anzeigen (nur UI) #}
                   {% if round_numbers is defined and round_numbers and r.rounds is defined %}
                     <div class="sk-rounds sk-mono text-end">
                       {% for rn in round_numbers %}
@@ -145,7 +137,6 @@
   </div>
 </div>
 
-{# Druckansicht: 2 Spalten, kompakt (unverändert) #}
 <div class="print-only">
   <div class="sk-print-title">
     <h2>{{ t.title }}</h2>

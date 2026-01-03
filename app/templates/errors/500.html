@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container py-4" style="max-width: 980px;">
+  <div class="card shadow-sm border-danger">
+    <div class="card-body p-4">
+      <h3>Interner Fehler</h3>
+      <div class="text-muted mb-3">HTTP 500</div>
+
+      <div class="alert alert-danger">
+        {{ message }}
+      </div>
+
+      <p class="small text-muted">
+        Bitte versuche es erneut oder kehre zur Startseite zurück.
+      </p>
+
+      <a class="btn btn-outline-secondary" href="{{ home_url }}">Startseite</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

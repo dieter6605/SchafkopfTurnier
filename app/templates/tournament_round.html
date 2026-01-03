@@ -1,3 +1,4 @@
+<!-- app/templates/tournament_round.html -->
 {# app/templates/tournament_round.html #}
 {% extends "layout.html" %}
 {% block content %}
@@ -6,19 +7,12 @@
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   .sk-kbd  { font-size: .95rem; color: rgba(0,0,0,.55); }
 
-  /* Druck: Cards ausblenden, alphabetische Liste einblenden */
   @media print {
-    nav, .btn, .alert, .no-print { display: none !important; }
-    .print-only { display: block !important; }
     .no-break { break-inside: avoid; page-break-inside: avoid; }
 
-    /* kompakt drucken + unten Platz für Seitenzahlen */
     @page { margin: 12mm 12mm 18mm 12mm; }
 
-    body { background: #fff !important; }
-    .container { max-width: none !important; }
-
-    /* Seitenzahlen unten rechts */
+    /* Hinweis: Page-Counter-Regeln werden nicht von allen Browsern unterstützt */
     @page {
       @bottom-right {
         content: "Seite " counter(page) " von " counter(pages);
@@ -27,23 +21,21 @@
       }
     }
 
-    /* 2 Spalten nebeneinander (zwei Blöcke) */
     .sk-print-columns {
       column-count: 2;
       column-gap: 10mm;
       column-fill: auto;
     }
 
-    /* Druckkopf (Aushang-tauglich) */
     .sk-print-title { margin: 0 0 6mm 0; color: #000; }
     .sk-print-title .headline {
-      font-size: 24pt;     /* ✅ sehr groß */
+      font-size: 24pt;
       font-weight: 900;
       margin: 0;
       color: #000;
     }
     .sk-print-title .round {
-      font-size: 22pt;     /* ✅ 20–24pt gewünscht */
+      font-size: 22pt;
       font-weight: 900;
       margin: 1mm 0 2mm 0;
       color: #000;
@@ -55,7 +47,6 @@
       color: #000;
     }
 
-    /* Zeilenlayout: links Nameblock, rechts Tisch/Sitz */
     .sk-print-line {
       break-inside: avoid;
       -webkit-column-break-inside: avoid;
@@ -65,10 +56,10 @@
       align-items: baseline;
       gap: 6mm;
 
-      font-size: 13.5pt;     /* ✅ gut lesbar aus 2–3 m */
-      line-height: 1.25;     /* ✅ Luft für Lesbarkeit */
-      padding: 1.6mm 0;      /* ✅ klar getrennte Zeilen */
-      border-bottom: 1.5px solid #000; /* ✅ maximaler Kontrast */
+      font-size: 13.5pt;
+      line-height: 1.25;
+      padding: 1.6mm 0;
+      border-bottom: 1.5px solid #000;
     }
 
     .sk-print-left {
@@ -84,21 +75,25 @@
       color: #000;
     }
 
-    /* ✅ Noch besserer Kontrast */
     .sk-print-muted { color: #000; font-weight: 400; }
-
-    /* ✅ Spielernummer extra fett */
     .sk-print-pno { font-weight: 900; color: #000; }
   }
-
-  .print-only { display: none; }
 </style>
 
-{# Neu: ist diese Runde bereits ausgelost? #}
-{% set current_drawn = (seats and seats|length > 0) %}
+{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
 
-{# Neu: "nächste Runde auslosen" nur erlauben, wenn diese Runde die letzte existierende ist #}
+{% set current_drawn = (seats and seats|length > 0) %}
 {% set allow_draw_next = (current_drawn and (round_no|int == (last_round_no or 0)|int)) %}
+
+{% if is_closed %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold">Turnier ist abgeschlossen – Änderungen sind gesperrt.</div>
+      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ closed_at }}</span></div>
+    </div>
+  </div>
+{% endif %}
 
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 no-print">
   <div>
@@ -129,6 +124,10 @@
         <br>
         Hinweis: „Nächste Runde auslosen“ nur aus der <span class="fw-semibold">letzten</span> ausgelosten Runde heraus möglich.
       {% endif %}
+      {% if is_closed %}
+        <br>
+        <span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Auslosen/Ändern gesperrt.
+      {% endif %}
     </div>
   </div>
 
@@ -145,7 +144,6 @@
       Drucken
     </button>
 
-    {# ✅ Direkt-Links von Runde #}
     {% if current_drawn %}
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
@@ -163,13 +161,15 @@
       Gesamtwertung
     </a>
 
-    {# Draw/Redraw aktuelle Runde #}
     <form method="post"
           id="formDraw"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
           class="d-inline"
-          onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-      <button class="btn btn-warning" id="btnRedraw" type="submit">
+          {% if not is_closed %}
+          onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
+          {% endif %}>
+      <button class="btn btn-warning" id="btnRedraw" type="submit"
+              {% if is_closed %}disabled aria-disabled="true"{% endif %}>
         {% if current_drawn %}
           Runde {{ round_no }} neu auslosen
         {% else %}
@@ -178,7 +178,6 @@
       </button>
     </form>
 
-    {# Vorherige existierende Runde #}
     {% if prev_round_no %}
       <a class="btn btn-outline-secondary"
          id="btnPrevRound"
@@ -195,7 +194,6 @@
       </a>
     {% endif %}
 
-    {# Nächste existierende Runde #}
     {% if next_round_no %}
       <a class="btn btn-outline-secondary"
          id="btnNextRound"
@@ -212,21 +210,22 @@
       </a>
     {% endif %}
 
-    {# Vorbereiten: immer möglich, ohne Auslosung #}
     <a class="btn btn-outline-primary"
        id="btnPrepareNext"
        href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
       Runde {{ round_no + 1 }} vorbereiten
     </a>
 
-    {# Neu: nächste Runde direkt auslosen (nur wenn erlaubt: letzte existierende Runde) #}
     {% if allow_draw_next %}
       <form method="post"
             id="formDrawNext"
             action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=(round_no + 1)) }}"
             class="d-inline"
-            onsubmit="return confirm('Runde {{ round_no + 1 }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-        <button class="btn btn-outline-warning" id="btnDrawNext" type="submit">
+            {% if not is_closed %}
+            onsubmit="return confirm({{ ('Runde ' ~ (round_no + 1) ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
+            {% endif %}>
+        <button class="btn btn-outline-warning" id="btnDrawNext" type="submit"
+                {% if is_closed %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no + 1 }} auslosen
         </button>
       </form>
@@ -239,8 +238,6 @@
               title="Nur aus der letzten ausgelosten Runde heraus möglich.">
         Runde {{ round_no + 1 }} auslosen
       </button>
-    {% else %}
-      {# keine Auslosung vorhanden -> Shift+R soll diese Runde auslösen (JS fällt auf btnRedraw) #}
     {% endif %}
 
     {% if last_round_no and last_round_no > 0 %}
@@ -255,9 +252,6 @@
 
 {% if current_drawn %}
 
-  {# ----------------------- #}
-  {# 1) Kartenansicht (UI)   #}
-  {# ----------------------- #}
   <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 no-print">
     {% for grp in seats|groupby('table_no') %}
       {% set table_no = grp.grouper %}
@@ -330,9 +324,6 @@
     </div>
   {% endif %}
 
-  {# ------------------------------- #}
-  {# 2) Druckansicht (alphabetisch)  #}
-  {# ------------------------------- #}
   <div class="print-only">
     <div class="sk-print-title">
       <div class="headline">Alphabetischer Sitzplan</div>
@@ -340,7 +331,6 @@
       <div class="title">{{ t.title }}</div>
     </div>
 
-    {# seats_alpha muss aus Python kommen. Fallback: seats. #}
     {% set _print_rows = seats_alpha if seats_alpha is defined else seats %}
 
     <div class="sk-print-columns">
@@ -367,6 +357,9 @@
         Tipp: <span class="fw-semibold">R</span> = auslosen ·
         <span class="fw-semibold">Shift+R</span> = auslosen ·
         <span class="fw-semibold">N</span>/<span class="fw-semibold">→</span> = Runde {{ round_no + 1 }} vorbereiten
+        {% if is_closed %}
+          <br><span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Auslosen/Ändern gesperrt.
+        {% endif %}
       </div>
     </div>
 
@@ -374,13 +367,17 @@
       <form method="post"
             action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
             class="d-inline"
-            onsubmit="return confirm('Runde {{ round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-        <button class="btn btn-warning" type="submit">
+            {% if not is_closed %}
+            onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
+            {% endif %}>
+        <button class="btn btn-warning" type="submit"
+                {% if is_closed %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no }} auslosen
         </button>
       </form>
 
       <a class="btn btn-outline-primary"
+         id="btnPrepareNext2"
          href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=(round_no + 1)) }}">
         Runde {{ round_no + 1 }} vorbereiten
       </a>
@@ -393,10 +390,12 @@
   </div>
 {% endif %}
 
-<script>
-  // für JS: darf Shift+R "nächste Runde auslosen"?
-  window.__SKT_ALLOW_DRAW_NEXT__ = {{ 1 if allow_draw_next else 0 }};
-</script>
-<script src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
+{% endblock %}
 
+{% block scripts %}
+<script>
+  window.__SKT_ALLOW_DRAW_NEXT__ = {{ (allow_draw_next and (not is_closed))|tojson }};
+  window.__SKT_TOURNAMENT_CLOSED__ = {{ is_closed|tojson }};
+</script>
+<script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 {% endblock %}

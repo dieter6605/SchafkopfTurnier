@@ -14,11 +14,7 @@ def tournament_standings_overall(tournament_id: int):
     Gesamtwertung über alle Runden:
     - Sum(points) je Spieler
     - Sum(soli) je Spieler
-    - Platzierung nach points DESC, soli DESC, dann Name
-
-    Phase 1:
-    - UI: zusätzlich pro Runde Punkte/Soli anzeigen (unter dem Gesamtwert)
-    - Druck: unverändert (weiterhin kompakt)
+    - zusätzlich: Anzeige der Punkte/Soli je Runde (Phase 1, nur UI)
     """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
@@ -26,43 +22,22 @@ def tournament_standings_overall(tournament_id: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        participants_count_row = db.one(
-            con,
-            "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?",
-            (tournament_id,),
-        )
-        participants_count = int(participants_count_row["c"] or 0) if participants_count_row else 0
+        pc_row = db.one(con, "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
+        participants_count = int(pc_row["c"] or 0) if pc_row else 0
 
-        rounds_count_row = db.one(
+        rounds = db.q(
             con,
-            "SELECT COUNT(DISTINCT round_no) AS c FROM tournament_rounds WHERE tournament_id=?",
+            "SELECT DISTINCT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no",
             (tournament_id,),
         )
-        rounds_count = int(rounds_count_row["c"] or 0) if rounds_count_row else 0
+        round_numbers = [int(r["round_no"]) for r in rounds]
+        rounds_count = len(round_numbers)
 
-        scores_count_row = db.one(
-            con,
-            "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?",
-            (tournament_id,),
-        )
-        scores_count = int(scores_count_row["c"] or 0) if scores_count_row else 0
+        sc_row = db.one(con, "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?", (tournament_id,))
+        scores_count = int(sc_row["c"] or 0) if sc_row else 0
 
         expected_scores = participants_count * rounds_count
 
-        # ✅ Rundenliste (für UI-Anzeige pro Runde)
-        rn_rows = db.q(
-            con,
-            """
-            SELECT DISTINCT round_no
-            FROM tournament_rounds
-            WHERE tournament_id=?
-            ORDER BY round_no ASC
-            """,
-            (tournament_id,),
-        )
-        round_numbers = [int(r["round_no"]) for r in rn_rows] if rn_rows else []
-
-        # ✅ Gesamtwertung (wie bisher)
         rows = db.q(
             con,
             """
@@ -82,52 +57,39 @@ def tournament_standings_overall(tournament_id: int):
             ORDER BY
                 points DESC,
                 soli   DESC,
-                a.nachname COLLATE NOCASE ASC,
-                a.vorname  COLLATE NOCASE ASC,
-                a.wohnort  COLLATE NOCASE ASC,
-                tp.player_no ASC
+                a.nachname COLLATE NOCASE,
+                a.vorname  COLLATE NOCASE,
+                a.wohnort  COLLATE NOCASE,
+                tp.player_no
             """,
             (tournament_id,),
         )
 
-        # ✅ Rundendetails je Teilnehmer holen (points/soli pro Runde)
-        # Erwartung: tournament_scores hat Spalte round_no (wie bei Rundenwertung üblich)
-        detail = db.q(
+        per_round = db.q(
             con,
             """
-            SELECT tp_id, round_no,
-                   COALESCE(points, 0) AS points,
-                   COALESCE(soli, 0)   AS soli
+            SELECT tp_id, round_no, points, soli
             FROM tournament_scores
             WHERE tournament_id=?
             """,
             (tournament_id,),
         )
 
-        by_tp: dict[int, dict[int, dict[str, int]]] = {}
-        for d in detail or []:
-            try:
-                tp_id = int(d["tp_id"])
-                rn = int(d["round_no"])
-                p = int(d["points"] or 0)
-                s = int(d["soli"] or 0)
-            except Exception:
-                continue
-            by_tp.setdefault(tp_id, {})[rn] = {"points": p, "soli": s}
+        rounds_by_tp: dict[int, dict[int, dict]] = {}
+        for r in per_round:
+            tp_id = int(r["tp_id"])
+            rn = int(r["round_no"])
+            rounds_by_tp.setdefault(tp_id, {})[rn] = {"points": int(r["points"]), "soli": int(r["soli"])}
 
-        # Platzierung vergeben (gleiches Punkte+Soli => gleicher Platz)
-        out: list[dict] = []
-        last_key: tuple[int, int] | None = None
+        out = []
+        last_key = None
         place = 0
         idx = 0
 
         for r in rows:
             idx += 1
-            tp_id = int(r["tp_id"])
-            p = int(r["points"] or 0)
-            s = int(r["soli"] or 0)
-            key = (p, s)
-            if last_key is None or key != last_key:
+            key = (int(r["points"]), int(r["soli"]))
+            if key != last_key:
                 place = idx
                 last_key = key
 
@@ -138,10 +100,9 @@ def tournament_standings_overall(tournament_id: int):
                     "nachname": r["nachname"],
                     "vorname": r["vorname"],
                     "wohnort": r["wohnort"],
-                    "points": p,
-                    "soli": s,
-                    # ✅ neu: je Runde Werte (kann leer sein)
-                    "rounds": by_tp.get(tp_id, {}),
+                    "points": int(r["points"]),
+                    "soli": int(r["soli"]),
+                    "rounds": rounds_by_tp.get(int(r["tp_id"]), {}),
                 }
             )
 
@@ -149,10 +110,10 @@ def tournament_standings_overall(tournament_id: int):
         "tournament_standings.html",
         t=t,
         rows=out,
+        round_numbers=round_numbers,
         participants_count=participants_count,
         rounds_count=rounds_count,
         scores_count=scores_count,
         expected_scores=expected_scores,
-        round_numbers=round_numbers,  # ✅ neu
         now=_now_local_iso(),
     )

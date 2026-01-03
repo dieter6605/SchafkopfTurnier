@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from flask import request, session
+from flask import flash, redirect, request, session, url_for
 
 from ... import db
 
@@ -28,6 +28,53 @@ def _display_name(a: Any) -> str:
 
 def _get_tournament(con, tournament_id: int):
     return db.one(con, "SELECT * FROM tournaments WHERE id=?", (tournament_id,))
+
+
+# -----------------------------
+# closed_at helper
+# -----------------------------
+def _is_closed(t: Any) -> bool:
+    """
+    True, wenn Turnier abgeschlossen (closed_at gesetzt).
+    Funktioniert für sqlite RowMapping (dict-like) und dict.
+    """
+    try:
+        if hasattr(t, "get"):
+            return bool((t.get("closed_at") or "").strip())
+        return bool((t["closed_at"] or "").strip())
+    except Exception:
+        return False
+
+
+def _closed_at_str(t: Any) -> str:
+    """closed_at als String (oder leer)."""
+    try:
+        if hasattr(t, "get"):
+            return str(t.get("closed_at") or "")
+        return str(t["closed_at"] or "")
+    except Exception:
+        return ""
+
+
+def _guard_closed_redirect(
+    t: Any,
+    *,
+    action: str,
+    endpoint: str,
+    endpoint_kwargs: dict[str, Any] | None = None,
+    category: str = "error",
+):
+    """
+    Zentrale serverseitige Sperre:
+    - Wenn Turnier geschlossen => Flash + Redirect
+    - Sonst => None
+    """
+    if not _is_closed(t):
+        return None
+
+    ca = _closed_at_str(t) or "unbekannt"
+    flash(f"Turnier ist abgeschlossen (seit {ca}). {action} ist gesperrt.", category)
+    return redirect(url_for(endpoint, **(endpoint_kwargs or {})))
 
 
 def _cap_ok(t: Any, participant_count: int) -> bool:
@@ -150,6 +197,53 @@ def _session_gaps_key(tournament_id: int) -> str:
     return f"skt_tp_gaps_{int(tournament_id)}"
 
 
+def _normalize_marker(raw: str) -> str | None:
+    """
+    Normalisierung:
+    - trim
+    - Großbuchstaben
+    - Whitespaces entfernen
+    Ergebnis None, wenn leer.
+    """
+    s = (raw or "").strip().upper()
+    s = "".join(s.split())
+    return s or None
+
+
+def _event_date_to_marker_prefix(event_date: str) -> str | None:
+    """
+    event_date erwartet YYYY-MM-DD.
+    Gibt JJMMTT als 6-stelligen Prefix zurück, sonst None.
+    """
+    s = (event_date or "").strip()
+    try:
+        dt = datetime.strptime(s[:10], "%Y-%m-%d")
+        return dt.strftime("%y%m%d")
+    except Exception:
+        return None
+
+
+def _validate_marker_for_event_date(marker: str, event_date: str) -> str | None:
+    """
+    Marker-Regeln:
+    - exakt 10 Zeichen
+    - A-Z/0-9
+    - beginnt mit JJMMTT aus event_date
+    Rückgabe: Fehlermeldung oder None.
+    """
+    m = (marker or "").strip().upper()
+    if len(m) != 10:
+        return "Marker muss exakt 10 Zeichen lang sein (JJMMTTxxxx)."
+    if not m.isalnum():
+        return "Marker darf nur Buchstaben/Ziffern enthalten (ohne Leerzeichen)."
+    pref = _event_date_to_marker_prefix(event_date or "")
+    if not pref:
+        return "Marker-Prüfung nicht möglich: ungültiges Veranstaltungsdatum."
+    if not m.startswith(pref):
+        return f"Marker muss mit dem Datum beginnen: {pref}xxxx (JJMMTTxxxx)."
+    return None
+
+
 def _read_tournament_form() -> dict[str, Any]:
     """Liest und normalisiert Turnier-Formularfelder aus request.form."""
     f = request.form
@@ -157,6 +251,7 @@ def _read_tournament_form() -> dict[str, Any]:
         "title": (f.get("title") or "").strip(),
         "event_date": (f.get("event_date") or "").strip(),
         "start_time": (f.get("start_time") or "").strip(),
+        "marker": _normalize_marker(f.get("marker") or ""),
         "location": (f.get("location") or "").strip() or None,
         "organizer": (f.get("organizer") or "").strip() or None,
         "description": (f.get("description") or "").strip() or None,
@@ -173,6 +268,13 @@ def _validate_tournament_form(data: dict[str, Any]) -> str | None:
         return "Datum ist Pflicht."
     if not data["start_time"]:
         return "Beginn ist Pflicht."
+
+    marker = data.get("marker")
+    if marker:
+        msg = _validate_marker_for_event_date(marker, data.get("event_date") or "")
+        if msg:
+            return msg
+
     return None
 
 

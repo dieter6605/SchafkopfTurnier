@@ -1,3 +1,4 @@
+<!-- app/templates/tournament_participants.html -->
 {# app/templates/tournament_participants.html #}
 {% extends "layout.html" %}
 {% block content %}
@@ -7,11 +8,21 @@
   .sk-selected { outline: 3px solid rgba(13,110,253,.45); border-radius: 10px; }
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  .sk-part { cursor: pointer; }
 
-  /* Dezent: Edit-Zeile */
-  .sk-edit-row td { background: rgba(13,110,253,.04); }
+  /* Klick-Zeile (nur wenn editierbar) */
+  .sk-part { cursor: pointer; }
+  .sk-part a { text-decoration: none; }
+  .sk-part a:hover { text-decoration: underline; }
+
+  /* Swap-Modal */
+  .sk-swap-item.sk-swap-picked {
+    outline: 3px solid rgba(13,110,253,.35);
+    border-radius: 10px;
+  }
 </style>
+
+{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
 
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
@@ -19,10 +30,22 @@
     <div class="text-muted small">{{ t.event_date }} · {{ t.start_time }}</div>
     <div class="sk-kbd mt-1">
       Tastatur: ↑/↓ wählen · Enter (Teilnehmerliste) = keine Aktion · Alt+N = Quick-Add öffnen · Esc = Quick-Add schließen · Shift+Entf = Teilnehmer entfernen
+      {% if is_closed %}
+        <br><span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Änderungen sind gesperrt.
+      {% endif %}
     </div>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">Turnier</a>
 </div>
+
+{% if is_closed %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold">Turnier ist abgeschlossen – Teilnehmerverwaltung ist gesperrt (read-only).</div>
+      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ closed_at }}</span></div>
+    </div>
+  </div>
+{% endif %}
 
 <div class="row g-3 mb-3">
   <div class="col-lg-6">
@@ -44,7 +67,8 @@
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
             <input type="hidden" name="q" value="{{ q or '' }}">
             <button class="btn btn-sm btn-outline-secondary"
-                    title="Prüft auf Lücken (Anzeige kommt als nächstes)">
+                    title="Prüft auf Lücken (Anzeige kommt als nächstes)"
+                    {% if is_closed %}disabled{% endif %}>
               Prüfen
             </button>
           </form>
@@ -54,7 +78,8 @@
             <input type="hidden" name="q" value="{{ q or '' }}">
             <input type="hidden" name="renumber" value="1">
             <button class="btn btn-sm btn-outline-danger"
-                    title="Verdichtet alle Teilnehmer auf 1..N">
+                    title="Verdichtet alle Teilnehmer auf 1..N"
+                    {% if is_closed %}disabled{% endif %}>
               Neu durchnummerieren (1..N)
             </button>
           </form>
@@ -72,11 +97,13 @@
                    pattern="[0-9]*"
                    placeholder="z.B. 17"
                    style="max-width: 110px;"
-                   title="Startnummer (>=1)">
+                   title="Startnummer (>=1)"
+                   {% if is_closed %}disabled{% endif %}>
 
             <button class="btn btn-sm btn-outline-warning"
                     title="Verdichtet ab dieser Nummer, Nummern darunter bleiben unverändert"
-                    onclick="return confirm('Ab dieser Nummer neu durchnummerieren?');">
+                    onclick="return confirm({{ ('Ab dieser Nummer neu durchnummerieren?')|tojson }});"
+                    {% if is_closed %}disabled{% endif %}>
               Renummerieren ab Nr.
             </button>
           </form>
@@ -111,12 +138,16 @@
              placeholder="Suche (Name/Wohnort/Ort/PLZ/Telefon/Email/Straße)" style="min-width: 420px;" autofocus>
       <button class="btn btn-primary">Suchen</button>
 
-      <button class="btn btn-outline-secondary" type="button" id="btnOpenQuickAdd">
+      <button class="btn btn-outline-secondary" type="button" id="btnOpenQuickAdd"
+              {% if is_closed %}disabled{% endif %}>
         Quick-Add (neu)
       </button>
 
       {% if cap_ok is defined and not cap_ok %}
         <span class="badge text-bg-danger">Max. Teilnehmer erreicht</span>
+      {% endif %}
+      {% if is_closed %}
+        <span class="badge text-bg-warning">geschlossen</span>
       {% endif %}
     </form>
 
@@ -142,7 +173,8 @@
                   <form method="post"
                         action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
                     <button class="btn btn-sm btn-outline-primary"
-                            {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+                            {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+                            {% if is_closed %}disabled{% endif %}>
                       Übernehmen
                     </button>
                   </form>
@@ -160,7 +192,6 @@
   </div>
 </div>
 
-<!-- Quick-Add Card -->
 <div class="card shadow-sm mb-3" id="quickAddCard" style="display:none;">
   <div class="card-body">
     <h5 class="mb-2">Quick-Add: neuer Teilnehmer</h5>
@@ -176,12 +207,14 @@
       <div class="col-md-3">
         <label class="form-label">Nachname *</label>
         <input class="form-control" id="qaNachname" name="nachname" required
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
       <div class="col-md-3">
         <label class="form-label">Vorname *</label>
         <input class="form-control" name="vorname" required
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
 
       <div class="col-md-3">
@@ -190,51 +223,60 @@
                name="wohnort" required autocomplete="off"
                data-plz-id="qaPlz"
                data-ort-id="qaOrt"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
         <div class="form-text">Autocomplete aus Wohnort-Tabelle</div>
       </div>
 
       <div class="col-md-3">
         <label class="form-label">Telefon</label>
         <input class="form-control" name="telefon"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
 
       <div class="col-md-2">
         <label class="form-label">PLZ</label>
         <input class="form-control" id="qaPlz" name="plz"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
       <div class="col-md-4">
         <label class="form-label">Ort</label>
         <input class="form-control" id="qaOrt" name="ort"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
       <div class="col-md-4">
         <label class="form-label">Straße</label>
         <input class="form-control" name="strasse"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
       <div class="col-md-2">
         <label class="form-label">Hausnr.</label>
         <input class="form-control" name="hausnummer"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
 
       <div class="col-md-4">
         <label class="form-label">E-Mail</label>
         <input class="form-control" name="email"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
       <div class="col-md-8">
         <label class="form-label">Notizen</label>
         <input class="form-control" name="notizen"
-               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+               {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+               {% if is_closed %}disabled{% endif %}>
       </div>
 
       <div class="col-12 d-flex gap-2 mt-2 flex-wrap">
         <button class="btn btn-primary" type="submit"
-                {% if cap_ok is defined and not cap_ok %}disabled{% endif %}>
+                {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+                {% if is_closed %}disabled{% endif %}>
           Anlegen + übernehmen
         </button>
         <button class="btn btn-outline-secondary" type="button" id="btnCloseQuickAdd">Schließen</button>
@@ -244,6 +286,13 @@
         <div class="col-12">
           <div class="alert alert-danger mb-0 mt-2">
             Maximale Teilnehmerzahl erreicht – Quick-Add ist deaktiviert.
+          </div>
+        </div>
+      {% endif %}
+      {% if is_closed %}
+        <div class="col-12">
+          <div class="alert alert-warning mb-0 mt-2">
+            Turnier ist abgeschlossen – Quick-Add ist deaktiviert.
           </div>
         </div>
       {% endif %}
@@ -262,63 +311,88 @@
             <tr>
               <th style="width:90px;">Nr</th>
               <th>Name</th>
-              <th class="text-end" style="width:520px;">Aktionen</th>
+              {% if not is_closed %}
+                <th class="text-end" style="width:520px;">Aktionen</th>
+              {% endif %}
             </tr>
           </thead>
 
           <tbody id="participantsBody">
           {% for p in participants %}
-            <tr id="tp{{ p.id }}" class="sk-part" data-delete-form-id="rmForm{{ p.id }}">
-              <td class="sk-mono"><strong>{{ p.player_no }}</strong></td>
+
+            {% set _st = (p.status if p.status is defined else (p.address_status if p.address_status is defined else (p.addr_status if p.addr_status is defined else None))) %}
+            {% set _locked_flag = (p.address_locked if p.address_locked is defined else (p.is_locked if p.is_locked is defined else None)) %}
+            {% set addr_locked = (
+                (_locked_flag is not none and _locked_flag) or
+                (_st is not none and (_st|string)|lower in ['gesperrt','locked','inactive','inaktiv','deaktiviert','archiviert'])
+            ) %}
+
+            {% set can_edit = (not is_closed) and (not addr_locked) %}
+
+            <tr id="tp{{ p.id }}" class="{% if can_edit %}sk-part{% endif %}" data-delete-form-id="rmForm{{ p.id }}">
+              <td class="sk-mono">
+                {% if can_edit %}
+                  <a href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
+                     title="Teilnehmer bearbeiten">
+                    <strong>{{ p.player_no }}</strong>
+                  </a>
+                {% else %}
+                  <strong>{{ p.player_no }}</strong>
+                {% endif %}
+              </td>
+
               <td>
-                <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
+                {% if can_edit %}
+                  <a href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
+                     title="Teilnehmer bearbeiten">
+                    <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
+                  </a>
+                {% else %}
+                  <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
+                {% endif %}
+
                 <span class="text-muted">· {{ p.wohnort }}</span>
+
                 <div class="text-muted small">
                   <span class="sk-mono">#{{ p.address_id }}</span>
                   {% if p.email %} · ✉ {{ p.email }}{% endif %}
+                  {% if addr_locked %}
+                    · <span class="badge text-bg-secondary" title="Adresse ist gesperrt – Bearbeiten ausgeblendet">Adresse gesperrt</span>
+                  {% endif %}
                 </div>
               </td>
 
+              {% if not is_closed %}
               <td class="text-end">
                 <div class="d-flex justify-content-end gap-2 flex-wrap">
 
-                  <!-- Inline-Edit Toggle -->
-                  <button class="btn btn-sm btn-outline-primary"
-                          type="button"
-                          data-bs-toggle="collapse"
-                          data-bs-target="#editAddr{{ p.id }}"
-                          aria-expanded="false"
-                          aria-controls="editAddr{{ p.id }}">
-                    Inline bearbeiten
+                  {% if not addr_locked %}
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
+                       title="Adressmaske öffnen">
+                      Bearbeiten
+                    </a>
+                  {% endif %}
+
+                  <button type="button"
+                          class="btn btn-sm btn-outline-secondary"
+                          data-skt-swap-open="1"
+                          data-tp-id="{{ p.id }}"
+                          data-player-no="{{ p.player_no }}"
+                          data-current-address-id="{{ p.address_id }}"
+                          data-current-label="{{ p.nachname }}, {{ p.vorname }} · {{ p.wohnort }}"
+                          title="Ersetzt oder tauscht Teilnehmer (Nummer bleibt gleich)">
+                    Swap…
                   </button>
 
-                  <!-- Optional: Vollmaske -->
-                  <a class="btn btn-sm btn-outline-secondary"
-                     href="{{ url_for('addresses.address_edit', address_id=p.address_id, next=(request.full_path ~ '#tp' ~ p.id)) }}"
-                     title="Adressmaske öffnen">
-                    Maske
-                  </a>
-
-                  <!-- Swap (Nummer bleibt) -->
-                  <form method="post"
-                        action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}"
-                        class="d-flex gap-2 align-items-center">
-                    <input type="hidden" name="q" value="{{ q or '' }}">
-                    <input type="hidden" name="tp_id" value="{{ p.id }}">
-                    <input class="form-control form-control-sm sk-mono"
-                           name="new_address_id"
-                           placeholder="Swap Address-ID"
-                           style="max-width: 170px;">
-                    <button class="btn btn-sm btn-outline-secondary" title="Ersetzt Person, behält Nr">Swap</button>
-                  </form>
-
-                  <!-- Entfernen -->
                   <form method="post"
                         id="rmForm{{ p.id }}"
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
                     <input type="hidden" name="q" value="{{ q or '' }}">
                     <button class="btn btn-sm btn-outline-danger"
-                            onclick="return confirm('Teilnehmer Nr {{ p.player_no }} entfernen?\\n\\nHinweis: Die Nummer bleibt als Lücke frei.');"
+                            onclick="return confirm({{
+                              ('Teilnehmer Nr ' ~ p.player_no ~ ' entfernen?\n\nHinweis: Die Nummer bleibt als Lücke frei.')|tojson
+                            }});"
                             title="Entfernt, Nummer bleibt frei (keine automatische Renummerierung)">
                       Entfernen
                     </button>
@@ -326,70 +400,9 @@
 
                 </div>
               </td>
+              {% endif %}
             </tr>
 
-            {# Inline-Edit Row #}
-            <tr class="sk-edit-row">
-              <td colspan="3" class="p-0">
-                <div class="collapse" id="editAddr{{ p.id }}">
-                  <div class="p-3 border-top">
-                    <form method="post"
-                          action="{{ url_for('tournaments.tournament_participant_address_update', tournament_id=t.id, tp_id=p.id) }}"
-                          class="row g-2">
-                      <input type="hidden" name="q" value="{{ q or '' }}">
-                      <input type="hidden" name="next" value="{{ request.full_path ~ '#tp' ~ p.id }}">
-
-                      <div class="col-md-3">
-                        <label class="form-label">Nachname *</label>
-                        <input class="form-control" name="nachname" value="{{ p.nachname }}" required>
-                      </div>
-                      <div class="col-md-3">
-                        <label class="form-label">Vorname *</label>
-                        <input class="form-control" name="vorname" value="{{ p.vorname }}" required>
-                      </div>
-                      <div class="col-md-3">
-                        <label class="form-label">Wohnort *</label>
-                        <input class="form-control sk-wohnort-input"
-                               name="wohnort" value="{{ p.wohnort }}" required autocomplete="off"
-                               data-plz-id="plz{{ p.id }}"
-                               data-ort-id="ort{{ p.id }}">
-                        <div class="form-text">Autocomplete aus Wohnort-Tabelle</div>
-                      </div>
-                      <div class="col-md-3">
-                        <label class="form-label">E-Mail</label>
-                        <input class="form-control" name="email" value="{{ p.email or '' }}">
-                      </div>
-
-                      <div class="col-md-2">
-                        <label class="form-label">PLZ</label>
-                        <input class="form-control" id="plz{{ p.id }}" name="plz" value="{{ p.plz or '' }}">
-                      </div>
-                      <div class="col-md-4">
-                        <label class="form-label">Ort</label>
-                        <input class="form-control" id="ort{{ p.id }}" name="ort" value="{{ p.ort or '' }}">
-                      </div>
-                      <div class="col-md-4">
-                        <label class="form-label">Straße</label>
-                        <input class="form-control" name="strasse" value="{{ p.strasse or '' }}">
-                      </div>
-                      <div class="col-md-2">
-                        <label class="form-label">Hausnr.</label>
-                        <input class="form-control" name="hausnummer" value="{{ p.hausnummer or '' }}">
-                      </div>
-
-                      <div class="col-12 d-flex gap-2 flex-wrap mt-2">
-                        <button class="btn btn-primary" type="submit">Speichern</button>
-                        <button class="btn btn-outline-secondary" type="button"
-                                data-bs-toggle="collapse"
-                                data-bs-target="#editAddr{{ p.id }}">
-                          Schließen
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </td>
-            </tr>
           {% endfor %}
           </tbody>
         </table>
@@ -400,6 +413,303 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/participants_keys.js') }}"></script>
+{% if not is_closed %}
+<div class="modal fade" id="sktSwapModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
 
+      <div class="modal-header">
+        <h5 class="modal-title">Teilnehmer ersetzen / tauschen (Swap)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Schließen"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="alert alert-info py-2">
+          <div class="small">
+            <strong>Aktueller Teilnehmer</strong> (Nr <span class="sk-mono" id="sktSwapPlayerNo">—</span>):
+            <span id="sktSwapCurrent">—</span>
+          </div>
+          <div class="small mt-1">
+            <strong>Neu</strong>: <span id="sktSwapPickedLabel">—</span>
+            <span class="text-muted" id="sktSwapPickedMode"></span>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">Suche (im Dialog)</label>
+          <input id="sktSwapQuery" class="form-control"
+                 placeholder="Mind. 2 Zeichen: Name, Wohnort, PLZ, Telefon, E-Mail …">
+          <div class="form-text">
+            Tipp: Treffer, die bereits Teilnehmer sind, werden als „im Turnier“ angezeigt (→ Tauschen).
+          </div>
+        </div>
+
+        <div class="border rounded p-2" style="max-height: 340px; overflow:auto;">
+          <div id="sktSwapHint" class="text-muted small">
+            Suche starten: mind. 2 Zeichen eingeben.
+          </div>
+          <div class="list-group" id="sktSwapList"></div>
+        </div>
+
+        <form id="sktSwapForm" method="post"
+              action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}">
+          <input type="hidden" name="q" value="{{ q or '' }}">
+          <input type="hidden" name="tp_id" id="sktSwapTpId" value="">
+          <input type="hidden" name="new_address_id" id="sktSwapNewAddressId" value="">
+          <input type="hidden" name="next" id="sktSwapNext" value="">
+        </form>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+        <button type="button" class="btn btn-primary" id="sktSwapSubmitBtn">Swap ausführen</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.__SKT_TOURNAMENT_CLOSED__ = {{ 1 if is_closed else 0 }};
+</script>
+
+{% if not is_closed %}
+<script>
+(function () {
+  function qs(sel, root=document){ return root.querySelector(sel); }
+  function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
+
+  function debounce(fn, ms) {
+    let t = null;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), ms);
+    };
+  }
+
+  function wireSwapOpenButtons() {
+    const btns = qsa("[data-skt-swap-open='1']");
+    if (!btns.length) return;
+
+    const modalEl = qs("#sktSwapModal");
+    if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
+    const modal = new window.bootstrap.Modal(modalEl);
+
+    const tpIdEl = qs("#sktSwapTpId");
+    const newIdEl = qs("#sktSwapNewAddressId");
+    const nextEl = qs("#sktSwapNext");
+    const pnoEl = qs("#sktSwapPlayerNo");
+    const curEl = qs("#sktSwapCurrent");
+    const pickedLabelEl = qs("#sktSwapPickedLabel");
+    const pickedModeEl = qs("#sktSwapPickedMode");
+    const queryEl = qs("#sktSwapQuery");
+    const listEl = qs("#sktSwapList");
+    const hintEl = qs("#sktSwapHint");
+    const submitBtn = qs("#sktSwapSubmitBtn");
+
+    // ✅ FIX: richtiger Endpoint (liegt im tournaments-Blueprint)
+    // Route: /tournaments/<id>/participants/swap-search
+    const API_URL_BASE = "{{ url_for('tournaments.tournament_participants_swap_search', tournament_id=t.id) }}";
+
+    function clearPicked() {
+      if (newIdEl) newIdEl.value = "";
+      if (pickedLabelEl) pickedLabelEl.textContent = "—";
+      if (pickedModeEl) pickedModeEl.textContent = "";
+      qsa("#sktSwapList .sk-swap-picked").forEach(x => x.classList.remove("sk-swap-picked"));
+    }
+
+    function itemLabel(it) {
+      const nn = String(it.nachname || "").trim();
+      const vn = String(it.vorname || "").trim();
+      const wo = String(it.wohnort || "").trim();
+      const name = (nn && vn) ? (nn + ", " + vn) : (nn || vn || "");
+      return (name ? (name + (wo ? (" · " + wo) : "")) : (wo || ("#" + String(it.id || ""))));
+    }
+
+    function renderItems(items, currentAddressId) {
+      if (!listEl) return;
+      listEl.innerHTML = "";
+
+      if (!items || !items.length) {
+        if (hintEl) hintEl.textContent = "Keine Treffer.";
+        return;
+      }
+      if (hintEl) hintEl.textContent = "";
+
+      items.forEach((it) => {
+        const aid = String(it.id || "");
+        const label = itemLabel(it);
+        const inTour = !!it.in_tournament;
+        const pno = (it.player_no != null) ? String(it.player_no) : "";
+        const isSame = (String(currentAddressId) === aid);
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "list-group-item list-group-item-action sk-swap-item";
+        btn.dataset.addressId = aid;
+        btn.dataset.addressLabel = label;
+        btn.dataset.inTournament = inTour ? "1" : "0";
+        btn.dataset.playerNo = pno || "";
+        btn.disabled = isSame;
+
+        btn.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <div>${label} <span class="text-muted small sk-mono">#${aid}</span></div>
+              ${
+                inTour
+                  ? `<div class="small text-muted">bereits Teilnehmer ${pno ? `(Nr ${pno})` : ""}</div>`
+                  : `<div class="small text-muted">nur Adressbuch</div>`
+              }
+              ${isSame ? `<div class="small text-danger">ist bereits die aktuelle Person</div>` : ``}
+            </div>
+            <div>
+              ${inTour ? `<span class="badge text-bg-success">im Turnier</span>` : `<span class="badge text-bg-secondary">Adressbuch</span>`}
+            </div>
+          </div>
+        `;
+        listEl.appendChild(btn);
+      });
+    }
+
+    async function fetchSwap(q, currentAddressId) {
+      const qq = String(q || "").trim();
+      if (!qq || qq.length < 2) {
+        if (listEl) listEl.innerHTML = "";
+        if (hintEl) hintEl.textContent = "Suche starten: mind. 2 Zeichen eingeben.";
+        return;
+      }
+
+      if (hintEl) hintEl.textContent = "Suche…";
+
+      try {
+        const url = API_URL_BASE + "?q=" + encodeURIComponent(qq) + "&limit=30";
+        const resp = await fetch(url, { headers: { "Accept": "application/json" } });
+        if (!resp.ok) {
+          if (hintEl) hintEl.textContent = "Suche fehlgeschlagen.";
+          return;
+        }
+        const data = await resp.json();
+        if (!data || data.ok !== true) {
+          if (hintEl) hintEl.textContent = "Suche fehlgeschlagen.";
+          return;
+        }
+        renderItems(data.items || [], currentAddressId);
+      } catch (e) {
+        if (hintEl) hintEl.textContent = "Suche fehlgeschlagen.";
+      }
+    }
+
+    const fetchDebounced = debounce(fetchSwap, 250);
+
+    // Klick auf Eintrag
+    modalEl.addEventListener("click", function (ev) {
+      const tgt = ev.target?.closest?.(".sk-swap-item");
+      if (!tgt) return;
+
+      const aid = tgt.dataset.addressId;
+      const label = tgt.dataset.addressLabel || ("Adresse #" + aid);
+      const inTour = tgt.dataset.inTournament === "1";
+      const pno = tgt.dataset.playerNo || "";
+
+      if (!aid) return;
+
+      qsa("#sktSwapList .sk-swap-item").forEach(x => x.classList.remove("sk-swap-picked"));
+      tgt.classList.add("sk-swap-picked");
+
+      if (newIdEl) newIdEl.value = aid;
+      if (pickedLabelEl) pickedLabelEl.textContent = label;
+
+      if (pickedModeEl) {
+        pickedModeEl.textContent = inTour ? (" (Tauschen" + (pno ? (" mit Nr " + pno) : "") + ")") : " (Ersetzen)";
+      }
+    });
+
+    // Submit
+    if (submitBtn) {
+      submitBtn.addEventListener("click", function () {
+        const tpId = String(tpIdEl?.value || "").trim();
+        const newId = String(newIdEl?.value || "").trim();
+        const pno = String(pnoEl?.textContent || "").trim();
+        const picked = String(pickedLabelEl?.textContent || "").trim();
+
+        const pickedRow = qs("#sktSwapList .sk-swap-item.sk-swap-picked");
+        const inTour = pickedRow ? (pickedRow.dataset.inTournament === "1") : false;
+        const otherPno = pickedRow ? (pickedRow.dataset.playerNo || "") : "";
+
+        if (!tpId) {
+          window.SKT?.toast?.("Swap: Interner Fehler (tp_id fehlt).");
+          return;
+        }
+        if (!newId) {
+          window.SKT?.toast?.("Swap: Bitte zuerst eine Zieladresse auswählen.");
+          return;
+        }
+
+        const actionText = inTour ? ("TAUSCHEN" + (otherPno ? (" (mit Nr " + otherPno + ")") : "")) : "ERSETZEN";
+
+        const ok = confirm(
+          actionText + "?\n\nTeilnehmer Nr " + (pno || "?") + "\nNeu: " + (picked || ("#" + newId))
+        );
+        if (!ok) return;
+
+        const form = qs("#sktSwapForm");
+        if (form) form.submit();
+      });
+    }
+
+    // Modal show: reset + Fokus
+    modalEl.addEventListener("show.bs.modal", function () {
+      clearPicked();
+      if (listEl) listEl.innerHTML = "";
+      if (hintEl) hintEl.textContent = "Suche starten: mind. 2 Zeichen eingeben.";
+      if (queryEl) queryEl.value = "";
+      setTimeout(() => queryEl?.focus?.(), 150);
+    });
+
+    // Input: live search
+    if (queryEl) {
+      queryEl.addEventListener("input", function () {
+        const curAddr = modalEl.dataset.currentAddressId || "";
+        fetchDebounced(queryEl.value, curAddr);
+      });
+    }
+
+    // Buttons öffnen Modal und setzen Kontext
+    btns.forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const tpId = btn.dataset.tpId || "";
+        const pno = btn.dataset.playerNo || "";
+        const current = btn.dataset.currentLabel || ("#" + (btn.dataset.currentAddressId || ""));
+        const curAddrId = btn.dataset.currentAddressId || "";
+
+        if (tpIdEl) tpIdEl.value = tpId;
+        if (pnoEl) pnoEl.textContent = pno || "—";
+        if (curEl) curEl.textContent = current || "—";
+        if (nextEl) nextEl.value = (location.pathname + location.search + "#tp" + tpId);
+
+        modalEl.dataset.currentAddressId = curAddrId;
+
+        modal.show();
+      });
+    });
+  }
+
+  function init() { wireSwapOpenButtons(); }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+})();
+</script>
+{% endif %}
+
+<script defer src="{{ url_for('static', filename='js/participants_keys.js') }}"></script>
 {% endblock %}

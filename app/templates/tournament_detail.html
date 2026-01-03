@@ -3,81 +3,89 @@
 
 {% set last_rn = (last_round_no or 0) | int %}
 {% set next_round_no = (last_rn + 1) if (last_rn > 0) else 1 %}
-
-{# ✅ Neu: "nächste Runde auslosen" nur aus der letzten ausgelosten Runde heraus #}
 {% set allow_draw_next = (last_rn > 0) %}
+{% set marker_disp = (t.marker or "JJMMTTxxxx") %}
 
-<div class="d-flex justify-content-between align-items-start mb-3">
+{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+
+<style>
+  .sk-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                 "Liberation Mono", "Courier New", monospace;
+  }
+</style>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-3">
   <div>
-    <h3 class="mb-0">{{ t.title }}</h3>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <h3 class="mb-0">{{ t.title }}</h3>
+      {% if is_closed %}
+        <span class="badge text-bg-secondary">abgeschlossen</span>
+      {% endif %}
+    </div>
+
     <div class="text-muted small">
       {{ t.event_date }} · {{ t.start_time }}
       {% if t.location %} · {{ t.location }}{% endif %}
+      {% if t.marker %} · <span class="sk-mono">Marker: {{ t.marker }}</span>{% endif %}
+      {% if is_closed and closed_at %}
+        · <span class="sk-mono">closed_at: {{ closed_at }}</span>
+      {% endif %}
     </div>
+
     <div class="text-muted small mt-1">
       Tastatur:
-      <span class="fw-semibold">E</span> = Teilnehmer erfassen ·
-      <span class="fw-semibold">L</span> = Turnierliste ·
-      <span class="fw-semibold">B</span> = Bearbeiten ·
-      <span class="fw-semibold">Shift + Entf</span> = Löschen
-      <br>
+      <strong>E</strong>=Teilnehmer ·
+      <strong>L</strong>=Liste ·
+      <strong>B</strong>=Bearbeiten ·
+      <strong>Shift+Entf</strong>=Löschen<br>
       Runden:
-      <span class="fw-semibold">1</span> = Runde 1 anzeigen ·
-      <span class="fw-semibold">A</span> = Runde anzeigen ·
-      <span class="fw-semibold">R</span> = Runde auslosen ·
-      <span class="fw-semibold">Shift+R</span> =
-      {% if allow_draw_next %}
-        nächste Runde auslosen
-      {% else %}
-        Runde 1 auslosen
-      {% endif %}
-      ·
-      <span class="fw-semibold">N</span> = nächste Runde vorbereiten ·
-      <span class="fw-semibold">+ / -</span> = Runde ändern
+      <strong>1</strong>=R1 ·
+      <strong>A</strong>=Anzeigen ·
+      <strong>R</strong>=Auslosen ·
+      <strong>Shift+R</strong>=nächste Runde ·
+      <strong>N</strong>=Vorbereiten ·
+      <strong>+/-</strong>=Runde ändern
     </div>
   </div>
 
   <div class="d-flex gap-2 flex-wrap justify-content-end">
-    <a class="btn btn-outline-secondary"
-       id="btnBackToList"
-       href="{{ url_for('tournaments.tournaments_list') }}">
-      Turniere
-    </a>
+    <a class="btn btn-outline-secondary" id="btnBackToList"
+       href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
 
-    <a class="btn btn-outline-secondary"
-       id="btnEditTournament"
-       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}">
-      Bearbeiten
-    </a>
+    <a class="btn btn-outline-secondary" id="btnEditTournament"
+       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}">Bearbeiten</a>
 
     <form method="post"
           action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
           class="d-inline">
-      <button class="btn btn-outline-danger"
-              id="btnDeleteTournament"
+      <button class="btn btn-outline-danger" id="btnDeleteTournament"
               type="submit"
-              onclick="return confirm('Turnier wirklich löschen?\n\nHinweis: Alle erfassten Teilnehmer dieses Turniers werden ebenfalls gelöscht.');">
+              onclick="return confirm({{ ('Turnier „' ~ (t.title or '') ~ '“ wirklich löschen?')|tojson }});">
         Löschen
       </button>
     </form>
 
-    <a class="btn btn-primary"
-       id="btnParticipants"
+    <a class="btn btn-primary" id="btnParticipants"
        href="{{ url_for('tournaments.tournament_participants', tournament_id=t.id) }}">
       Teilnehmer erfassen
+    </a>
+
+    <a class="btn btn-outline-primary" id="btnExport"
+       href="{{ url_for('tournaments.tournament_export_zip', tournament_id=t.id) }}"
+       onclick="return confirm({{ ('ZIP-Export für „' ~ (t.title or '') ~ '“ erstellen?')|tojson }});">
+      Export (ZIP)
     </a>
   </div>
 </div>
 
 <div class="row g-3 mb-3">
-
   <div class="col-md-4">
     <div class="card shadow-sm">
       <div class="card-body">
         <div class="text-muted small">Teilnehmer</div>
-        <div style="font-size:2rem;font-weight:800;">
-          {{ counts.participants }}
-        </div>
+        <div class="fs-2 fw-bold">{{ counts.participants }}</div>
       </div>
     </div>
   </div>
@@ -86,7 +94,7 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <div class="text-muted small">Tische (4er)</div>
-        <div style="font-size:2rem;font-weight:800;">
+        <div class="fs-2 fw-bold">
           {{ counts.tables }}
           {% if counts.rest %}
             <span class="text-danger">+{{ counts.rest }}</span>
@@ -100,281 +108,90 @@
     <div class="card shadow-sm">
       <div class="card-body">
         <div class="text-muted small">Infos</div>
-        <div class="small">
-          {% if t.organizer %}<div><strong>Orga:</strong> {{ t.organizer }}</div>{% endif %}
-          {% if t.description %}<div class="text-muted">{{ t.description }}</div>{% endif %}
-          {% if not t.organizer and not t.description %}
-            <div class="text-muted">–</div>
-          {% endif %}
-        </div>
+        {% if t.organizer %}<div><strong>Orga:</strong> {{ t.organizer }}</div>{% endif %}
+        {% if t.description %}<div class="text-muted">{{ t.description }}</div>{% endif %}
+        {% if not t.organizer and not t.description %}
+          <div class="text-muted">–</div>
+        {% endif %}
       </div>
     </div>
   </div>
-
 </div>
 
-<!-- ✅ Turnier abschließen / Teilnahmen pflegen -->
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h5 class="mb-0">Sicher</h5>
+          {% if safe.ready and safe.marker_ok %}
+            <span class="badge text-bg-success">OK</span>
+          {% else %}
+            <span class="badge text-bg-warning">Prüfen</span>
+          {% endif %}
+        </div>
+        <div class="text-muted small mt-1">
+          Integrität, FK, Vollständigkeit, Marker
+        </div>
+      </div>
+
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('tournaments.tournaments_diagnostics', tournament_id=t.id) }}">
+        Diagnose
+      </a>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="row g-2 small">
+      <div class="col-md-3"><strong>FK:</strong> {{ safe.fk_on }}</div>
+      <div class="col-md-3"><strong>Integrity:</strong> {{ safe.integrity }}</div>
+      <div class="col-md-3"><strong>Scores:</strong> {{ safe.scores }} / {{ safe.expected_scores }}</div>
+      <div class="col-md-3"><strong>Marker:</strong> {{ "OK" if safe.marker_ok else "fehlt" }}</div>
+    </div>
+  </div>
+</div>
+
 <div class="card shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
       <div>
         <h5 class="mb-1">Turnier abschließen</h5>
         <div class="text-muted small">
-          Pflegt bei allen Turnierteilnehmern in den Adressdaten:
-          <strong>tournament_years</strong> (+2025), <strong>participation_count</strong> (+1) und <strong>last_tournament_at</strong> (=2025).
-          Doppelte Zählung wird verhindert.
+          Marker <span class="sk-mono">{{ marker_disp }}</span> wird bei allen Teilnehmern
+          gepflegt (Zähler +1, last_tournament_at).
         </div>
       </div>
-
-      <div class="d-flex gap-2 flex-wrap justify-content-end">
-        <form method="post"
-              action="{{ url_for('tournaments.tournament_close_participations', tournament_id=t.id) }}"
-              class="d-inline"
-              onsubmit="return confirm('Turnier abschließen?\n\nTeilnahmejahr 2025 wird bei allen Teilnehmern gepflegt.\n(Zähler wird nur erhöht, wenn 2025 neu ist.)');">
-          <button class="btn btn-outline-danger" type="submit">
-            Turnier abschließen (Teilnahmen)
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Runden / Auslosung -->
-<div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-      <div>
-        <h5 class="mb-1">Runden / Auslosung</h5>
-        <div class="text-muted small">
-          Auslosen überschreibt (mit Bestätigung) eine vorhandene Auslosung derselben Runde.
-          {% if last_rn > 0 %}
-            · Letzte Runde: <strong>{{ last_rn }}</strong>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="d-flex gap-2 flex-wrap justify-content-end">
-        <a class="btn btn-outline-primary"
-           id="btnRound1Show"
-           href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}">
-          Runde 1 anzeigen
-        </a>
-
-        <form method="post"
-              action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=1) }}"
-              class="d-inline"
-              onsubmit="return confirm('Runde 1 auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-          <button class="btn btn-warning" id="btnRound1Draw" type="submit">
-            Runde 1 auslosen
-          </button>
-        </form>
-
-        <!-- ✅ Nächste Runde vorbereiten/anzeigen -->
-        <a class="btn btn-outline-primary"
-           id="btnPrepareNext"
-           href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_round_no) }}">
-          Nächste Runde ({{ next_round_no }}) vorbereiten
-        </a>
-
-        <!-- ✅ Nächste Runde direkt auslosen (nur sinnvoll/erlaubt wenn es bereits eine letzte Runde gibt) -->
-        {% if allow_draw_next %}
-          <form method="post"
-                id="formDrawNext"
-                action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_round_no) }}"
-                class="d-inline"
-                onsubmit="return confirm('Runde {{ next_round_no }} auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.');">
-            <button class="btn btn-outline-warning" id="btnDrawNext" type="submit">
-              Runde {{ next_round_no }} auslosen
-            </button>
-          </form>
-        {% else %}
-          <button class="btn btn-outline-warning disabled"
-                  id="btnDrawNext"
-                  type="button"
-                  aria-disabled="true"
-                  tabindex="-1"
-                  title="Erst Runde 1 auslosen, dann ist „nächste Runde auslosen“ möglich.">
-            Runde {{ next_round_no }} auslosen
-          </button>
-        {% endif %}
-
-        {% if last_rn > 0 %}
-          <a class="btn btn-outline-secondary"
-             id="btnLastRound"
-             href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=last_rn) }}">
-            Letzte Runde anzeigen
-          </a>
-        {% endif %}
-      </div>
-    </div>
-
-    <hr class="my-3">
-
-    <div class="d-flex gap-2 flex-wrap align-items-center">
-      <form method="get"
-            id="roundShowForm"
-            class="d-flex gap-2 align-items-center">
-        <label class="text-muted small mb-0" for="roundNo">Runde</label>
-
-        <input id="roundNo" class="form-control form-control-sm"
-               type="number" min="1" step="1"
-               value="{{ next_round_no }}"
-               style="max-width:110px;">
-
-        <button class="btn btn-sm btn-outline-primary" id="btnRoundShow" type="submit">Anzeigen</button>
-      </form>
 
       <form method="post"
-            id="roundDrawForm"
-            class="d-flex gap-2 align-items-center">
-        <button class="btn btn-sm btn-warning" id="btnRoundDraw" type="submit">Runde auslosen (überschreiben)</button>
+            action="{{ url_for('tournaments.tournament_close_participations', tournament_id=t.id) }}"
+            onsubmit="return confirmClose();">
+        <button class="btn btn-outline-danger"
+                {% if is_closed %}disabled{% endif %}>
+          Turnier abschließen
+        </button>
       </form>
     </div>
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
-(function () {
-  const lastRoundNo = {{ last_rn }};
-  const nextRoundNo = {{ next_round_no | int }};
+function confirmClose() {
+  {% if is_closed %}
+    alert({{ "Dieses Turnier ist bereits abgeschlossen."|tojson }});
+    return false;
+  {% endif %}
 
-  // ✅ robust: Actions per Platzhalter-URL statt fragilem replace('/1', ...)
-  const viewBase = "{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=999999) }}";
-  const drawBase = "{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=999999) }}";
+  const msg = {{ (
+    "Turnier abschließen?\n\n"
+    ~ "Marker " ~ marker_disp ~ " wird eingetragen.\n"
+    ~ "Zähler wird nur einmal erhöht."
+  ) | tojson }};
 
-  function buildUrl(base, rn) {
-    return String(base).replace("999999", String(rn));
-  }
-
-  function isTypingContext() {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = (el.tagName || "").toLowerCase();
-    return tag === "input" || tag === "textarea" || tag === "select";
-  }
-
-  function clickIf(id) {
-    const el = document.getElementById(id);
-    if (el) el.click();
-  }
-
-  function getRoundNo() {
-    const inp = document.getElementById("roundNo");
-    const v = inp ? String(inp.value || "").trim() : "";
-    const n = parseInt(v || "1", 10);
-    return (isFinite(n) && n >= 1) ? n : 1;
-  }
-
-  function setRoundNo(n) {
-    const inp = document.getElementById("roundNo");
-    if (!inp) return;
-    const nn = Math.max(1, parseInt(String(n), 10) || 1);
-    inp.value = String(nn);
-    inp.focus();
-    try { inp.select(); } catch (e) {}
-  }
-
-  // ✅ Form-Action dynamisch setzen
-  const showForm = document.getElementById("roundShowForm");
-  if (showForm) {
-    showForm.addEventListener("submit", function () {
-      const rn = getRoundNo();
-      showForm.action = buildUrl(viewBase, rn);
-    });
-  }
-
-  const drawForm = document.getElementById("roundDrawForm");
-  if (drawForm) {
-    drawForm.addEventListener("submit", function (ev) {
-      const rn = getRoundNo();
-      drawForm.action = buildUrl(drawBase, rn);
-      const ok = confirm(
-        "Runde " + rn + " auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben."
-      );
-      if (!ok) ev.preventDefault();
-    });
-  }
-
-  document.addEventListener("keydown", function (ev) {
-    if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-
-    const k = (ev.key || "").toLowerCase();
-
-    // Turnier-Shortcuts (nur wenn nicht im Eingabefeld)
-    if (!isTypingContext()) {
-      if (k === "e") { ev.preventDefault(); clickIf("btnParticipants"); return; }
-      if (k === "l") { ev.preventDefault(); clickIf("btnBackToList"); return; }
-      if (k === "b") { ev.preventDefault(); clickIf("btnEditTournament"); return; }
-
-      // 🔒 Löschen NUR mit Shift + Delete
-      if (ev.shiftKey && k === "delete") {
-        const btn = document.getElementById("btnDeleteTournament");
-        if (btn) { ev.preventDefault(); btn.click(); }
-        return;
-      }
-    }
-
-    const activeId = (document.activeElement && document.activeElement.id) ? String(document.activeElement.id) : "";
-    const typing = isTypingContext();
-    const inRoundField = (activeId === "roundNo");
-
-    // 1 = Runde 1 anzeigen
-    if (!typing && k === "1") {
-      ev.preventDefault();
-      clickIf("btnRound1Show");
-      return;
-    }
-
-    // N = nächste Runde vorbereiten (öffnen)
-    if (!typing && k === "n") {
-      ev.preventDefault();
-      clickIf("btnPrepareNext");
-      return;
-    }
-
-    // Shift+R = nächste Runde direkt auslosen (nur wenn erlaubt/aktiv)
-    if (!typing && ev.shiftKey && k === "r") {
-      ev.preventDefault();
-      // wenn disabled/nicht vorhanden -> fällt auf Runde 1 auslosen zurück
-      const btn = document.getElementById("btnDrawNext");
-      if (btn && !btn.classList.contains("disabled") && btn.getAttribute("aria-disabled") !== "true") {
-        btn.click();
-      } else {
-        clickIf("btnRound1Draw");
-      }
-      return;
-    }
-
-    // + / - = Runde im Feld hoch/runter
-    if ((inRoundField || !typing) && (k === "+" || ev.key === "=")) {
-      ev.preventDefault();
-      setRoundNo(getRoundNo() + 1);
-      return;
-    }
-    if ((inRoundField || !typing) && (k === "-" || k === "_")) {
-      ev.preventDefault();
-      setRoundNo(getRoundNo() - 1);
-      return;
-    }
-
-    // A = anzeigen (Runde aus Feld)
-    if (!typing && k === "a") {
-      ev.preventDefault();
-      const btn = document.getElementById("btnRoundShow");
-      if (btn) btn.click();
-      return;
-    }
-
-    // R = auslosen (Runde aus Feld)
-    if (!typing && k === "r") {
-      ev.preventDefault();
-      const btn = document.getElementById("btnRoundDraw");
-      if (btn) btn.click();
-      return;
-    }
-  });
-})();
+  return confirm(msg);
+}
 </script>
-
 {% endblock %}

@@ -1,10 +1,12 @@
 {% extends "layout.html" %}
+
 {% block content %}
 
 <style>
   .sk-row { cursor: pointer; }
   .sk-row.sk-selected { outline: 3px solid rgba(13,110,253,.35); border-radius: 10px; }
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-3">
@@ -32,6 +34,7 @@
             <tr>
               <th>Datum</th>
               <th>Titel</th>
+              <th style="width:160px;">Marker</th>
               <th>Teilnehmer</th>
               <th class="text-end">Aktion</th>
             </tr>
@@ -50,6 +53,13 @@
                   <strong>{{ t.title }}</strong>
                   {% if t.location %}
                     <div class="text-muted small">{{ t.location }}</div>
+                  {% endif %}
+                </td>
+                <td class="sk-mono">
+                  {% if t.marker %}
+                    {{ t.marker }}
+                  {% else %}
+                    <span class="text-muted">–</span>
                   {% endif %}
                 </td>
                 <td>
@@ -74,7 +84,9 @@
                           class="d-inline">
                       <button class="btn btn-sm btn-outline-danger"
                               type="submit"
-                              onclick="return confirm('Turnier „{{ t.title }}“ wirklich löschen?\\n\\nHinweis: Alle Teilnehmer dieses Turniers werden ebenfalls gelöscht.');">
+                              onclick="return confirm({{
+                                (('Turnier „' ~ (t.title or '') ~ '“ wirklich löschen?\n\nHinweis: Alle Teilnehmer dieses Turniers werden ebenfalls gelöscht.')) | tojson
+                              }});">
                         Löschen
                       </button>
                     </form>
@@ -93,6 +105,9 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
 (function () {
   let idx = -1;
@@ -104,7 +119,7 @@
     const el = document.activeElement;
     if (!el) return false;
     const tag = (el.tagName || "").toLowerCase();
-    return tag === "input" || tag === "textarea" || tag === "select";
+    return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
   }
 
   function setSel(i) {
@@ -189,7 +204,8 @@
     } else if (k === "b") {
       ev.preventDefault();
       editSel();
-    } else if (ev.shiftKey && k === "delete") {
+    } else if (ev.shiftKey && (k === "delete" || k === "backspace")) {
+      // macOS: "Entf" ist häufig Backspace
       ev.preventDefault();
       deleteSel();
     }
@@ -198,12 +214,11 @@
   function init() {
     wireMouse();
     if (rows().length) setSel(0);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, { passive: false });
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
   else init();
 })();
 </script>
-
 {% endblock %}

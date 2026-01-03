@@ -1,3 +1,4 @@
+<!-- app/templates/tournament_results_table.html -->
 {% extends "layout.html" %}
 {% block content %}
 
@@ -28,6 +29,9 @@
   }
 </style>
 
+{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
     <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }} – Tisch {{ table_no }}</h3>
@@ -37,6 +41,9 @@
     </div>
     <div class="sk-help mt-1">
       Tastatur: <span class="fw-semibold">Enter/↓</span> nächstes Feld · <span class="fw-semibold">↑</span> vorheriges Feld
+      {% if is_closed %}
+        <br><span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Eingabe gesperrt (nur Ansicht).
+      {% endif %}
     </div>
   </div>
 
@@ -65,10 +72,18 @@
   </div>
 </div>
 
+{% if is_closed %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="fw-semibold">Turnier ist abgeschlossen – Speichern ist deaktiviert.</div>
+      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ closed_at }}</span></div>
+    </div>
+  </div>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-body">
 
-    {# Live-Summe-Anzeige + Hinweis #}
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
       <div class="sk-sum-badge" id="skSumBadge" aria-live="polite">
         Summe Punkte: <span class="sk-mono" id="skSumValue">—</span>
@@ -107,7 +122,8 @@
                          inputmode="numeric"
                          autocomplete="off"
                          required
-                         data-skt="points">
+                         data-skt="points"
+                         {% if is_closed %}disabled{% endif %}>
                 </td>
                 <td>
                   <input class="form-control form-control-sm sk-soli"
@@ -116,7 +132,8 @@
                          inputmode="numeric"
                          autocomplete="off"
                          placeholder="0"
-                         data-skt="soli">
+                         data-skt="soli"
+                         {% if is_closed %}disabled{% endif %}>
                 </td>
               </tr>
             {% endfor %}
@@ -125,13 +142,17 @@
       </div>
 
       <div class="d-flex gap-2 flex-wrap mt-3">
-        <button class="btn btn-primary" id="btnSave" type="submit">Speichern</button>
+        <button class="btn btn-primary" id="btnSave" type="submit"
+                {% if is_closed %}disabled{% endif %}>
+          Speichern
+        </button>
 
         <button class="btn btn-outline-primary"
                 id="btnSaveNext"
                 type="submit"
                 name="go_next"
-                value="1">
+                value="1"
+                {% if is_closed %}disabled{% endif %}>
           Speichern & nächster Tisch
         </button>
 
@@ -145,11 +166,19 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
 (function() {
+  const IS_CLOSED = {{ is_closed|tojson }};
+
   const form = document.getElementById("skResultsForm");
+
   const pointsInputs = Array.from(document.querySelectorAll("input.sk-points"));
   const soliInputs = Array.from(document.querySelectorAll("input.sk-soli"));
+
+  const allInputs = Array.from(document.querySelectorAll("#skResultsForm input[data-skt]"));
 
   const badge = document.getElementById("skSumBadge");
   const sumValueEl = document.getElementById("skSumValue");
@@ -163,12 +192,42 @@
     if (v == null) return null;
     const s = String(v).trim();
     if (s === "") return null;
-    // nur Ganzzahlen, optional mit Vorzeichen
     if (!/^[+-]?\d+$/.test(s)) return NaN;
     return parseInt(s, 10);
   }
 
   function updateSumUI() {
+    if (IS_CLOSED) {
+      let total = 0;
+      let filled = 0;
+      let hasInvalid = false;
+
+      for (const inp of pointsInputs) {
+        const n = parseIntLoose(inp.value);
+        if (n === null) continue;
+        if (Number.isNaN(n)) { hasInvalid = true; continue; }
+        filled += 1;
+        total += n;
+      }
+
+      if (filled === 0 && !hasInvalid) {
+        sumValueEl.textContent = "—";
+        sumStateEl.textContent = "";
+      } else if (hasInvalid) {
+        sumValueEl.textContent = "!";
+        sumStateEl.textContent = " (ungültig)";
+      } else {
+        sumValueEl.textContent = String(total);
+        sumStateEl.textContent = "";
+      }
+
+      badge.classList.remove("sk-sum-ok", "sk-sum-bad");
+      sumHintEl.textContent = "Turnier abgeschlossen – Eingabe ist gesperrt (nur Ansicht).";
+      btnSave.disabled = true;
+      btnSaveNext.disabled = true;
+      return;
+    }
+
     let total = 0;
     let filled = 0;
     let hasInvalid = false;
@@ -177,9 +236,8 @@
       const n = parseIntLoose(inp.value);
       inp.classList.remove("is-invalid", "is-valid");
 
-      if (n === null) {
-        continue;
-      }
+      if (n === null) continue;
+
       if (Number.isNaN(n)) {
         hasInvalid = true;
         inp.classList.add("is-invalid");
@@ -244,10 +302,9 @@
   }
 
   function moveFocus(cur, dir) {
-    const all = [...pointsInputs, ...soliInputs];
-    const idx = all.indexOf(cur);
+    const idx = allInputs.indexOf(cur);
     if (idx === -1) return;
-    const next = all[idx + dir];
+    const next = allInputs[idx + dir];
     if (next) {
       next.focus();
       next.select?.();
@@ -287,6 +344,10 @@
   updateSumUI();
 
   form.addEventListener("submit", function(e) {
+    if (IS_CLOSED) {
+      e.preventDefault();
+      return;
+    }
     updateSumUI();
     if (btnSave.disabled) {
       e.preventDefault();
@@ -296,5 +357,4 @@
   });
 })();
 </script>
-
 {% endblock %}

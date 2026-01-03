@@ -7,7 +7,7 @@ from flask import flash, redirect, render_template, request, url_for
 
 from ... import db
 from . import bp
-from .helpers import _get_tournament, _now_local_iso
+from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso
 
 
 def _to_int(v: Any, *, default: int | None = None) -> int | None:
@@ -24,9 +24,6 @@ def _to_int(v: Any, *, default: int | None = None) -> int | None:
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results")
 def tournament_round_results_overview(tournament_id: int, round_no: int):
-    """
-    Übersicht: alle Tische dieser Runde + Status (fertig/offen) + Counter.
-    """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
         if not t:
@@ -46,7 +43,6 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
         table_nos = [int(r["table_no"]) for r in tables]
         total_tables = len(table_nos)
 
-        # Fertig, wenn für den Tisch 4 Scores existieren
         done_rows = db.q(
             con,
             """
@@ -63,7 +59,6 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
         done_count = len(done_tables)
         open_count = max(0, total_tables - done_count)
 
-        # Zusatzinfo: wie viele Einzelergebnisse (Spieler-Zeilen) sind erfasst?
         scores_count_row = db.one(
             con,
             """
@@ -93,18 +88,12 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/standings")
 def tournament_round_results_standings(tournament_id: int, round_no: int):
-    """
-    Rundenwertung (nur diese Runde):
-    Sortierung nach Platzierung: Punkte DESC, Soli DESC, dann Name.
-    Druckansicht macht das Template.
-    """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        # Erwartete Einträge (für Hinweis "noch nicht alles erfasst")
         total_tables_row = db.one(
             con,
             """
@@ -155,7 +144,6 @@ def tournament_round_results_standings(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
-        # Platzierung mit Ties: gleiche (points, soli) => gleicher Rang
         ranked: list[dict[str, Any]] = []
         last_key: tuple[int, int] | None = None
         place = 0
@@ -196,9 +184,6 @@ def tournament_round_results_standings(tournament_id: int, round_no: int):
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
 def tournament_round_results_table(tournament_id: int, round_no: int, table_no: int):
-    """
-    Form: Punkte + Soli für einen Tisch eingeben.
-    """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
         if not t:
@@ -229,7 +214,6 @@ def tournament_round_results_table(tournament_id: int, round_no: int, table_no: 
             flash("Tisch nicht gefunden oder unvollständig (nicht genau 4 Spieler).", "error")
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
-        # Nächster Tisch für Schnellworkflow
         tables = db.q(
             con,
             """
@@ -260,10 +244,6 @@ def tournament_round_results_table(tournament_id: int, round_no: int, table_no: 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
 def tournament_round_results_table_post(tournament_id: int, round_no: int, table_no: int):
-    """
-    Speichert die Eingaben. Validiert: Summe Punkte == 0.
-    Soli leer => 0.
-    """
     f = request.form
 
     with db.connect() as con:
@@ -271,6 +251,15 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
+
+        resp = _guard_closed_redirect(
+            t,
+            action="Ergebnis-Eingabe",
+            endpoint="tournaments.tournament_round_results_overview",
+            endpoint_kwargs={"tournament_id": tournament_id, "round_no": round_no},
+        )
+        if resp:
+            return resp
 
         seats = db.q(
             con,
@@ -290,12 +279,12 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
             flash("Tisch nicht gefunden oder unvollständig.", "error")
             return redirect(url_for("tournaments.tournament_round_results_overview", tournament_id=tournament_id, round_no=round_no))
 
-        # Eingaben parsen
         points_map: dict[int, int] = {}
         soli_map: dict[int, int] = {}
 
         for r in seats:
             tp_id = int(r["tp_id"])
+
             p = _to_int(f.get(f"points_{tp_id}"), default=None)
             if p is None:
                 flash("Bitte für alle 4 Spieler Punkte eingeben.", "error")
@@ -315,7 +304,6 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
             points_map[tp_id] = int(p)
             soli_map[tp_id] = int(s)
 
-        # Plausibilität: Summe Punkte == 0
         total = sum(points_map.values())
         if total != 0:
             flash(f"Fehler: Punktesumme am Tisch {table_no} ist {total} (muss 0 sein).", "error")
@@ -328,7 +316,6 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
                 )
             )
 
-        # Upsert speichern
         for tp_id in points_map:
             con.execute(
                 """
@@ -345,7 +332,6 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
 
         con.commit()
 
-        # “Speichern & nächster Tisch”
         go_next = (f.get("go_next") or "") == "1"
         if go_next:
             tables = db.q(
