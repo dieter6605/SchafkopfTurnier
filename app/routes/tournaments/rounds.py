@@ -8,7 +8,7 @@ from flask import flash, redirect, render_template, url_for
 from ... import db
 from . import bp
 from .draw import _history_pairs, _improve_tables
-from .helpers import _get_tournament, _now_local_iso
+from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso
 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/draw")
@@ -19,13 +19,19 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
+        resp = _guard_closed_redirect(
+            t,
+            action="Auslosen",
+            endpoint="tournaments.tournament_detail",
+            endpoint_kwargs={"tournament_id": tournament_id},
+        )
+        if resp:
+            return resp
+
         if round_no <= 0:
             flash("Ungültige Rundennummer.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
-        # ✅ Workflow-Schutz:
-        # - neu auslosen ist immer ok (wenn Runde existiert)
-        # - neue Runde darf nur "als nächste" (last+1) ausgelost werden (kein Überspringen)
         rounds = db.q(
             con,
             "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
@@ -36,9 +42,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         has_round = int(round_no) in round_list
 
         if not has_round:
-            # Runde 1 ist als Start immer erlaubt
             if int(round_no) != 1:
-                # Vorherige Runde muss existieren
                 if int(round_no) - 1 not in round_list:
                     flash(
                         f"Runde {round_no} kann noch nicht ausgelost werden: "
@@ -47,15 +51,10 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                     )
                     if last_round_no > 0:
                         return redirect(
-                            url_for(
-                                "tournaments.tournament_round_view",
-                                tournament_id=tournament_id,
-                                round_no=last_round_no,
-                            )
+                            url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no)
                         )
                     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
-                # Nur "nächste" Runde (last+1) erlauben (kein Überspringen)
                 if last_round_no > 0 and int(round_no) != (last_round_no + 1):
                     flash(
                         f"Runde {round_no} kann nicht übersprungen werden. "
@@ -63,11 +62,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                         "error",
                     )
                     return redirect(
-                        url_for(
-                            "tournaments.tournament_round_view",
-                            tournament_id=tournament_id,
-                            round_no=last_round_no + 1,
-                        )
+                        url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no + 1)
                     )
 
         rows = db.q(
@@ -86,19 +81,15 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             flash("Zu wenige Teilnehmer zum Auslosen.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
-        # Vorgabe: Teilnehmerzahl muss durch 4 teilbar sein
         if (n % 4) != 0:
-            flash(
-                f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. Bitte erst auf 4er auffüllen, dann auslosen.",
-                "error",
-            )
+            flash(f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. Bitte erst auf 4er auffüllen, dann auslosen.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         tp_ids = [tp["id"] for tp in tps]
         hist_pairs = _history_pairs(con, tournament_id, round_no)
 
-        # Überschreiben erlaubt: vorhandene Auslosung dieser Runde löschen
-        con.execute("DELETE FROM tournament_seats WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
+        con.execute("DELETE FROM tournament_scores WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
+        con.execute("DELETE FROM tournament_seats  WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
         con.execute("DELETE FROM tournament_rounds WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
         con.execute("INSERT INTO tournament_rounds(tournament_id, round_no) VALUES (?,?)", (tournament_id, round_no))
 
@@ -107,7 +98,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         seats = ["A", "B", "C", "D"]
         for table_no, ids in enumerate(tables, start=1):
             ids2 = ids[:]
-            random.shuffle(ids2)  # Sitzplätze A-D zufällig
+            random.shuffle(ids2)
             for seat, tp_id in zip(seats, ids2):
                 con.execute(
                     """
@@ -166,7 +157,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
                     prev_round_no = max(lower) if lower else None
                     next_round_no = min(higher) if higher else None
 
-        # Kartenansicht: nach Tisch/Sitz (A-D) sortiert
         seats = db.q(
             con,
             """
@@ -183,7 +173,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
-        # Druckansicht: alphabetisch nach Name (stabil, case-insensitive)
         seats_alpha = db.q(
             con,
             """

@@ -1,20 +1,13 @@
+<!-- app/templates/tournament_round_standings.html -->
 {% extends "layout.html" %}
 {% block content %}
 
 <style>
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  .no-print { display: block; }
-  .print-only { display: none; }
 
   @media print {
-    nav, .btn, .alert, .no-print { display: none !important; }
-    .print-only { display: block !important; }
-
-    /* etwas Luft unten für evtl. Drucker-Footer */
+    /* @page bleibt hier sinnvoll, der Rest (nav/.btn/.alert/.no-print) kommt global aus layout */
     @page { margin: 12mm; }
-
-    body { background: #fff !important; }
-    .container { max-width: none !important; }
 
     /* Kopf */
     .sk-print-title {
@@ -22,7 +15,7 @@
       color: #000;
     }
     .sk-print-title .headline {
-      font-size: 22pt;      /* ✅ Wunsch: ca. 22pt */
+      font-size: 22pt;
       font-weight: 900;
       margin: 0;
       line-height: 1.05;
@@ -34,49 +27,28 @@
       font-weight: 600;
     }
 
-    /* 1-spaltig, zeilenweise, gut lesbar */
     .sk-line {
       break-inside: avoid;
       page-break-inside: avoid;
 
       display: grid;
-      grid-template-columns: 26mm 1fr 22mm 24mm; /* links Platz, Mitte Name, dann Tisch/Sitz, rechts Punkte */
+      grid-template-columns: 26mm 1fr 22mm 24mm;
       gap: 4mm;
 
-      font-size: 13.5pt;    /* ✅ Wunsch: ca. 13.5pt */
+      font-size: 13.5pt;
       line-height: 1.25;
       padding: 2.0mm 0;
-      border-bottom: 1.5px solid #000; /* ✅ Kontrast */
+      border-bottom: 1.5px solid #000;
       color: #000;
       align-items: baseline;
     }
 
-    .sk-place {
-      white-space: nowrap;
-      font-weight: 900;
-    }
-
-    .sk-name {
-      min-width: 0;
-    }
+    .sk-place { white-space: nowrap; font-weight: 900; }
+    .sk-name { min-width: 0; }
     .sk-name .muted { color: #000; font-weight: 500; }
-
-    .sk-seat {
-      white-space: nowrap;
-      font-weight: 800;
-      color: #000;
-    }
-
-    .sk-points {
-      white-space: nowrap;
-      text-align: right;
-      font-weight: 900;
-      color: #000;
-    }
-
-    .sk-points .soli {
-      font-weight: 700;
-    }
+    .sk-seat { white-space: nowrap; font-weight: 800; color: #000; }
+    .sk-points { white-space: nowrap; text-align: right; font-weight: 900; color: #000; }
+    .sk-points .soli { font-weight: 700; }
   }
 </style>
 
@@ -118,7 +90,6 @@
   </div>
 </div>
 
-{# экран-Ansicht (unverändert, nur Spaltenreihenfolge angepasst wie gewünscht) #}
 <div class="card shadow-sm no-print">
   <div class="card-body">
     {% if not rows %}
@@ -156,7 +127,6 @@
   </div>
 </div>
 
-{# Druckansicht: 1 Spalte, rechts Punkte (Soli) #}
 <div class="print-only">
   <div class="sk-print-title">
     <div class="headline">Rundenwertung – Runde {{ round_no }}</div>

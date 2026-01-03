@@ -1,10 +1,19 @@
 {% extends "layout.html" %}
+
 {% block content %}
+
+<style>
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  .sk-badge-click { cursor: pointer; user-select: none; }
+  .sk-pill { border-radius: 999px; }
+</style>
 
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
     <h3 class="mb-0">Adressbuch</h3>
-    <div class="text-muted small">Suche, Bearbeiten, Status statt Löschen</div>
+    <div class="text-muted small">
+      Gesamt: {{ cnt_all }} · Nicht aktiv: {{ cnt_not_active }}
+    </div>
     <div class="text-muted small mt-1">
       Tastatur:
       <span class="fw-semibold">/</span> Suche ·
@@ -18,29 +27,147 @@
     <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrImport" href="{{ url_for('addresses.addresses_import') }}">Import (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrStats" href="{{ url_for('addresses.addresses_stats') }}">Statistik</a>
-    <a class="btn btn-outline-primary" id="btnAddrNew" href="{{ url_for('addresses.address_new') }}">Neue Adresse</a>
+    <a class="btn btn-outline-primary" id="btnAddrNew" href="{{ url_for('addresses.address_new', next=request.full_path) }}">Neue Adresse</a>
   </div>
 </div>
 
 <div class="card shadow-sm mb-3">
   <div class="card-body">
-    <form method="get" action="{{ url_for('addresses.addresses_list') }}" class="d-flex gap-2 flex-wrap">
-      <input class="form-control" id="addrSearch" name="q" value="{{ q or '' }}"
-             placeholder="Suche (Name/Wohnort/Ort/PLZ/Telefon/Email/Straße)" style="min-width:420px;" autofocus>
-      <button class="btn btn-primary">Suchen</button>
-      {% if q %}
-        <a class="btn btn-outline-secondary" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
-      {% else %}
-        <a class="btn btn-outline-secondary d-none" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
-      {% endif %}
+    <form method="get" action="{{ url_for('addresses.addresses_list') }}" class="row g-2 align-items-end">
+
+      <div class="col-lg-3">
+        <label class="form-label mb-1">Ansicht</label>
+        <select class="form-select" name="view">
+          <option value="latest" {% if view=='latest' %}selected{% endif %}>Zuletzt bearbeitet</option>
+          <option value="all" {% if view=='all' %}selected{% endif %}>Alle Adressen</option>
+        </select>
+      </div>
+
+      <div class="col-lg-4">
+        <label class="form-label mb-1">Suche</label>
+        <input class="form-control" id="addrSearch" name="q" value="{{ q or '' }}"
+               placeholder="Name/Wohnort/Ort/PLZ/Telefon/Email/Straße" autofocus>
+      </div>
+
+      <div class="col-lg-2">
+        <label class="form-label mb-1">Status</label>
+        <select class="form-select" name="status">
+          <option value="alle" {% if status_filter == 'alle' %}selected{% endif %}>Alle</option>
+          {% for s in allowed_status %}
+            <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-lg-3">
+        <label class="form-label mb-1">Wohnort</label>
+        <select class="form-select" name="wohnort">
+          <option value="" {% if not wohnort_filter %}selected{% endif %}>Alle</option>
+          {% for w in wohnorte %}
+            <option value="{{ w }}" {% if wohnort_filter == w %}selected{% endif %}>{{ w }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-lg-2">
+        <label class="form-label mb-1">E-Mail</label>
+        <select class="form-select" name="email">
+          <option value="alle" {% if email_filter == 'alle' %}selected{% endif %}>Alle</option>
+          <option value="vorhanden" {% if email_filter == 'vorhanden' %}selected{% endif %}>vorhanden</option>
+          <option value="fehlt" {% if email_filter == 'fehlt' %}selected{% endif %}>fehlt</option>
+        </select>
+      </div>
+
+      <div class="col-lg-2">
+        <label class="form-label mb-1">Einladung</label>
+        <select class="form-select" name="invite">
+          <option value="alle" {% if invite_filter == 'alle' %}selected{% endif %}>Alle</option>
+          <option value="an" {% if invite_filter == 'an' %}selected{% endif %}>an</option>
+          <option value="aus" {% if invite_filter == 'aus' %}selected{% endif %}>aus</option>
+        </select>
+      </div>
+
+      <div class="col-lg-2">
+        <label class="form-label mb-1">Pro Seite</label>
+        <select class="form-select" name="per_page">
+          {% for n in [25,50,100,200] %}
+            <option value="{{ n }}" {% if per_page==n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# Page immer zurück auf 1, wenn man Filter ändert #}
+      <input type="hidden" name="page" value="1">
+
+      <div class="col-12 d-flex gap-2 flex-wrap mt-1">
+        <button class="btn btn-primary">Anwenden</button>
+
+        {% if show_hits %}
+          <a class="btn btn-outline-secondary" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
+        {% else %}
+          <a class="btn btn-outline-secondary d-none" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
+        {% endif %}
+      </div>
+
     </form>
   </div>
 </div>
 
-{% if q %}
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h5 class="mb-2">Treffer</h5>
+{% macro status_badge(s) -%}
+  {%- set st = (s or 'aktiv')|lower -%}
+  {%- if st == 'aktiv' -%}
+    <span class="badge text-bg-success sk-pill">aktiv</span>
+  {%- elif st == 'inaktiv' -%}
+    <span class="badge text-bg-secondary sk-pill">inaktiv</span>
+  {%- elif st == 'verzogen' -%}
+    <span class="badge text-bg-warning sk-pill">verzogen</span>
+  {%- elif st == 'gesperrt' -%}
+    <span class="badge text-bg-dark sk-pill">gesperrt</span>
+  {%- elif st == 'verstorben' -%}
+    <span class="badge text-bg-danger sk-pill">verstorben</span>
+  {%- else -%}
+    <span class="badge text-bg-secondary sk-pill">{{ st }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro invite_badge(row) -%}
+  {% set inv = (row.invite or 0)|int %}
+  {% if inv == 1 %}
+    <span
+      class="badge text-bg-success ms-2 sk-badge-click sk-pill"
+      data-invite-toggle="1"
+      data-address-id="{{ row.id }}"
+      data-url="{{ url_for('addresses.address_invite_toggle', address_id=row.id) }}"
+      title="Einladung aktiv – klicken zum Umschalten">
+      Einladung
+    </span>
+  {% else %}
+    <span
+      class="badge text-bg-light text-secondary border ms-2 sk-badge-click sk-pill"
+      data-invite-toggle="1"
+      data-address-id="{{ row.id }}"
+      data-url="{{ url_for('addresses.address_invite_toggle', address_id=row.id) }}"
+      title="Einladung aus – klicken zum Umschalten">
+      Einladung
+    </span>
+  {% endif %}
+{%- endmacro %}
+
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    {% if show_hits %}
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h5 class="mb-0">Liste</h5>
+        <div class="text-muted small">
+          {% if total_hits %}
+            {{ total_hits }} Treffer · Seite {{ page }} / {{ total_pages }}
+          {% else %}
+            0 Treffer
+          {% endif %}
+        </div>
+      </div>
+
       {% if hits %}
         <div class="table-responsive">
           <table class="table table-striped mb-0 align-middle">
@@ -48,71 +175,121 @@
               <tr>
                 <th>Name</th>
                 <th>Wohnort</th>
-                <th>Status</th>
-                <th class="text-center" style="width:90px;">Einlad.</th>
-                <th class="text-end" style="width:110px;">Teiln.</th>
-                <th style="width:140px;">Letztes</th>
+                <th>E-Mail</th>
+                <th style="width:140px;">Status</th>
                 <th class="text-end" style="width:160px;">Aktion</th>
               </tr>
             </thead>
             <tbody>
-              {% for h in hits %}
+              {% for r in hits %}
                 <tr>
                   <td>
-                    <strong>{{ h.nachname }}</strong>, {{ h.vorname }}
-                    <span class="text-muted small">#{{ h.id }}</span>
-                    {% if h.tournament_years %}
-                      <div class="text-muted small font-monospace" title="{{ h.tournament_years }}">
-                        Jahre: {{ h.tournament_years }}
+                    <div class="d-flex align-items-center flex-wrap gap-1">
+                      <div>
+                        <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+                        <span class="text-muted small">#{{ r.id }}</span>
                       </div>
+                      {{ invite_badge(r) }}
+                    </div>
+
+                    <div class="text-muted small sk-mono">
+                      Teilnahmen: {{ (r.participation_count or 0) }}
+                    </div>
+                    <div class="text-muted small sk-mono">
+                      Zuletzt: {{ r.last_tournament_at or '–' }}
+                    </div>
+                  </td>
+
+                  <td>{{ r.wohnort }}</td>
+
+                  <td class="sk-mono">
+                    {% if r.email %}
+                      {{ r.email }}
+                    {% else %}
+                      <span class="text-muted">–</span>
                     {% endif %}
                   </td>
-                  <td>{{ h.wohnort }}</td>
-                  <td>{{ h.status }}</td>
-                  <td class="text-center font-monospace">{{ 1 if (h.invite or 0)|int == 1 else 0 }}</td>
-                  <td class="text-end font-monospace">{{ (h.participation_count or 0) }}</td>
-                  <td class="font-monospace">{{ h.last_tournament_at or '' }}</td>
+
+                  <td>{{ status_badge(r.status) }}</td>
+
                   <td class="text-end">
-                    <div class="d-flex justify-content-end gap-2">
-
-                      <a class="btn btn-sm btn-outline-primary"
-                         href="{{ url_for('addresses.address_edit', address_id=h.id) }}">
-                        Bearbeiten
-                      </a>
-
-                      {% if h.status == 'aktiv' %}
-                        <form method="post"
-                              action="{{ url_for('addresses.address_deactivate', address_id=h.id) }}">
-                          <input type="hidden" name="next" value="{{ request.full_path }}">
-                          <button class="btn btn-sm btn-outline-warning">
-                            Deaktivieren
-                          </button>
-                        </form>
-                      {% else %}
-                        <form method="post"
-                              action="{{ url_for('addresses.address_reactivate', address_id=h.id) }}">
-                          <input type="hidden" name="next" value="{{ request.full_path }}">
-                          <button class="btn btn-sm btn-outline-success">
-                            Reaktivieren
-                          </button>
-                        </form>
-                      {% endif %}
-
-                    </div>
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{{ url_for('addresses.address_edit', address_id=r.id, next=request.full_path) }}">
+                      Bearbeiten
+                    </a>
                   </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
+
+        {# Pagination #}
+        {% if total_pages and total_pages > 1 %}
+          {% set qp = request.args.to_dict(flat=True) %}
+          <nav class="mt-3" aria-label="Pagination">
+            <ul class="pagination mb-0 flex-wrap">
+
+              {# Prev #}
+              {% set prev_page = page - 1 %}
+              <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link"
+                   href="{{ url_for('addresses.addresses_list', **(qp | combine({'page': prev_page})) ) }}">
+                  ‹
+                </a>
+              </li>
+
+              {# Pages (kompakt): 1, ..., p-2,p-1,p,p+1,p+2, ..., last #}
+              {% set last = total_pages %}
+              {% set start = page - 2 %}
+              {% set end = page + 2 %}
+              {% if start < 1 %}{% set start = 1 %}{% endif %}
+              {% if end > last %}{% set end = last %}{% endif %}
+
+              {% if start > 1 %}
+                <li class="page-item">
+                  <a class="page-link" href="{{ url_for('addresses.addresses_list', **(qp | combine({'page': 1})) ) }}">1</a>
+                </li>
+                {% if start > 2 %}
+                  <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+              {% endif %}
+
+              {% for p in range(start, end + 1) %}
+                <li class="page-item {% if p == page %}active{% endif %}">
+                  <a class="page-link"
+                     href="{{ url_for('addresses.addresses_list', **(qp | combine({'page': p})) ) }}">
+                    {{ p }}
+                  </a>
+                </li>
+              {% endfor %}
+
+              {% if end < last %}
+                {% if end < last - 1 %}
+                  <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+                <li class="page-item">
+                  <a class="page-link" href="{{ url_for('addresses.addresses_list', **(qp | combine({'page': last})) ) }}">{{ last }}</a>
+                </li>
+              {% endif %}
+
+              {# Next #}
+              {% set next_page = page + 1 %}
+              <li class="page-item {% if page >= last %}disabled{% endif %}">
+                <a class="page-link"
+                   href="{{ url_for('addresses.addresses_list', **(qp | combine({'page': next_page})) ) }}">
+                  ›
+                </a>
+              </li>
+            </ul>
+          </nav>
+        {% endif %}
+
       {% else %}
         <div class="text-muted">Keine Treffer.</div>
       {% endif %}
-    </div>
-  </div>
-{% else %}
-  <div class="card shadow-sm">
-    <div class="card-body">
+
+    {% else %}
       <h5 class="mb-2">Zuletzt bearbeitet</h5>
       {% if latest %}
         <div class="table-responsive">
@@ -121,10 +298,8 @@
               <tr>
                 <th>Name</th>
                 <th>Wohnort</th>
-                <th>Status</th>
-                <th class="text-center" style="width:90px;">Einlad.</th>
-                <th class="text-end" style="width:110px;">Teiln.</th>
-                <th style="width:140px;">Letztes</th>
+                <th>E-Mail</th>
+                <th style="width:140px;">Status</th>
                 <th class="text-end" style="width:160px;">Aktion</th>
               </tr>
             </thead>
@@ -132,46 +307,39 @@
               {% for a in latest %}
                 <tr>
                   <td>
-                    <strong>{{ a.nachname }}</strong>, {{ a.vorname }}
-                    <span class="text-muted small">#{{ a.id }}</span>
-                    {% if a.tournament_years %}
-                      <div class="text-muted small font-monospace" title="{{ a.tournament_years }}">
-                        Jahre: {{ a.tournament_years }}
+                    <div class="d-flex align-items-center flex-wrap gap-1">
+                      <div>
+                        <strong>{{ a.nachname }}</strong>, {{ a.vorname }}
+                        <span class="text-muted small">#{{ a.id }}</span>
                       </div>
+                      {{ invite_badge(a) }}
+                    </div>
+
+                    <div class="text-muted small sk-mono">
+                      Teilnahmen: {{ (a.participation_count or 0) }}
+                    </div>
+                    <div class="text-muted small sk-mono">
+                      Zuletzt: {{ a.last_tournament_at or '–' }}
+                    </div>
+                  </td>
+
+                  <td>{{ a.wohnort }}</td>
+
+                  <td class="sk-mono">
+                    {% if a.email %}
+                      {{ a.email }}
+                    {% else %}
+                      <span class="text-muted">–</span>
                     {% endif %}
                   </td>
-                  <td>{{ a.wohnort }}</td>
-                  <td>{{ a.status }}</td>
-                  <td class="text-center font-monospace">{{ 1 if (a.invite or 0)|int == 1 else 0 }}</td>
-                  <td class="text-end font-monospace">{{ (a.participation_count or 0) }}</td>
-                  <td class="font-monospace">{{ a.last_tournament_at or '' }}</td>
+
+                  <td>{{ status_badge(a.status) }}</td>
+
                   <td class="text-end">
-                    <div class="d-flex justify-content-end gap-2">
-
-                      <a class="btn btn-sm btn-outline-primary"
-                         href="{{ url_for('addresses.address_edit', address_id=a.id) }}">
-                        Bearbeiten
-                      </a>
-
-                      {% if a.status == 'aktiv' %}
-                        <form method="post"
-                              action="{{ url_for('addresses.address_deactivate', address_id=a.id) }}">
-                          <input type="hidden" name="next" value="{{ request.full_path }}">
-                          <button class="btn btn-sm btn-outline-warning">
-                            Deaktivieren
-                          </button>
-                        </form>
-                      {% else %}
-                        <form method="post"
-                              action="{{ url_for('addresses.address_reactivate', address_id=a.id) }}">
-                          <input type="hidden" name="next" value="{{ request.full_path }}">
-                          <button class="btn btn-sm btn-outline-success">
-                            Reaktivieren
-                          </button>
-                        </form>
-                      {% endif %}
-
-                    </div>
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{{ url_for('addresses.address_edit', address_id=a.id, next=request.full_path) }}">
+                      Bearbeiten
+                    </a>
                   </td>
                 </tr>
               {% endfor %}
@@ -181,9 +349,64 @@
       {% else %}
         <div class="text-muted">Noch keine Adressen vorhanden.</div>
       {% endif %}
-    </div>
+    {% endif %}
   </div>
-{% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function updateBadge(el, inviteVal) {
+    const v = parseInt(String(inviteVal || 0), 10) === 1 ? 1 : 0;
+    el.textContent = "Einladung";
+    if (v === 1) {
+      el.className = "badge text-bg-success ms-2 sk-badge-click sk-pill";
+      el.title = "Einladung aktiv – klicken zum Umschalten";
+    } else {
+      el.className = "badge text-bg-light text-secondary border ms-2 sk-badge-click sk-pill";
+      el.title = "Einladung aus – klicken zum Umschalten";
+    }
+  }
+
+  async function toggleInvite(el) {
+    const url = el.dataset.url;
+    if (!url) return;
+
+    const fd = new FormData();
+    fd.append("next", window.location.pathname + window.location.search);
+
+    el.style.opacity = "0.6";
+
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        body: fd,
+        headers: { "Accept": "application/json" }
+      });
+
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
+      if (!data || data.ok !== true) throw new Error("bad json");
+
+      updateBadge(el, data.invite);
+    } catch (e) {
+      window.location.href = window.location.pathname + window.location.search;
+    } finally {
+      el.style.opacity = "1";
+    }
+  }
+
+  document.addEventListener("click", function (ev) {
+    const t = ev.target;
+    if (!t) return;
+    if (!t.dataset || !t.dataset.inviteToggle) return;
+    ev.preventDefault();
+    toggleInvite(t);
+  });
+})();
+</script>
 
 <script src="{{ url_for('static', filename='js/addresses_keys.js') }}"></script>
 {% endblock %}

@@ -84,7 +84,7 @@
             </table>
           </div>
           <div class="text-muted small mt-2">
-            participation_count wird genutzt; falls leer, wird aus tournament_years berechnet.
+            participation_count wird genutzt; falls leer/nicht vorhanden, wird aus der Marker-Liste (tournament_years) gezählt.
           </div>
         </div>
       </div>
@@ -113,7 +113,7 @@
             </table>
           </div>
           <div class="text-muted small mt-2">
-            last_tournament_at wird genutzt; falls leer, wird max(tournament_years) verwendet.
+            last_tournament_at wird als Marker (JJMMTTxxxx) oder Legacy-Jahr genutzt; falls leer, wird der neueste Marker aus tournament_years verwendet.
           </div>
         </div>
       </div>
@@ -142,8 +142,11 @@
             </tbody>
           </table>
         </div>
+        <div class="text-muted small mt-2">
+          Die Jahreswerte werden aus dem Datumsteil der Marker (JJMMTTxxxx) abgeleitet.
+        </div>
       {% else %}
-        <div class="text-muted">Keine Jahresdaten vorhanden (tournament_years leer).</div>
+        <div class="text-muted">Keine Marker-/Jahresdaten vorhanden (tournament_years leer oder ohne gültige Marker).</div>
       {% endif %}
     </div>
   </div>

@@ -1,15 +1,21 @@
 # app/routes/addresses.py
 from __future__ import annotations
 
-from typing import Any
 from datetime import datetime
+from typing import Any
 
-from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import db
 from ..services import addressbook_io
 
 bp = Blueprint("addresses", __name__)
+
+# -----------------------------------------------------------------------------
+# Konfiguration / Konstanten
+# -----------------------------------------------------------------------------
+ALLOWED_STATUS = {"aktiv", "inaktiv", "verzogen", "verstorben", "gesperrt"}
+
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -31,6 +37,11 @@ def _to_int_none(v: Any) -> int | None:
         return None
 
 
+def _norm_status(raw: Any) -> str:
+    s = (str(raw or "").strip() or "aktiv").lower()
+    return s if s in ALLOWED_STATUS else "aktiv"
+
+
 def _is_used_in_any_tournament(con, address_id: int) -> bool:
     r = db.one(con, "SELECT 1 FROM tournament_participants WHERE address_id=? LIMIT 1", (address_id,))
     return bool(r)
@@ -39,14 +50,6 @@ def _is_used_in_any_tournament(con, address_id: int) -> bool:
 def _default_ab_id(con) -> int:
     dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
     return int(dab["id"]) if dab else 1
-
-
-def _build_next_url(qtxt: str, show_inactive: bool) -> str:
-    return url_for(
-        "addresses.addresses_list",
-        q=qtxt or None,
-        show_inactive="1" if show_inactive else "0",
-    )
 
 
 def _has_column(con, table: str, column: str) -> bool:
@@ -88,27 +91,61 @@ def _csv_text_response(filename: str, text: str) -> Response:
     return resp
 
 
-def _parse_years(s: Any) -> list[int]:
+# -----------------------------------------------------------------------------
+# Marker-Parsing (NEU: statt Jahreslisten)
+# -----------------------------------------------------------------------------
+def _parse_markers(s: Any) -> list[str]:
     """
-    Erwartet z.B. "2018,2019,2024" (kommasepariert).
-    Gibt sortierte, eindeutige Jahreszahlen zurück.
+    Erwartet z.B. "251228ABCD,250101WXYZ" (kommasepariert) ODER Legacy "2019,2024".
+    Gibt sortierte, eindeutige Marker zurück (10 Zeichen, A-Z/0-9).
+    Legacy-Jahre werden ignoriert (für Stats zählt dann ggf. last_tournament_at/participation_count).
     """
     if s is None:
         return []
     raw = str(s).strip()
     if not raw:
         return []
-    years: set[int] = set()
+
+    markers: set[str] = set()
     for part in raw.split(","):
-        p = part.strip()
+        p = part.strip().upper()
         if not p:
             continue
-        if not p.isdigit():
+        # Marker: exakt 10, alnum
+        if len(p) == 10 and p.isalnum():
+            markers.add(p)
             continue
-        y = int(p)
-        if 1900 <= y <= 3000:
-            years.add(y)
-    return sorted(years)
+        # Legacy (Jahreszahl) -> ignorieren in Marker-Statistik
+        # (Stats bleiben trotzdem robust über last_tournament_at)
+    return sorted(markers)
+
+
+def _marker_to_date(m: str) -> datetime | None:
+    """
+    Marker beginnt mit JJMMTT (6-stellig). Wir mappen JJ -> 2000+JJ (2000..2099).
+    Rückgabe datetime oder None.
+    """
+    if not m:
+        return None
+    s = str(m).strip().upper()
+    if len(s) != 10 or not s.isalnum():
+        return None
+    pref = s[:6]
+    if not pref.isdigit():
+        return None
+    yy = int(pref[0:2])
+    mm = int(pref[2:4])
+    dd = int(pref[4:6])
+    year = 2000 + yy
+    try:
+        return datetime(year, mm, dd)
+    except Exception:
+        return None
+
+
+def _year_from_marker(m: str) -> int | None:
+    dt = _marker_to_date(m)
+    return dt.year if dt else None
 
 
 def _bucket_participation(n: int) -> str:
@@ -124,6 +161,7 @@ def _bucket_participation(n: int) -> str:
 
 
 def _bucket_recency(last_year: int | None, now_year: int) -> str:
+    # Wir bucketen weiterhin nach Jahresdifferenz (wie bisher), nur dass last_year nun aus Marker stammt.
     if not last_year:
         return "nie"
     d = now_year - int(last_year)
@@ -138,83 +176,248 @@ def _bucket_recency(last_year: int | None, now_year: int) -> str:
     return "vor >5 Jahren"
 
 
+def _clamp_per_page(v: Any) -> int:
+    n = _to_int(v, 50)
+    if n <= 0:
+        n = 50
+    if n not in (25, 50, 100, 200):
+        n = 50
+    return n
+
+
+def _clamp_page(v: Any) -> int:
+    n = _to_int(v, 1)
+    return n if n >= 1 else 1
+
+
+def _qs_for_list(*, q: str, status: str, email: str, wohnort: str, invite: str, view: str, per_page: int, page: int) -> dict[str, Any]:
+    """Helper: saubere Querystring-Parameter für url_for (None entfernt Flask automatisch)."""
+    return {
+        "q": q or None,
+        "status": status if status else "alle",
+        "email": email if email else "alle",
+        "wohnort": wohnort or None,
+        "invite": invite if invite else "alle",
+        "view": view if view else "latest",
+        "per_page": per_page,
+        "page": page,
+    }
+
+
 # -----------------------------------------------------------------------------
 # Pages: Liste / Suche
 # -----------------------------------------------------------------------------
 @bp.get("/addresses")
 def addresses_list():
     qtxt = (request.args.get("q") or "").strip()
-    show_inactive = (request.args.get("show_inactive") or "0") == "1"
     like = f"%{qtxt}%"
+
+    # Ansicht: latest|all
+    view = (request.args.get("view") or "latest").strip().lower()
+    if view not in ("latest", "all"):
+        view = "latest"
+
+    # Filter
+    status_filter = (request.args.get("status") or "alle").strip().lower()
+    email_filter = (request.args.get("email") or "alle").strip().lower()      # alle|vorhanden|fehlt
+    wohnort_filter = (request.args.get("wohnort") or "").strip()
+    invite_filter = (request.args.get("invite") or "alle").strip().lower()    # alle|an|aus
+
+    # Pagination
+    per_page = _clamp_per_page(request.args.get("per_page"))
+    page = _clamp_page(request.args.get("page"))
+    offset = (page - 1) * per_page
+
+    # Legacy: show_inactive=0 hieß früher: nur aktiv (wenn status nicht gesetzt)
+    if (request.args.get("show_inactive") or "") == "0" and (request.args.get("status") is None):
+        status_filter = "aktiv"
 
     with db.connect() as con:
         default_ab_id = _default_ab_id(con)
 
         cnt_all = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
-        cnt_inactive = db.one(
+        cnt_not_active = db.one(
             con,
             "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status!='aktiv'",
             (default_ab_id,),
         )
         cnt_all_i = int((cnt_all["c"] or 0) if cnt_all else 0)
-        cnt_inactive_i = int((cnt_inactive["c"] or 0) if cnt_inactive else 0)
+        cnt_not_active_i = int((cnt_not_active["c"] or 0) if cnt_not_active else 0)
 
-        hits = []
-        latest = []
+        wohnorte_rows = db.q(
+            con,
+            """
+            SELECT DISTINCT wohnort
+            FROM addresses
+            WHERE addressbook_id=? AND wohnort IS NOT NULL AND TRIM(wohnort)!=''
+            ORDER BY wohnort COLLATE NOCASE ASC
+            """,
+            (default_ab_id,),
+        )
+        wohnorte = [str(r["wohnort"]) for r in wohnorte_rows]
 
-        if qtxt:
+        hits: list[Any] = []
+        latest: list[Any] = []
+        total_hits = 0
+
+        def build_where_and_params() -> tuple[list[str], list[Any]]:
             where = ["addressbook_id=?"]
             params: list[Any] = [default_ab_id]
 
-            where.append(
-                "("
-                "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
-                "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
-                "strasse LIKE ? OR hausnummer LIKE ?"
-                ")"
-            )
-            params.extend([like, like, like, like, like, like, like, like, like])
+            # Status
+            if status_filter and status_filter != "alle":
+                if status_filter in ALLOWED_STATUS:
+                    where.append("status=?")
+                    params.append(status_filter)
 
-            if not show_inactive:
-                where.append("status='aktiv'")
+            # E-Mail vorhanden/fehlt
+            if email_filter == "vorhanden":
+                where.append("email IS NOT NULL AND TRIM(email)!=''")
+            elif email_filter == "fehlt":
+                where.append("(email IS NULL OR TRIM(email)='')")
 
-            sql = f"""
+            # Wohnort
+            if wohnort_filter:
+                where.append("wohnort=?")
+                params.append(wohnort_filter)
+
+            # Einladung an/aus
+            if invite_filter == "an":
+                where.append("COALESCE(invite,0)=1")
+            elif invite_filter == "aus":
+                where.append("COALESCE(invite,0)=0")
+
+            return where, params
+
+        any_filter = (
+            bool(qtxt)
+            or (status_filter != "alle")
+            or (email_filter != "alle")
+            or bool(wohnort_filter)
+            or (invite_filter != "alle")
+        )
+
+        # --- LISTENMODUS: (a) Suche/Filter aktiv ODER (b) view=all -> paginierte Liste
+        if any_filter or view == "all":
+            where, params = build_where_and_params()
+
+            if qtxt:
+                where.append(
+                    "("
+                    "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
+                    "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
+                    "strasse LIKE ? OR hausnummer LIKE ?"
+                    ")"
+                )
+                params.extend([like, like, like, like, like, like, like, like, like])
+
+            # Count
+            sql_count = f"SELECT COUNT(*) AS c FROM addresses WHERE {' AND '.join(where)}"
+            r = db.one(con, sql_count, tuple(params))
+            total_hits = int((r["c"] or 0) if r else 0)
+
+            # Data
+            sql_data = f"""
                 SELECT *
                 FROM addresses
                 WHERE {' AND '.join(where)}
                 ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id DESC
-                LIMIT 500
+                LIMIT ? OFFSET ?
             """
-            hits = db.q(con, sql, tuple(params))
+            hits = db.q(con, sql_data, tuple(params + [per_page, offset]))
 
+            # Wenn page zu groß (z.B. nach Filterwechsel), zurück auf Seite 1
+            if total_hits > 0 and offset >= total_hits:
+                page = 1
+                offset = 0
+                hits = db.q(con, sql_data, tuple(params + [per_page, offset]))
+
+        # --- DEFAULT: zuletzt bearbeitet (ohne Pagination)
         else:
-            where = ["addressbook_id=?"]
-            params2: list[Any] = [default_ab_id]
-            if not show_inactive:
-                where.append("status='aktiv'")
-
-            sql2 = f"""
+            sql_latest = """
                 SELECT *
                 FROM addresses
-                WHERE {' AND '.join(where)}
+                WHERE addressbook_id=?
                 ORDER BY updated_at DESC, id DESC
                 LIMIT 80
             """
-            latest = db.q(con, sql2, tuple(params2))
+            latest = db.q(con, sql_latest, (default_ab_id,))
+
+    # Pagination Infos fürs Template
+    total_pages = (total_hits + per_page - 1) // per_page if total_hits else 0
+    show_hits = (any_filter or view == "all")
 
     return render_template(
         "addresses.html",
-        q=qtxt,
-        show_inactive=show_inactive,
-        cnt_all=cnt_all_i,
-        cnt_inactive=cnt_inactive_i,
+        # Daten
         hits=hits,
         latest=latest,
+        show_hits=show_hits,
+        total_hits=total_hits,
+        # Meta
+        q=qtxt,
+        cnt_all=cnt_all_i,
+        cnt_not_active=cnt_not_active_i,
+        # Filter/Ansicht
+        view=view,
+        status_filter=status_filter,
+        email_filter=email_filter,
+        wohnort_filter=wohnort_filter,
+        invite_filter=invite_filter,
+        wohnorte=wohnorte,
+        allowed_status=sorted(ALLOWED_STATUS),
+        # Pagination
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
     )
 
 
 # -----------------------------------------------------------------------------
-# NEU: Statistik fürs Adressbuch
+# INVITE Toggle (Badge klickbar)
+# -----------------------------------------------------------------------------
+@bp.post("/addresses/<int:address_id>/invite-toggle")
+def address_invite_toggle(address_id: int):
+    nxt = (request.form.get("next") or request.args.get("next") or "").strip()
+    if not nxt:
+        nxt = request.referrer or url_for("addresses.addresses_list")
+
+    wants_json = "application/json" in (request.headers.get("Accept") or "")
+
+    with db.connect() as con:
+        if not _has_column(con, "addresses", "invite"):
+            msg = "Spalte 'invite' existiert nicht in addresses."
+            if wants_json:
+                return jsonify({"ok": False, "error": msg}), 400
+            flash(msg, "error")
+            return redirect(nxt)
+
+        a = db.one(con, "SELECT id, invite FROM addresses WHERE id=?", (address_id,))
+        if not a:
+            msg = "Adresse nicht gefunden."
+            if wants_json:
+                return jsonify({"ok": False, "error": msg}), 404
+            flash(msg, "error")
+            return redirect(nxt)
+
+        cur = 1 if int(a["invite"] or 0) == 1 else 0
+        newv = 0 if cur == 1 else 1
+
+        con.execute(
+            "UPDATE addresses SET invite=?, updated_at=datetime('now') WHERE id=?",
+            (newv, address_id),
+        )
+        con.commit()
+
+    if wants_json:
+        return jsonify({"ok": True, "address_id": address_id, "invite": newv})
+
+    flash("Einladung umgestellt.", "ok")
+    return redirect(nxt)
+
+
+# -----------------------------------------------------------------------------
+# NEU: Statistik fürs Adressbuch (UMGESTELLT: Marker statt Jahre)
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/stats")
 def addresses_stats():
@@ -223,20 +426,20 @@ def addresses_stats():
 
         has_invite = _has_column(con, "addresses", "invite")
         has_pc = _has_column(con, "addresses", "participation_count")
-        has_last = _has_column(con, "addresses", "last_tournament_at")
-        has_years = _has_column(con, "addresses", "tournament_years")
+        has_last = _has_column(con, "addresses", "last_tournament_at")   # enthält nun idealerweise Marker (10-stellig)
+        has_years = _has_column(con, "addresses", "tournament_years")    # enthält nun idealerweise Marker-Liste (CSV)
 
         total = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
         active = db.one(
             con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status='aktiv'", (default_ab_id,)
         )
-        inactive = db.one(
+        not_active = db.one(
             con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status!='aktiv'", (default_ab_id,)
         )
 
         total_i = int((total["c"] or 0) if total else 0)
         active_i = int((active["c"] or 0) if active else 0)
-        inactive_i = int((inactive["c"] or 0) if inactive else 0)
+        not_active_i = int((not_active["c"] or 0) if not_active else 0)
 
         invite_yes = invite_no = None
         if has_invite:
@@ -280,6 +483,7 @@ def addresses_stats():
         year_counts: dict[int, int] = {}
 
         for r in rows:
+            # participation_count: wenn vorhanden, nehmen; sonst aus Marker-Liste ableiten
             pc = 0
             if has_pc:
                 try:
@@ -287,25 +491,47 @@ def addresses_stats():
                 except Exception:
                     pc = 0
 
-            years_list: list[int] = []
+            markers: list[str] = []
             if has_years:
-                years_list = _parse_years(r["tournament_years"])
+                markers = _parse_markers(r["tournament_years"])
                 if not has_pc:
-                    pc = len(years_list)
+                    pc = len(markers)
 
-                for y in years_list:
-                    year_counts[y] = year_counts.get(y, 0) + 1
+                # Year-Counts aus Marker-Datum
+                for m in markers:
+                    y = _year_from_marker(m)
+                    if y:
+                        year_counts[y] = year_counts.get(y, 0) + 1
 
+            # last_tournament_at: kann Legacy-Jahr sein oder Marker
             last_year: int | None = None
             if has_last:
                 try:
                     v = r["last_tournament_at"]
-                    if v is not None and str(v).strip() != "":
-                        last_year = int(str(v).strip())
+                    s = ("" if v is None else str(v)).strip()
+                    if s:
+                        # Legacy: Jahr
+                        if s.isdigit() and len(s) == 4:
+                            last_year = int(s)
+                        else:
+                            # Marker
+                            y = _year_from_marker(s)
+                            if y:
+                                last_year = y
                 except Exception:
                     last_year = None
-            if last_year is None and years_list:
-                last_year = max(years_list)
+
+            # Fallback: falls last_tournament_at nicht gesetzt ist, aber Marker-Liste existiert -> max(Marker-Datum)
+            if last_year is None and markers:
+                # robust: sortiere nach Datum, nehme max
+                best_year = None
+                best_dt = None
+                for m in markers:
+                    dt = _marker_to_date(m)
+                    if dt and (best_dt is None or dt > best_dt):
+                        best_dt = dt
+                        best_year = dt.year
+                last_year = best_year
 
             part_buckets[_bucket_participation(pc)] = part_buckets.get(_bucket_participation(pc), 0) + 1
             recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(
@@ -318,7 +544,7 @@ def addresses_stats():
         "addresses_stats.html",
         total=total_i,
         active=active_i,
-        inactive=inactive_i,
+        inactive=not_active_i,
         has_invite=has_invite,
         invite_yes=invite_yes,
         invite_no=invite_no,
@@ -334,10 +560,6 @@ def addresses_stats():
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/export")
 def addresses_export():
-    """
-    Exportiert alle Adressen des Default-Adressbuchs als CSV.
-    Trennzeichen ';', Header = DB-Spaltennamen, UTF-8 (+BOM).
-    """
     with db.connect() as con:
         default_ab_id = _default_ab_id(con)
         text, filename = addressbook_io.export_addresses_csv(con=con, addressbook_id=default_ab_id)
@@ -351,10 +573,6 @@ def addresses_import():
 
 @bp.post("/addresses/import")
 def addresses_import_post():
-    """
-    Importiert CSV (Semikolon, UTF-8) und ersetzt das Standard-Adressbuch
-    als HARD-REPLACE (nur erlaubt, wenn KEINE Turnierdaten existieren).
-    """
     file = request.files.get("file")
     if not file:
         flash("Bitte eine CSV-Datei auswählen.", "error")
@@ -362,7 +580,7 @@ def addresses_import_post():
 
     raw = file.read()
     try:
-        text = raw.decode("utf-8-sig")  # UTF-8 mit/ohne BOM
+        text = raw.decode("utf-8-sig")
     except Exception:
         flash("CSV konnte nicht als UTF-8 gelesen werden.", "error")
         return redirect(url_for("addresses.addresses_import"))
@@ -392,10 +610,9 @@ def addresses_import_post():
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/new")
 def address_new():
-    qtxt = (request.args.get("q") or "").strip()
-    show_inactive = (request.args.get("show_inactive") or "0") == "1"
-    next_url = (request.args.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
-
+    nxt = (request.args.get("next") or "").strip()
+    if not nxt:
+        nxt = url_for("addresses.addresses_list")
     defaults = {
         "id": 0,
         "nachname": "",
@@ -409,13 +626,12 @@ def address_new():
         "email": "",
         "status": "aktiv",
         "notizen": "",
-        # Turnier-/Einladungsfelder
         "invite": 1,
         "participation_count": 0,
         "last_tournament_at": "",
         "tournament_years": "",
     }
-    return render_template("address_form.html", a=defaults, mode="new", used=False, next=next_url)
+    return render_template("address_form.html", a=defaults, mode="new", used=False, next=nxt)
 
 
 @bp.post("/addresses/new")
@@ -437,7 +653,7 @@ def address_create():
     hausnummer = (f.get("hausnummer") or "").strip() or None
     email = (f.get("email") or "").strip() or None
     telefon = (f.get("telefon") or "").strip() or None
-    status = (f.get("status") or "aktiv").strip() or "aktiv"
+    status = _norm_status(f.get("status"))
     notizen = (f.get("notizen") or "").strip() or None
 
     invite_val = 1 if (f.get("invite") == "1") else 0
@@ -489,9 +705,7 @@ def address_create():
         """
 
         con.execute(sql, tuple(vals))
-
         _upsert_wohnort(con, wohnort, plz, ort)
-
         con.commit()
 
     flash("Adresse angelegt.", "ok")
@@ -503,19 +717,17 @@ def address_create():
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/<int:address_id>/edit")
 def address_edit(address_id: int):
-    qtxt = (request.args.get("q") or "").strip()
-    show_inactive = (request.args.get("show_inactive") or "0") == "1"
-    next_url = (request.args.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+    nxt = (request.args.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
     with db.connect() as con:
         a = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(next_url)
+            return redirect(nxt)
 
         used = _is_used_in_any_tournament(con, address_id)
 
-    return render_template("address_form.html", a=a, mode="edit", used=used, next=next_url)
+    return render_template("address_form.html", a=a, mode="edit", used=used, next=nxt)
 
 
 @bp.post("/addresses/<int:address_id>/edit")
@@ -572,7 +784,7 @@ def address_update(address_id: int):
             (f.get("hausnummer") or "").strip() or None,
             (f.get("telefon") or "").strip() or None,
             (f.get("email") or "").strip() or None,
-            (f.get("status") or "aktiv").strip() or "aktiv",
+            _norm_status(f.get("status")),
             (f.get("notizen") or "").strip() or None,
         ]
 
@@ -602,9 +814,7 @@ def address_update(address_id: int):
         params.append(address_id)
 
         con.execute(sql, tuple(params))
-
         _upsert_wohnort(con, wohnort, plz, ort)
-
         con.commit()
 
     flash("Adresse gespeichert.", "ok")
@@ -612,23 +822,21 @@ def address_update(address_id: int):
 
 
 # -----------------------------------------------------------------------------
-# Soft-Delete: Deaktivieren / Reaktivieren
+# Soft-Delete: Deaktivieren / Reaktivieren (optional, falls später wieder Buttons)
 # -----------------------------------------------------------------------------
 @bp.post("/addresses/<int:address_id>/deactivate")
 def address_deactivate(address_id: int):
-    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
-    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
-    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+    nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
     with db.connect() as con:
         a = db.one(con, "SELECT id, status FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(next_url)
+            return redirect(nxt)
 
         if (a["status"] or "aktiv") != "aktiv":
-            flash("Adresse ist bereits inaktiv.", "ok")
-            return redirect(next_url)
+            flash("Adresse ist nicht aktiv (kann nicht per 'Deaktivieren' umgestellt werden).", "ok")
+            return redirect(nxt)
 
         con.execute(
             "UPDATE addresses SET status='inaktiv', updated_at=datetime('now') WHERE id=?",
@@ -636,21 +844,19 @@ def address_deactivate(address_id: int):
         )
         con.commit()
 
-    flash("Adresse deaktiviert (wird standardmäßig nicht mehr angezeigt).", "ok")
-    return redirect(next_url)
+    flash("Adresse auf 'inaktiv' gesetzt.", "ok")
+    return redirect(nxt)
 
 
 @bp.post("/addresses/<int:address_id>/reactivate")
 def address_reactivate(address_id: int):
-    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
-    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
-    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+    nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
     with db.connect() as con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(next_url)
+            return redirect(nxt)
 
         con.execute(
             "UPDATE addresses SET status='aktiv', updated_at=datetime('now') WHERE id=?",
@@ -658,8 +864,8 @@ def address_reactivate(address_id: int):
         )
         con.commit()
 
-    flash("Adresse reaktiviert.", "ok")
-    return redirect(next_url)
+    flash("Adresse auf 'aktiv' gesetzt.", "ok")
+    return redirect(nxt)
 
 
 # -----------------------------------------------------------------------------
@@ -667,22 +873,20 @@ def address_reactivate(address_id: int):
 # -----------------------------------------------------------------------------
 @bp.post("/addresses/<int:address_id>/delete")
 def address_delete(address_id: int):
-    qtxt = (request.args.get("q") or request.form.get("q") or "").strip()
-    show_inactive = ((request.args.get("show_inactive") or request.form.get("show_inactive") or "0") == "1")
-    next_url = (request.form.get("next") or "").strip() or _build_next_url(qtxt, show_inactive)
+    nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
     with db.connect() as con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
-            return redirect(next_url)
+            return redirect(nxt)
 
         if _is_used_in_any_tournament(con, address_id):
-            flash("Löschen nicht möglich: Adresse war bereits in einem Turnier. Bitte deaktivieren.", "error")
-            return redirect(next_url)
+            flash("Löschen nicht möglich: Adresse war bereits in einem Turnier. Bitte Status verwenden.", "error")
+            return redirect(nxt)
 
         con.execute("DELETE FROM addresses WHERE id=?", (address_id,))
         con.commit()
 
     flash("Adresse gelöscht (war nie Turnierteilnehmer).", "ok")
-    return redirect(next_url)
+    return redirect(nxt)

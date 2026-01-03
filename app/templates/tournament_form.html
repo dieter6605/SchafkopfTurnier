@@ -3,9 +3,9 @@
 
 <style>
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
 
-{# Ziel für "Zurück/Abbrechen": edit -> Detail, new -> Liste #}
 {% set back_url = (url_for('tournaments.tournament_detail', tournament_id=t.id) if mode=='edit'
                    else url_for('tournaments.tournaments_list')) %}
 
@@ -51,7 +51,19 @@
         <input class="form-control" name="location" value="{{ t.location }}">
       </div>
 
-      <div class="col-md-6">
+      <div class="col-md-3">
+        <label class="form-label">Marker</label>
+        <input class="form-control sk-mono"
+               id="marker"
+               name="marker"
+               value="{{ t.marker or '' }}"
+               placeholder="z.B. 7C oder KIRCHWEIH25"
+               autocomplete="off"
+               inputmode="text">
+        <div class="form-text">Kurzer Code/Kennzeichen (optional)</div>
+      </div>
+
+      <div class="col-md-3">
         <label class="form-label">Veranstalter</label>
         <input class="form-control" name="organizer" value="{{ t.organizer }}">
       </div>
@@ -81,8 +93,21 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
 (function () {
+  // Marker: trim, remove spaces, uppercase (z.B. "7 c" -> "7C")
+  const marker = document.getElementById("marker");
+  if (marker) {
+    marker.addEventListener("input", function () {
+      const v = String(marker.value || "");
+      const cleaned = v.trim().replace(/\s+/g, "").toUpperCase();
+      if (cleaned !== v) marker.value = cleaned;
+    });
+  }
+
   document.addEventListener("keydown", function (ev) {
     // Esc = zurück
     if (ev.key === "Escape") {
@@ -99,8 +124,7 @@
       const f = document.getElementById("tForm");
       if (f) f.submit();
     }
-  });
+  }, { passive: false });
 })();
 </script>
-
 {% endblock %}
