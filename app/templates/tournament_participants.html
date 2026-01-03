@@ -19,6 +19,9 @@
     outline: 3px solid rgba(13,110,253,.35);
     border-radius: 10px;
   }
+
+  /* Audit filter helpers */
+  .sk-audit-filters .btn { white-space: nowrap; }
 </style>
 
 {% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
@@ -413,6 +416,157 @@
   </div>
 </div>
 
+<!-- =========================================================
+     ✅ Audit-Log (Variante B): Accordion direkt auf der Seite
+========================================================== -->
+<div class="card shadow-sm mt-3">
+  <div class="card-body">
+    <div class="accordion" id="auditAccordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="auditHead">
+          <button class="accordion-button collapsed" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#auditCollapse"
+                  aria-expanded="false" aria-controls="auditCollapse">
+            Änderungsverlauf (Audit-Log)
+            <span class="ms-2 badge text-bg-secondary">
+              {{ (audit|length) if audit is defined and audit else 0 }}
+            </span>
+          </button>
+        </h2>
+        <div id="auditCollapse" class="accordion-collapse collapse" aria-labelledby="auditHead"
+             data-bs-parent="#auditAccordion">
+          <div class="accordion-body">
+
+            {% if audit is defined and audit and audit|length > 0 %}
+
+              <!-- ✅ Filter/Toggle -->
+              <div class="d-flex flex-wrap gap-2 align-items-center mb-2 sk-audit-filters">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Audit Filter">
+                  <button type="button" class="btn btn-outline-secondary" data-audit-filter="all">Alle</button>
+                  <button type="button" class="btn btn-outline-secondary" data-audit-filter="swap">nur Swap</button>
+                  <button type="button" class="btn btn-outline-secondary" data-audit-filter="remove">nur Entfernen</button>
+                  <button type="button" class="btn btn-outline-secondary" data-audit-filter="today">nur heute</button>
+                </div>
+
+                <div class="input-group input-group-sm" style="max-width: 320px;">
+                  <span class="input-group-text">Suche</span>
+                  <input type="text" class="form-control" id="auditSearchInput" placeholder="Name, #ID, tp, …">
+                  <button class="btn btn-outline-secondary" type="button" id="auditSearchClear">×</button>
+                </div>
+
+                <span class="text-muted small" id="auditShownHint"></span>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0" id="auditTable">
+                  <thead>
+                    <tr>
+                      <th style="width:170px;">Zeit</th>
+                      <th style="width:160px;">Aktion</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for a in audit %}
+                      {% set act = (a.action if a.action is defined else (a['action'] if (a is mapping and 'action' in a) else '')) %}
+                      {% set ts = (a.created_at if a.created_at is defined else (a['created_at'] if (a is mapping and 'created_at' in a) else '')) %}
+                      {% set note = (a.note if a.note is defined else (a['note'] if (a is mapping and 'note' in a) else '')) %}
+
+                      {% set tp1 = (a.tp_id if a.tp_id is defined else (a['tp_id'] if (a is mapping and 'tp_id' in a) else None)) %}
+                      {% set tp2 = (a.tp_id_2 if a.tp_id_2 is defined else (a['tp_id_2'] if (a is mapping and 'tp_id_2' in a) else None)) %}
+
+                      {% set ao = (a.address_id_old if a.address_id_old is defined else (a['address_id_old'] if (a is mapping and 'address_id_old' in a) else None)) %}
+                      {% set an = (a.address_id_new if a.address_id_new is defined else (a['address_id_new'] if (a is mapping and 'address_id_new' in a) else None)) %}
+                      {% set ao2 = (a.address_id_old_2 if a.address_id_old_2 is defined else (a['address_id_old_2'] if (a is mapping and 'address_id_old_2' in a) else None)) %}
+                      {% set an2 = (a.address_id_new_2 if a.address_id_new_2 is defined else (a['address_id_new_2'] if (a is mapping and 'address_id_new_2' in a) else None)) %}
+
+                      <tr
+                        data-audit-action="{{ act }}"
+                        data-audit-ts="{{ ts }}"
+                      >
+                        <td class="sk-mono small">{{ ts }}</td>
+
+                        <!-- ✅ Patch Nr. 2: Action-Badge als Label -->
+                        <td class="small">
+                          {% set label = {
+                            'swap_exchange':'Tausch',
+                            'swap_replace':'Ersetzen',
+                            'add':'Hinzufügen',
+                            'quickadd':'Quick-Add',
+                            'edit':'Bearbeiten',
+                            'remove':'Entfernen'
+                          }.get(act, act) %}
+                          <span class="badge text-bg-light border">{{ label }}</span>
+                        </td>
+
+                        <!-- ✅ Patch Nr. 1: Details-Mapping -->
+                        <td class="small">
+                          {% if act == 'swap_exchange' %}
+                            <div class="sk-mono">
+                              Tausch: tp {{ tp1 }} ↔ tp {{ tp2 }}
+                              · #{{ ao }} ⇄ #{{ an }}
+                              {% if ao2 or an2 %}
+                                · (#{{ ao2 }} ⇄ #{{ an2 }})
+                              {% endif %}
+                            </div>
+
+                          {% elif act == 'swap_replace' %}
+                            <div class="sk-mono">
+                              Ersetzen: tp {{ tp1 }} · #{{ ao }} → #{{ an }}
+                            </div>
+
+                          {% elif act == 'add' %}
+                            <div class="sk-mono">
+                              Hinzufügen: tp {{ tp1 }} · #{{ an }}
+                            </div>
+
+                          {% elif act == 'quickadd' %}
+                            <div class="sk-mono">
+                              Quick-Add: tp {{ tp1 }} · #{{ an }}
+                            </div>
+
+                          {% elif act == 'edit' %}
+                            <div class="sk-mono">
+                              Bearbeiten: {% if tp1 %}tp {{ tp1 }}{% endif %}
+                              {% if an %} · #{{ an }}{% endif %}
+                              {% if ao and (ao != an) %} (alt #{{ ao }}){% endif %}
+                            </div>
+
+                          {% elif act == 'remove' %}
+                            <div class="sk-mono">
+                              Entfernen: tp {{ tp1 }}{% if ao %} · alt #{{ ao }}{% endif %}
+                            </div>
+
+                          {% else %}
+                            <div class="sk-mono">
+                              {{ act }}{% if tp1 %} · tp {{ tp1 }}{% endif %}{% if tp2 %} / tp2 {{ tp2 }}{% endif %}
+                              {% if ao or an %} · #{{ ao }} → #{{ an }}{% endif %}
+                            </div>
+                          {% endif %}
+
+                          {% if note %}
+                            <div class="text-muted mt-1">{{ note }}</div>
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <div class="form-text mt-2">
+                Es werden die letzten 200 Einträge angezeigt.
+              </div>
+            {% else %}
+              <div class="text-muted">Noch keine Änderungen protokolliert.</div>
+            {% endif %}
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% if not is_closed %}
 <div class="modal fade" id="sktSwapModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -512,8 +666,6 @@
     const hintEl = qs("#sktSwapHint");
     const submitBtn = qs("#sktSwapSubmitBtn");
 
-    // ✅ FIX: richtiger Endpoint (liegt im tournaments-Blueprint)
-    // Route: /tournaments/<id>/participants/swap-search
     const API_URL_BASE = "{{ url_for('tournaments.tournament_participants_swap_search', tournament_id=t.id) }}";
 
     function clearPicked() {
@@ -607,7 +759,6 @@
 
     const fetchDebounced = debounce(fetchSwap, 250);
 
-    // Klick auf Eintrag
     modalEl.addEventListener("click", function (ev) {
       const tgt = ev.target?.closest?.(".sk-swap-item");
       if (!tgt) return;
@@ -630,7 +781,6 @@
       }
     });
 
-    // Submit
     if (submitBtn) {
       submitBtn.addEventListener("click", function () {
         const tpId = String(tpIdEl?.value || "").trim();
@@ -663,7 +813,6 @@
       });
     }
 
-    // Modal show: reset + Fokus
     modalEl.addEventListener("show.bs.modal", function () {
       clearPicked();
       if (listEl) listEl.innerHTML = "";
@@ -672,7 +821,6 @@
       setTimeout(() => queryEl?.focus?.(), 150);
     });
 
-    // Input: live search
     if (queryEl) {
       queryEl.addEventListener("input", function () {
         const curAddr = modalEl.dataset.currentAddressId || "";
@@ -680,7 +828,6 @@
       });
     }
 
-    // Buttons öffnen Modal und setzen Kontext
     btns.forEach((btn) => {
       btn.addEventListener("click", function () {
         const tpId = btn.dataset.tpId || "";
@@ -710,6 +857,101 @@
 })();
 </script>
 {% endif %}
+
+<!-- ✅ Audit Filter/Toggle JS -->
+<script>
+(function () {
+  function qs(sel, root=document){ return root.querySelector(sel); }
+  function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
+
+  function parseDatePrefix(ts) {
+    // Erwartet "YYYY-MM-DD ..." oder "YYYY-MM-DDTHH:MM:SS"
+    if (!ts) return "";
+    return String(ts).slice(0, 10);
+  }
+
+  function initAuditFilters() {
+    const table = qs("#auditTable");
+    if (!table) return;
+
+    const rows = qsa("tbody tr", table);
+    const btns = qsa("[data-audit-filter]");
+    const searchEl = qs("#auditSearchInput");
+    const clearBtn = qs("#auditSearchClear");
+    const hintEl = qs("#auditShownHint");
+
+    const today = (new Date()).toISOString().slice(0, 10);
+
+    let currentFilter = "all";
+    let search = "";
+
+    function setActiveButton(val) {
+      btns.forEach(b => b.classList.toggle("active", b.dataset.auditFilter === val));
+    }
+
+    function matchesFilter(row) {
+      const act = (row.dataset.auditAction || "");
+      const ts = (row.dataset.auditTs || "");
+      if (currentFilter === "all") return true;
+      if (currentFilter === "swap") return (act === "swap_exchange" || act === "swap_replace");
+      if (currentFilter === "remove") return (act === "remove");
+      if (currentFilter === "today") return parseDatePrefix(ts) === today;
+      return true;
+    }
+
+    function matchesSearch(row) {
+      const q = (search || "").trim().toLowerCase();
+      if (!q) return true;
+      const txt = row.textContent || "";
+      return txt.toLowerCase().includes(q);
+    }
+
+    function apply() {
+      let shown = 0;
+      rows.forEach(r => {
+        const ok = matchesFilter(r) && matchesSearch(r);
+        r.style.display = ok ? "" : "none";
+        if (ok) shown += 1;
+      });
+      if (hintEl) hintEl.textContent = shown + " / " + rows.length + " sichtbar";
+    }
+
+    btns.forEach(b => {
+      b.addEventListener("click", function () {
+        currentFilter = b.dataset.auditFilter || "all";
+        setActiveButton(currentFilter);
+        apply();
+      });
+    });
+
+    if (searchEl) {
+      searchEl.addEventListener("input", function () {
+        search = searchEl.value || "";
+        apply();
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        if (searchEl) searchEl.value = "";
+        search = "";
+        apply();
+        searchEl?.focus?.();
+      });
+    }
+
+    // default
+    setActiveButton("all");
+    apply();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAuditFilters, { once: true });
+  } else {
+    initAuditFilters();
+  }
+})();
+</script>
 
 <script defer src="{{ url_for('static', filename='js/participants_keys.js') }}"></script>
 {% endblock %}
