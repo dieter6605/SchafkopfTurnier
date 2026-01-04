@@ -13,7 +13,6 @@
    - round_list
    - last_round_no
    - next_round_no
-   Wir rechnen nur last_rn als int.
 ---------------------------------------------------------- #}
 {% set last_rn = (last_round_no or 0) | int %}
 {% set next_rn = (next_round_no or ((last_rn + 1) if last_rn > 0 else 1)) | int %}
@@ -31,6 +30,11 @@
   <div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <h3 class="mb-0">{{ t.title }}</h3>
+
+      {% if skt_debug %}
+        <span class="badge text-bg-warning">DEV</span>
+      {% endif %}
+
       {% if is_closed %}
         <span class="badge text-bg-secondary">abgeschlossen</span>
       {% endif %}
@@ -134,7 +138,7 @@
 </div>
 
 {# ==========================================================
-   ✅ NEU: RUNDEN-BLOCK (Anzeige + Auslosen + Links)
+   ✅ RUNDEN-BLOCK
 ========================================================== #}
 <div class="card shadow-sm mb-3">
   <div class="card-body">
@@ -263,8 +267,7 @@
       <div>
         <h5 class="mb-1">Turnier abschließen</h5>
         <div class="text-muted small">
-          Marker <span class="sk-mono">{{ marker_disp }}</span> wird bei allen Teilnehmern
-          gepflegt (Zähler +1, last_tournament_at).
+          Marker <span class="sk-mono">{{ marker_disp }}</span> wird bei allen Teilnehmern gepflegt.
         </div>
       </div>
 
@@ -272,13 +275,102 @@
             action="{{ url_for('tournaments.tournament_close_participations', tournament_id=t.id) }}"
             onsubmit="return confirmClose();">
         <button class="btn btn-outline-danger"
-                {% if is_closed %}disabled{% endif %}>
+               {% if is_closed or not safe.ready %}disabled{% endif %}>
           Turnier abschließen
         </button>
       </form>
     </div>
   </div>
 </div>
+
+{# ==========================================================
+   ✅ DEV-TOOLS (nur im Debug)
+========================================================== #}
+{% if skt_debug %}
+
+  {% if is_closed %}
+  <div class="card shadow-sm mb-3 border-warning">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h5 class="mb-1">DEV: Turnier wieder öffnen</h5>
+          <div class="text-muted small">
+            Entfernt Marker <span class="sk-mono">{{ marker_disp }}</span> aus den Adressen dieses Turniers
+            und berechnet <span class="sk-mono">participation_count</span> + <span class="sk-mono">last_tournament_at</span>
+            strikt aus <span class="sk-mono">tournament_years</span>.
+          </div>
+        </div>
+
+        <form method="post"
+              action="{{ url_for('tournaments.tournament_reopen', tournament_id=t.id) }}"
+              onsubmit="return confirmReopen();">
+          <button class="btn btn-warning">
+            Turnier wieder öffnen
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3 border-info">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h5 class="mb-1">DEV: Repair Adressen (Recalc)</h5>
+          <div class="text-muted small">
+            Setzt <span class="sk-mono">participation_count</span> = Anzahl Marker in <span class="sk-mono">tournament_years</span>
+            und <span class="sk-mono">last_tournament_at</span> = rechter CSV-Wert (oder NULL).
+            Zusätzlich: Normalisierung (trim/upper, Duplikate raus).
+          </div>
+        </div>
+
+        <div class="d-flex flex-column gap-2 align-items-end">
+          <div class="d-flex gap-3 flex-wrap justify-content-end align-items-center">
+            <label class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="repairOnlyActive" checked>
+              <span class="form-check-label">nur aktive</span>
+            </label>
+
+            <label class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="repairDryRun">
+              <span class="form-check-label">dry-run</span>
+            </label>
+          </div>
+
+          <div class="d-flex gap-2 flex-wrap justify-content-end">
+            <form method="post"
+                  action="{{ url_for('tournaments.tournaments_repair_addresses') }}"
+                  class="d-inline"
+                  onsubmit="return confirmRepair(this, 'global');">
+              <input type="hidden" name="only_active" value="1">
+              <input type="hidden" name="dry_run" value="0">
+              <button class="btn btn-info">
+                Repair global
+              </button>
+            </form>
+
+            <form method="post"
+                  action="{{ url_for('tournaments.tournament_repair_addresses', tournament_id=t.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirmRepair(this, 'tournament');">
+              <input type="hidden" name="only_active" value="1">
+              <input type="hidden" name="dry_run" value="0">
+              <button class="btn btn-outline-info">
+                Repair nur dieses Turnier
+              </button>
+            </form>
+          </div>
+
+          <div class="form-text text-end">
+            Hinweis: Optionen werden aus den Schaltern übernommen.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endif %}
 
 {% endblock %}
 
@@ -292,9 +384,53 @@ function confirmClose() {
 
   const msg = {{ (
     "Turnier abschließen?\n\n"
-    ~ "Marker " ~ marker_disp ~ " wird eingetragen.\n"
-    ~ "Zähler wird nur einmal erhöht."
+    ~ "Marker " ~ marker_disp ~ " wird eingetragen."
   ) | tojson }};
+
+  return confirm(msg);
+}
+
+function confirmReopen() {
+  const msg = {{ (
+    "Turnier wieder öffnen (DEV)?\n\n"
+    ~ "Marker " ~ marker_disp ~ " wird aus tournament_years entfernt.\n"
+    ~ "participation_count und last_tournament_at werden strikt aus tournament_years neu berechnet."
+  ) | tojson }};
+  return confirm(msg);
+}
+
+function _readRepairFlags() {
+  const onlyActive = !!document.getElementById("repairOnlyActive")?.checked;
+  const dryRun = !!document.getElementById("repairDryRun")?.checked;
+  return { onlyActive, dryRun };
+}
+
+function _applyFlagsToForm(formEl, flags) {
+  const onlyActiveHidden = formEl.querySelector('input[name="only_active"]');
+  const dryRunHidden = formEl.querySelector('input[name="dry_run"]');
+  if (onlyActiveHidden) onlyActiveHidden.value = flags.onlyActive ? "1" : "0";
+  if (dryRunHidden) dryRunHidden.value = flags.dryRun ? "1" : "0";
+}
+
+function confirmRepair(formEl, scope) {
+  const flags = _readRepairFlags();
+  _applyFlagsToForm(formEl, flags);
+
+  const scopeTxt = (scope === "tournament")
+    ? "NUR dieses Turnier (Teilnehmer-Adressen)"
+    : "GLOBAL (alle Adressen)";
+
+  let msg =
+    "Repair Adressen (DEV) ausführen?\n\n" +
+    "Scope: " + scopeTxt + "\n\n" +
+    "- participation_count := Anzahl Marker in tournament_years\n" +
+    "- last_tournament_at := rechter CSV-Wert aus tournament_years (oder leer)\n" +
+    "- tournament_years wird normalisiert (trim/upper, Duplikate raus)\n\n" +
+    "Optionen:\n" +
+    "- nur aktive: " + (flags.onlyActive ? "JA" : "NEIN") + "\n" +
+    "- dry-run (keine Änderungen speichern): " + (flags.dryRun ? "JA" : "NEIN") + "\n\n";
+
+  if (!flags.dryRun) msg += "Achtung: Änderungen werden in der DB gespeichert.\n";
 
   return confirm(msg);
 }

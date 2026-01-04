@@ -120,6 +120,14 @@
     <a class="sk-brand" href="/">
       <!-- Optional: in der Navbar KEIN Logo anzeigen (nur Titel). -->
       <span class="sk-brand-title">SchafkopfTurnier</span>
+
+      <!-- ✅ DEV/DEBUG Status direkt im Header sichtbar -->
+      {% if dev_mode %}
+        <span class="badge text-bg-warning ms-2" title="DEV aktiv (SKT_DEV_MODE=1)">DEV</span>
+      {% endif %}
+      {% if skt_debug %}
+        <span class="badge text-bg-info ms-1" title="Flask Debug aktiv (app.debug=True)">DEBUG</span>
+      {% endif %}
     </a>
 
     <div class="d-flex gap-2 align-items-center">

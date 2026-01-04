@@ -12,3 +12,4 @@ from . import participants  # noqa: E402,F401
 from . import results  # noqa: E402,F401
 from . import standings  # noqa: E402,F401
 from . import export  # noqa: E402,F401
+from . import admin  # noqa: E402,F401  ✅ neu: reopen / dev actions
