@@ -29,8 +29,10 @@
   }
 </style>
 
+{# robust: t kann obj oder mapping sein #}
 {% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
+{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
 
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
@@ -94,7 +96,9 @@
       </div>
     </div>
 
-    <form method="post" id="skResultsForm">
+    <form method="post"
+          id="skResultsForm"
+          action="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=table_no) }}">
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
           <thead>
@@ -171,13 +175,14 @@
 {% block scripts %}
 <script>
 (function() {
-  const IS_CLOSED = {{ is_closed|tojson }};
+  // robust gegen "Undefined" im Kontext (kein bool-Filter in Jinja!)
+  const IS_CLOSED = {{ (true if (is_closed|default(false)) else false)|tojson }};
 
   const form = document.getElementById("skResultsForm");
+  if (!form) return;
 
   const pointsInputs = Array.from(document.querySelectorAll("input.sk-points"));
   const soliInputs = Array.from(document.querySelectorAll("input.sk-soli"));
-
   const allInputs = Array.from(document.querySelectorAll("#skResultsForm input[data-skt]"));
 
   const badge = document.getElementById("skSumBadge");
@@ -221,10 +226,10 @@
         sumStateEl.textContent = "";
       }
 
-      badge.classList.remove("sk-sum-ok", "sk-sum-bad");
-      sumHintEl.textContent = "Turnier abgeschlossen – Eingabe ist gesperrt (nur Ansicht).";
-      btnSave.disabled = true;
-      btnSaveNext.disabled = true;
+      badge?.classList.remove("sk-sum-ok", "sk-sum-bad");
+      if (sumHintEl) sumHintEl.textContent = "Turnier abgeschlossen – Eingabe ist gesperrt (nur Ansicht).";
+      if (btnSave) btnSave.disabled = true;
+      if (btnSaveNext) btnSaveNext.disabled = true;
       return;
     }
 
@@ -252,21 +257,21 @@
     if (filled === 0 && !hasInvalid) {
       sumValueEl.textContent = "—";
       sumStateEl.textContent = "";
-      badge.classList.remove("sk-sum-ok", "sk-sum-bad");
-      sumHintEl.textContent = "Bitte alle 4 Punkte eingeben – danach muss die Summe 0 sein.";
-      btnSave.disabled = true;
-      btnSaveNext.disabled = true;
+      badge?.classList.remove("sk-sum-ok", "sk-sum-bad");
+      if (sumHintEl) sumHintEl.textContent = "Bitte alle 4 Punkte eingeben – danach muss die Summe 0 sein.";
+      if (btnSave) btnSave.disabled = true;
+      if (btnSaveNext) btnSaveNext.disabled = true;
       return;
     }
 
     if (hasInvalid) {
       sumValueEl.textContent = "!";
       sumStateEl.textContent = " Ungültige Eingabe";
-      badge.classList.add("sk-sum-bad");
-      badge.classList.remove("sk-sum-ok");
-      sumHintEl.textContent = "Nur ganze Zahlen bei Punkte zulässig (z.B. 12, -8).";
-      btnSave.disabled = true;
-      btnSaveNext.disabled = true;
+      badge?.classList.add("sk-sum-bad");
+      badge?.classList.remove("sk-sum-ok");
+      if (sumHintEl) sumHintEl.textContent = "Nur ganze Zahlen bei Punkte zulässig (z.B. 12, -8).";
+      if (btnSave) btnSave.disabled = true;
+      if (btnSaveNext) btnSaveNext.disabled = true;
       return;
     }
 
@@ -276,28 +281,28 @@
 
     if (!ready) {
       sumStateEl.textContent = " (noch nicht komplett)";
-      badge.classList.remove("sk-sum-ok");
-      badge.classList.add("sk-sum-bad");
-      sumHintEl.textContent = "Bitte alle 4 Punktefelder ausfüllen.";
-      btnSave.disabled = true;
-      btnSaveNext.disabled = true;
+      badge?.classList.remove("sk-sum-ok");
+      badge?.classList.add("sk-sum-bad");
+      if (sumHintEl) sumHintEl.textContent = "Bitte alle 4 Punktefelder ausfüllen.";
+      if (btnSave) btnSave.disabled = true;
+      if (btnSaveNext) btnSaveNext.disabled = true;
       return;
     }
 
     if (total === 0) {
       sumStateEl.textContent = " ✓";
-      badge.classList.add("sk-sum-ok");
-      badge.classList.remove("sk-sum-bad");
-      sumHintEl.textContent = "OK – Summe ist 0. Du kannst speichern.";
-      btnSave.disabled = false;
-      btnSaveNext.disabled = false;
+      badge?.classList.add("sk-sum-ok");
+      badge?.classList.remove("sk-sum-bad");
+      if (sumHintEl) sumHintEl.textContent = "OK – Summe ist 0. Du kannst speichern.";
+      if (btnSave) btnSave.disabled = false;
+      if (btnSaveNext) btnSaveNext.disabled = false;
     } else {
       sumStateEl.textContent = " ✗";
-      badge.classList.remove("sk-sum-ok");
-      badge.classList.add("sk-sum-bad");
-      sumHintEl.textContent = `Fehler: Summe ist ${total} (muss 0 sein). Eingaben bleiben erhalten.`;
-      btnSave.disabled = true;
-      btnSaveNext.disabled = true;
+      badge?.classList.remove("sk-sum-ok");
+      badge?.classList.add("sk-sum-bad");
+      if (sumHintEl) sumHintEl.textContent = `Fehler: Summe ist ${total} (muss 0 sein). Eingaben bleiben erhalten.`;
+      if (btnSave) btnSave.disabled = true;
+      if (btnSaveNext) btnSaveNext.disabled = true;
     }
   }
 
@@ -315,21 +320,9 @@
     const target = e.target;
     if (!(target instanceof HTMLInputElement)) return;
 
-    if (e.key === "Enter") {
-      e.preventDefault();
-      moveFocus(target, +1);
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      moveFocus(target, +1);
-      return;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      moveFocus(target, -1);
-      return;
-    }
+    if (e.key === "Enter") { e.preventDefault(); moveFocus(target, +1); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); moveFocus(target, +1); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); moveFocus(target, -1); return; }
   }
 
   for (const inp of pointsInputs) {
@@ -344,12 +337,9 @@
   updateSumUI();
 
   form.addEventListener("submit", function(e) {
-    if (IS_CLOSED) {
-      e.preventDefault();
-      return;
-    }
+    if (IS_CLOSED) { e.preventDefault(); return; }
     updateSumUI();
-    if (btnSave.disabled) {
+    if (btnSave && btnSave.disabled) {
       e.preventDefault();
       const bad = document.querySelector("input.sk-points.is-invalid") || pointsInputs[0];
       if (bad) { bad.focus(); bad.select?.(); }

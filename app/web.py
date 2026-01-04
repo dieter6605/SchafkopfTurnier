@@ -95,10 +95,7 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
         try:
             con.row_factory = sqlite3.Row
 
-            cols = [
-                r["name"]
-                for r in con.execute("PRAGMA table_info(tournaments);").fetchall()
-            ]
+            cols = [r["name"] for r in con.execute("PRAGMA table_info(tournaments);").fetchall()]
             if "closed_at" not in cols:
                 return False
 
@@ -106,7 +103,24 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
                 "SELECT closed_at FROM tournaments WHERE id = ?",
                 (tournament_id,),
             ).fetchone()
-            return bool(row and row["closed_at"])
+
+            if not row:
+                return False
+
+            val = row["closed_at"]
+            if val is None:
+                return False
+
+            s = str(val).strip()
+            if not s:
+                return False
+
+            # Defensive: falls irgendwo "None"/"null" als Text gelandet ist
+            if s.lower() in ("none", "null"):
+                return False
+
+            return True
+
         except Exception:
             return False
         finally:

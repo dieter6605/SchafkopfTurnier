@@ -7,6 +7,49 @@
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   .sk-kbd  { font-size: .95rem; color: rgba(0,0,0,.55); }
 
+  /* ---------- Screen: CSS Grid für Tische ---------- */
+  .sk-table-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+
+  /* Accordion optisch kompakter */
+  .sk-acc .accordion-button {
+    padding: .6rem .85rem;
+  }
+  .sk-acc .accordion-body {
+    padding: .75rem .85rem;
+  }
+  .sk-acc .accordion-button .sk-acc-title {
+    font-weight: 700;
+  }
+
+  /* ✅ Header-Link (Tischname) sauber klickbar + Feinschliff */
+  .sk-acc .accordion-button .sk-acc-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .sk-acc .accordion-button .sk-acc-title a:hover {
+    text-decoration: underline;
+  }
+
+  /* ✅ Fertig-Header grün */
+  .sk-acc .accordion-button.sk-done {
+    background: var(--bs-success);
+    color: #fff;
+  }
+  /* Chevron im grünen Header sichtbar machen */
+  .sk-acc .accordion-button.sk-done::after {
+    filter: invert(1) grayscale(1) brightness(2);
+  }
+
+  /* Tabellen in Accordion etwas kompakter */
+  .sk-acc table.table {
+    margin-bottom: 0;
+  }
+
   @media print {
     .no-break { break-inside: avoid; page-break-inside: avoid; }
 
@@ -80,17 +123,22 @@
   }
 </style>
 
+{# --- Turnier geschlossen? (robust für sqlite Row + dict) --- #}
 {% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
+{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
 
-{% set current_drawn = (seats and seats|length > 0) %}
-{% set allow_draw_next = (current_drawn and (round_no|int == (last_round_no or 0)|int)) %}
+{# --- Draw-Status (robust) --- #}
+{% set current_drawn = (seats is defined and seats and (seats|length > 0)) %}
+{% set _rn = (round_no|default(0))|int %}
+{% set _last_rn = (last_round_no|default(0))|int %}
+{% set allow_draw_next = (current_drawn and (_rn == _last_rn)) %}
 
 {% if is_closed %}
   <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div>
       <div class="fw-semibold">Turnier ist abgeschlossen – Änderungen sind gesperrt.</div>
-      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ closed_at }}</span></div>
+      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ _closed_at_str }}</span></div>
     </div>
   </div>
 {% endif %}
@@ -252,41 +300,77 @@
 
 {% if current_drawn %}
 
-  <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 no-print">
+  <!-- ✅ Screen: CSS Grid + einklappbare Tischkarten (fertige = grün + eingeklappt) -->
+  <div class="sk-table-grid no-print">
     {% for grp in seats|groupby('table_no') %}
       {% set table_no = grp.grouper %}
       {% set rows = grp.list %}
-      <div class="col">
-        <div class="card shadow-sm h-100 no-break">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div class="fw-semibold">Tisch {{ table_no }}</div>
-              <div class="text-muted small sk-mono">R{{ round_no }}</div>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-sm mb-0">
-                <thead>
-                  <tr>
-                    <th style="width:60px;">Platz</th>
-                    <th style="width:70px;">Nr</th>
-                    <th>Name</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for r in rows %}
+
+      {% set is_done = (done_tables is defined and (table_no in done_tables)) %}
+
+      {% set acc_id = "accTable_" ~ round_no ~ "_" ~ table_no %}
+      {% set col_id = "colTable_" ~ round_no ~ "_" ~ table_no %}
+
+      <div class="accordion sk-acc no-break" id="{{ acc_id }}">
+        <div class="accordion-item shadow-sm">
+          <h2 class="accordion-header" id="{{ acc_id }}_h">
+            <button class="accordion-button {% if is_done %}collapsed sk-done{% endif %}"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#{{ col_id }}"
+                    aria-expanded="{{ 'false' if is_done else 'true' }}"
+                    aria-controls="{{ col_id }}">
+              <div class="d-flex justify-content-between align-items-center w-100 pe-2">
+                <div class="sk-acc-title">
+                  <a href="{{ url_for(
+                              'tournaments.tournament_round_results_table',
+                              tournament_id=t.id,
+                              round_no=round_no,
+                              table_no=table_no
+                            ) }}"
+                     title="Ergebnisse für Tisch {{ table_no }} eingeben"
+                     onclick="event.stopPropagation();">
+                    Tisch {{ table_no }} <span class="text-muted">→</span>
+                  </a>
+                  {% if is_done %}<span class="ms-2">✓</span>{% endif %}
+                </div>
+                <div class="small sk-mono {% if is_done %}text-white-50{% else %}text-muted{% endif %}">
+                  R{{ round_no }}
+                </div>
+              </div>
+            </button>
+          </h2>
+
+          <div id="{{ col_id }}"
+               class="accordion-collapse collapse {% if not is_done %}show{% endif %}"
+               aria-labelledby="{{ acc_id }}_h">
+            <div class="accordion-body">
+              <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                  <thead>
                     <tr>
-                      <td class="sk-mono"><strong>{{ r.seat }}</strong></td>
-                      <td class="sk-mono">{{ r.player_no }}</td>
-                      <td>
-                        <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
-                        <span class="text-muted">· {{ r.wohnort }}</span>
-                      </td>
+                      <th style="width:60px;">Platz</th>
+                      <th style="width:70px;">Nr</th>
+                      <th>Name</th>
                     </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {% for r in rows %}
+                      <tr>
+                        <td class="sk-mono"><strong>{{ r.seat }}</strong></td>
+                        <td class="sk-mono">{{ r.player_no }}</td>
+                        <td>
+                          <strong>{{ r.nachname }}</strong>, {{ r.vorname }}
+                          <span class="text-muted">· {{ r.wohnort }}</span>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
+
         </div>
       </div>
     {% endfor %}
@@ -394,8 +478,9 @@
 
 {% block scripts %}
 <script>
-  window.__SKT_ALLOW_DRAW_NEXT__ = {{ (allow_draw_next and (not is_closed))|tojson }};
-  window.__SKT_TOURNAMENT_CLOSED__ = {{ is_closed|tojson }};
+  // Robust: nie Undefined in JSON serialisieren
+  window.__SKT_ALLOW_DRAW_NEXT__ = {{ ((allow_draw_next|default(false)) and (not (is_closed|default(false))))|tojson }};
+  window.__SKT_TOURNAMENT_CLOSED__ = {{ (is_closed|default(false))|tojson }};
 </script>
 <script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 {% endblock %}

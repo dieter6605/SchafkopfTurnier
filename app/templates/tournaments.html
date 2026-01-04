@@ -29,18 +29,26 @@
 
     {% if tournaments %}
       <div class="table-responsive">
-        <table class="table table-striped mb-0">
+        <table class="table table-striped mb-0 align-middle">
           <thead>
             <tr>
               <th>Datum</th>
-              <th>Titel</th>
+              <th>Turnier</th>
               <th style="width:160px;">Marker</th>
-              <th>Teilnehmer</th>
+              <th style="width:180px;">Teilnehmer</th>
+              <th style="width:220px;">Status</th>
               <th class="text-end">Aktion</th>
             </tr>
           </thead>
           <tbody id="tBody">
             {% for t in tournaments %}
+              {% set is_closed = (t.is_closed if t.is_closed is defined else 0) %}
+              {% set marker_ok = (t.marker_ok if t.marker_ok is defined else 0) %}
+              {% set rounds_count = (t.rounds_count if t.rounds_count is defined else 0) %}
+              {% set scores_count = (t.scores_count if t.scores_count is defined else 0) %}
+              {% set expected_scores = (t.expected_scores if t.expected_scores is defined else 0) %}
+              {% set scores_complete = (t.scores_complete if t.scores_complete is defined else 0) %}
+
               <tr class="sk-row"
                   data-open-url="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}"
                   data-edit-url="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
@@ -49,12 +57,17 @@
                   {{ t.event_date }}<br>
                   <span class="text-muted small">{{ t.start_time }}</span>
                 </td>
+
                 <td>
                   <strong>{{ t.title }}</strong>
                   {% if t.location %}
                     <div class="text-muted small">{{ t.location }}</div>
                   {% endif %}
+                  {% if t.last_update %}
+                    <div class="text-muted small">zuletzt: <span class="sk-mono">{{ t.last_update }}</span></div>
+                  {% endif %}
                 </td>
+
                 <td class="sk-mono">
                   {% if t.marker %}
                     {{ t.marker }}
@@ -62,9 +75,36 @@
                     <span class="text-muted">–</span>
                   {% endif %}
                 </td>
+
                 <td>
-                  {{ t.participant_count }}
+                  <div><strong>{{ t.participant_count }}</strong> <span class="text-muted small">Teilnehmer</span></div>
+                  <div class="text-muted small">{{ rounds_count }} Runde(n)</div>
                 </td>
+
+                <td>
+                  <div class="d-flex flex-wrap gap-1">
+                    {% if is_closed %}
+                      <span class="badge text-bg-warning">geschlossen</span>
+                    {% else %}
+                      <span class="badge text-bg-success">offen</span>
+                    {% endif %}
+
+                    {% if not marker_ok %}
+                      <span class="badge text-bg-secondary">Marker fehlt</span>
+                    {% endif %}
+
+                    {% if rounds_count|int > 0 %}
+                      {% if scores_complete %}
+                        <span class="badge text-bg-success">Scores komplett</span>
+                      {% else %}
+                        <span class="badge text-bg-danger">Scores: {{ scores_count }}/{{ expected_scores }}</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="badge text-bg-light border">keine Runden</span>
+                    {% endif %}
+                  </div>
+                </td>
+
                 <td class="text-end">
                   <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
 
