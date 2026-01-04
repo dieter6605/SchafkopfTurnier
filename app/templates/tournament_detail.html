@@ -1,13 +1,24 @@
 {% extends "layout.html" %}
 {% block content %}
 
-{% set last_rn = (last_round_no or 0) | int %}
-{% set next_round_no = (last_rn + 1) if (last_rn > 0) else 1 %}
-{% set allow_draw_next = (last_rn > 0) %}
-{% set marker_disp = (t.marker or "JJMMTTxxxx") %}
-
+{# ----------------------------------------------------------
+   Turnier-Status: geschlossen?
+---------------------------------------------------------- #}
 {% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
+{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
+
+{# ----------------------------------------------------------
+   Runde-Infos kommen aus der Route:
+   - round_list
+   - last_round_no
+   - next_round_no
+   Wir rechnen nur last_rn als int.
+---------------------------------------------------------- #}
+{% set last_rn = (last_round_no or 0) | int %}
+{% set next_rn = (next_round_no or ((last_rn + 1) if last_rn > 0 else 1)) | int %}
+
+{% set marker_disp = (t.marker or "JJMMTTxxxx") %}
 
 <style>
   .sk-mono {
@@ -55,13 +66,17 @@
        href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
 
     <a class="btn btn-outline-secondary" id="btnEditTournament"
-       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}">Bearbeiten</a>
+       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
+       {% if is_closed %}aria-disabled="true"{% endif %}>
+      Bearbeiten
+    </a>
 
     <form method="post"
           action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
           class="d-inline">
       <button class="btn btn-outline-danger" id="btnDeleteTournament"
               type="submit"
+              {% if is_closed %}disabled{% endif %}
               onclick="return confirm({{ ('Turnier „' ~ (t.title or '') ~ '“ wirklich löschen?')|tojson }});">
         Löschen
       </button>
@@ -115,6 +130,96 @@
         {% endif %}
       </div>
     </div>
+  </div>
+</div>
+
+{# ==========================================================
+   ✅ NEU: RUNDEN-BLOCK (Anzeige + Auslosen + Links)
+========================================================== #}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h5 class="mb-0">Runden</h5>
+          {% if round_list and (round_list|length > 0) %}
+            <span class="badge text-bg-secondary">{{ round_list|length }}</span>
+          {% else %}
+            <span class="badge text-bg-light border">0</span>
+          {% endif %}
+        </div>
+        <div class="text-muted small mt-1">
+          Anzeigen, Ergebnisse erfassen, Wertung je Runde – sowie „nächste Runde“ auslosen.
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap justify-content-end">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+          Gesamtwertung
+        </a>
+
+        <form method="post"
+              action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_rn) }}"
+              class="d-inline"
+              onsubmit="return confirm({{ ('Runde ' ~ next_rn ~ ' auslosen?\n\nHinweis: Teilnehmerzahl muss durch 4 teilbar sein.')|tojson }});">
+          <button class="btn btn-sm btn-primary"
+                  {% if is_closed %}disabled{% endif %}>
+            Runde {{ next_rn }} auslosen
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    {% if round_list and (round_list|length > 0) %}
+      <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="width:110px;">Runde</th>
+              <th>Aktionen</th>
+              <th class="text-end" style="width:240px;">Direktlinks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rn in round_list %}
+              <tr>
+                <td class="sk-mono"><strong>R{{ "%02d"|format(rn) }}</strong></td>
+                <td class="text-muted small">
+                  Sitzplan/Ansicht, Ergebnisse, Rundenwertung
+                </td>
+                <td class="text-end">
+                  <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rn) }}">
+                      Anzeigen
+                    </a>
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=rn) }}">
+                      Ergebnisse
+                    </a>
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=rn) }}">
+                      Wertung
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-text mt-2">
+        Letzte Runde: <span class="sk-mono">R{{ "%02d"|format(last_rn) }}</span> · Nächste Runde: <span class="sk-mono">R{{ "%02d"|format(next_rn) }}</span>
+      </div>
+    {% else %}
+      <div class="text-muted">
+        Noch keine Runde ausgelost. Klicke oben auf <strong>„Runde {{ next_rn }} auslosen“</strong>.
+      </div>
+    {% endif %}
   </div>
 </div>
 

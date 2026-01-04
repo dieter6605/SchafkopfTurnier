@@ -9,6 +9,9 @@
   .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
+  /* ✅ NEU: Trefferzeile deaktiviert (wenn cap erreicht oder Turnier geschlossen) */
+  .sk-hit.sk-hit-disabled { cursor: not-allowed; opacity: .6; }
+
   /* Klick-Zeile (nur wenn editierbar) */
   .sk-part { cursor: pointer; }
   .sk-part a { text-decoration: none; }
@@ -154,44 +157,62 @@
       {% endif %}
     </form>
 
-    {% if hits %}
-      <hr>
-      <div class="table-responsive">
-        <table class="table table-striped mb-0">
-          <thead>
-            <tr>
-              <th>Treffer</th>
-              <th class="text-end">Aktion</th>
-            </tr>
-          </thead>
-          <tbody id="hitsBody">
-            {% for h in hits %}
-              <tr class="sk-hit" data-add-url="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
-                <td>
-                  <strong>{{ h.nachname }}</strong>, {{ h.vorname }}
-                  <span class="text-muted">· {{ h.wohnort }}</span>
-                  <span class="text-muted small sk-mono">#{{ h.id }}</span>
-                </td>
-                <td class="text-end">
-                  <form method="post"
-                        action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
-                    <button class="btn btn-sm btn-outline-primary"
-                            {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
-                            {% if is_closed %}disabled{% endif %}>
-                      Übernehmen
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      {% if q %}
-        <div class="text-muted mt-2">Keine Treffer.</div>
-      {% endif %}
-    {% endif %}
+{% if hits %}
+  <hr>
+  <div class="table-responsive">
+    <table class="table table-striped mb-0">
+      <thead>
+        <tr>
+          <th>Treffer</th>
+          <th class="text-end">Aktion</th>
+        </tr>
+      </thead>
+      <tbody id="hitsBody">
+        {% for h in hits %}
+
+          {# ✅ Patch: Disabled-Logik + Reason #}
+          {% set hit_disabled = (is_closed) or (cap_ok is defined and not cap_ok) %}
+          {% if is_closed %}
+            {% set hit_reason = "Turnier ist abgeschlossen – Übernehmen ist gesperrt." %}
+          {% elif cap_ok is defined and not cap_ok %}
+            {% set hit_reason = "Maximale Teilnehmerzahl erreicht – Übernehmen nicht möglich." %}
+          {% else %}
+            {% set hit_reason = "" %}
+          {% endif %}
+
+          <tr class="sk-hit{% if hit_disabled %} sk-hit-disabled{% endif %}"
+              {% if not hit_disabled %}
+                data-add-url="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}"
+              {% endif %}
+              {% if hit_disabled %}
+                data-disabled-reason="{{ hit_reason }}"
+              {% endif %}
+          >
+            <td>
+              <strong>{{ h.nachname }}</strong>, {{ h.vorname }}
+              <span class="text-muted">· {{ h.wohnort }}</span>
+              <span class="text-muted small sk-mono">#{{ h.id }}</span>
+            </td>
+            <td class="text-end">
+              <form method="post"
+                    action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
+                <button class="btn btn-sm btn-outline-primary"
+                        {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
+                        {% if is_closed %}disabled{% endif %}>
+                  Übernehmen
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  {% if q %}
+    <div class="text-muted mt-2">Keine Treffer.</div>
+  {% endif %}
+{% endif %}
   </div>
 </div>
 

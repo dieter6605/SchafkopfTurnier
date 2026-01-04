@@ -173,6 +173,20 @@ def tournament_round_view(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
+        # ✅ NEU: Welche Tische sind "fertig" (>= 4 Scores in tournament_scores)?
+        done_rows = db.q(
+            con,
+            """
+            SELECT table_no, COUNT(*) AS c
+            FROM tournament_scores
+            WHERE tournament_id=? AND round_no=?
+            GROUP BY table_no
+            """,
+            (tournament_id, round_no),
+        )
+        done_map = {int(r["table_no"]): int(r["c"]) for r in done_rows}
+        done_tables = {k for k, c in done_map.items() if c >= 4}
+
         seats_alpha = db.q(
             con,
             """
@@ -217,5 +231,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
         last_round_no=last_round_no,
         prev_round_no=prev_round_no,
         next_round_no=next_round_no,
+        done_tables=done_tables,  # ✅ NEU: fürs Accordion (fertig/ grün/ eingeklappt)
         now=_now_local_iso(),
     )

@@ -6,7 +6,8 @@
 {# Status: Turnier geschlossen? #}
 {# --------------------------- #}
 {% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|length > 0) %}
+{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
+{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
 
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>

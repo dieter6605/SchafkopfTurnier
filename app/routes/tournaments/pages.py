@@ -21,8 +21,47 @@ def tournaments_list():
         rows = db.q(
             con,
             """
-            SELECT t.*,
-              (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id) AS participant_count
+            SELECT
+              t.*,
+
+              -- Teilnehmer
+              (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id) AS participant_count,
+
+              -- Runden
+              (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id) AS rounds_count,
+
+              -- Scores (alle Einträge)
+              (SELECT COUNT(*) FROM tournament_scores sc WHERE sc.tournament_id=t.id) AS scores_count,
+
+              -- expected_scores = participants * rounds
+              (
+                (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id)
+                *
+                (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
+              ) AS expected_scores,
+
+              -- Status-Felder als 0/1
+              CASE WHEN COALESCE(TRIM(t.marker),'') <> '' THEN 1 ELSE 0 END AS marker_ok,
+              CASE WHEN COALESCE(TRIM(t.closed_at),'') <> '' THEN 1 ELSE 0 END AS is_closed,
+
+              -- scores_complete: nur wahr, wenn es überhaupt Runden gibt und expected == scores
+              CASE
+                WHEN (
+                  (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
+                ) <= 0 THEN 0
+                WHEN (
+                  (SELECT COUNT(*) FROM tournament_scores sc WHERE sc.tournament_id=t.id)
+                ) = (
+                  (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id)
+                  *
+                  (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
+                )
+                THEN 1 ELSE 0
+              END AS scores_complete,
+
+              -- "zuletzt geändert" (für Liste)
+              COALESCE(t.updated_at, t.created_at) AS last_update
+
             FROM tournaments t
             ORDER BY t.event_date DESC, t.start_time DESC, t.id DESC
             """,
