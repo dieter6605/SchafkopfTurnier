@@ -99,6 +99,74 @@ def _tournament_counts(con, tournament_id: int) -> dict[str, int]:
     n = int(c["c"] or 0) if c else 0
     return {"participants": n, "tables": n // 4, "rest": n % 4}
 
+def _missing_scores_count(con, tournament_id: int) -> int:
+    """
+    Zählt fehlende Ergebnisse:
+    Für jeden ausgelosten Sitz (tournament_seats) muss ein Score in tournament_scores existieren.
+    """
+    r = db.one(
+        con,
+        """
+        SELECT COUNT(*) AS c
+        FROM tournament_seats ts
+        LEFT JOIN tournament_scores sc
+          ON sc.tournament_id = ts.tournament_id
+         AND sc.round_no      = ts.round_no
+         AND sc.tp_id         = ts.tp_id
+        WHERE ts.tournament_id = ?
+          AND sc.id IS NULL
+        """,
+        (int(tournament_id),),
+    )
+    return int((r["c"] if r else 0) or 0)
+
+
+def _scores_expected_count(con, tournament_id: int) -> int:
+    """
+    Erwartete Anzahl Scores = Anzahl ausgeloster Sitzplätze.
+    """
+    r = db.one(
+        con,
+        "SELECT COUNT(*) AS c FROM tournament_seats WHERE tournament_id=?",
+        (int(tournament_id),),
+    )
+    return int((r["c"] if r else 0) or 0)
+
+
+def _scores_actual_count(con, tournament_id: int) -> int:
+    """
+    Tatsächlich vorhandene Scores.
+    """
+    r = db.one(
+        con,
+        "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?",
+        (int(tournament_id),),
+    )
+    return int((r["c"] if r else 0) or 0)
+
+
+def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None:
+    """
+    Rückgabe:
+      - None  => OK, darf schließen
+      - str   => Fehlermeldung, darf NICHT schließen
+    """
+    expected = _scores_expected_count(con, tournament_id)
+    actual = _scores_actual_count(con, tournament_id)
+    missing = _missing_scores_count(con, tournament_id)
+
+    # Wenn gar keine Runden/Sitze existieren, soll auch nicht geschlossen werden.
+    if expected <= 0:
+        return "Turnier kann nicht abgeschlossen werden: Es wurden noch keine Runden ausgelost."
+
+    if missing > 0 or actual < expected:
+        return (
+            "Turnier kann nicht abgeschlossen werden: "
+            f"Es fehlen noch Ergebnisse ({actual}/{expected} erfasst, {missing} fehlen)."
+        )
+
+    return None
+
 
 def _search_addresses(con, qtxt: str, limit: int = 60):
     qtxt = (qtxt or "").strip()
@@ -291,3 +359,213 @@ def _pop_session_gaps(tournament_id: int) -> list[int]:
         gaps = []
     session.pop(k, None)
     return gaps
+
+
+# =============================================================================
+# ✅ DEV: CSV / Recalc helpers (Quelle der Wahrheit: tournament_years)
+# =============================================================================
+
+def _csv_tokens_norm(raw: str | None) -> list[str]:
+    """
+    CSV -> Tokens, normalisiert:
+    - trim
+    - upper
+    - whitespaces entfernen
+    - keine leeren Tokens
+    - Duplikate entfernen (Reihenfolge bleibt)
+    """
+    s = (raw or "").strip()
+    if not s:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for p in s.split(","):
+        m = _normalize_marker(p or "")
+        if not m:
+            continue
+        if m in seen:
+            continue
+        seen.add(m)
+        out.append(m)
+    return out
+
+
+def _csv_join_norm(tokens: list[str]) -> str:
+    """Join normalisierte Tokens als CSV ohne Spaces."""
+    toks = [_normalize_marker(t or "") for t in (tokens or [])]
+    toks2 = [t for t in toks if t]
+    return ",".join(toks2)
+
+
+def _remove_marker_from_tokens(tokens: list[str], marker: str) -> list[str]:
+    """Entfernt marker aus Tokenliste (normalisiert), alle Vorkommen."""
+    m = _normalize_marker(marker or "")
+    if not m:
+        return tokens
+    out: list[str] = []
+    for t in tokens:
+        tt = _normalize_marker(t or "")
+        if not tt:
+            continue
+        if tt == m:
+            continue
+        out.append(tt)
+    return out
+
+
+def _recalc_from_tournament_years(ty_raw: str | None) -> tuple[str | None, str | None, int]:
+    """
+    Quelle der Wahrheit: tournament_years (CSV)
+    Rückgabe:
+      (tournament_years_db, last_tournament_at_db, participation_count_int)
+    """
+    toks = _csv_tokens_norm(ty_raw)
+    ty_db = _csv_join_norm(toks).strip() or None
+    last_db = toks[-1] if toks else None
+    pc = len(toks)
+    return ty_db, last_db, pc
+
+
+# =============================================================================
+# ✅ DEV: Turnier wieder öffnen + Address-Marker/Counts zurückdrehen
+# =============================================================================
+
+def _reopen_tournament_and_fix_addresses(con, tournament_id: int) -> int:
+    """
+    Öffnet ein abgeschlossenes Turnier wieder (closed_at=NULL) und
+    dreht die beim Abschluss geschriebenen Address-Marker zurück.
+
+    participation_count wird NICHT +/-1 gerechnet,
+    sondern IMMER aus tournament_years abgeleitet:
+      participation_count == Anzahl der Marker in tournament_years
+
+    - Entferne Turnier-Marker aus addresses.tournament_years
+    - last_tournament_at = letzter (rechter) Marker aus tournament_years (nach Entfernung), sonst NULL
+    - participation_count = len(tournament_years tokens)
+
+    Rückgabe: Anzahl korrigierter address rows.
+    """
+    t = _get_tournament(con, tournament_id)
+    if not t:
+        raise RuntimeError("Turnier nicht gefunden")
+
+    marker = _normalize_marker((t["marker"] or ""))
+    if not marker:
+        raise RuntimeError("Turnier hat keinen Marker – Wiederöffnen kann Marker nicht rückgängig machen.")
+
+    addr_rows = db.q(
+        con,
+        """
+        SELECT DISTINCT a.id, a.participation_count, a.last_tournament_at, a.tournament_years
+        FROM tournament_participants tp
+        JOIN addresses a ON a.id = tp.address_id
+        WHERE tp.tournament_id = ?
+        ORDER BY a.id ASC
+        """,
+        (tournament_id,),
+    )
+
+    changed = 0
+    for a in addr_rows:
+        aid = int(a["id"])
+
+        pc_old = int(a["participation_count"] or 0)
+        lt_old = (a["last_tournament_at"] or "").strip()
+        ty_old = (a["tournament_years"] or "").strip()
+
+        toks = _csv_tokens_norm(ty_old)
+        toks2 = _remove_marker_from_tokens(toks, marker)
+
+        ty_new, lt_new, pc_new = _recalc_from_tournament_years(_csv_join_norm(toks2))
+
+        if (ty_new or "") != ty_old or (lt_new or "") != lt_old or pc_new != pc_old:
+            con.execute(
+                """
+                UPDATE addresses
+                SET tournament_years = ?,
+                    last_tournament_at = ?,
+                    participation_count = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (ty_new, lt_new, pc_new, aid),
+            )
+            changed += 1
+
+    con.execute(
+        "UPDATE tournaments SET closed_at = NULL, updated_at = datetime('now') WHERE id = ?",
+        (tournament_id,),
+    )
+
+    return changed
+
+
+# =============================================================================
+# ✅ DEV: Repair addresses aus tournament_years (Count + last_tournament_at)
+# =============================================================================
+
+def _repair_addresses_from_tournament_years(
+    con,
+    *,
+    only_active: bool = True,
+    tournament_id: int | None = None,
+) -> tuple[int, int]:
+    """
+    Repariert addresses anhand der CSV-Felder (Quelle: tournament_years):
+    - tournament_years: normalisieren (trim/upper/whitespace raus, Duplikate raus)
+    - participation_count: = Anzahl Tokens in tournament_years
+    - last_tournament_at: = rechter CSV-Wert aus tournament_years oder NULL
+
+    Optional:
+    - tournament_id: wenn gesetzt, nur Adressen der Teilnehmer dieses Turniers.
+    - only_active: wenn True, nur addresses.status='aktiv'.
+
+    Rückgabe: (changed_rows, scanned_rows)
+    """
+    where_active = ""
+    params: list[object] = []
+
+    if only_active:
+        where_active = " AND COALESCE(a.status,'aktiv')='aktiv' "
+
+    if tournament_id is None:
+        sql = (
+            "SELECT a.id, a.tournament_years, a.last_tournament_at, a.participation_count "
+            "FROM addresses a WHERE 1=1 " + where_active + " ORDER BY a.id ASC"
+        )
+    else:
+        sql = (
+            "SELECT DISTINCT a.id, a.tournament_years, a.last_tournament_at, a.participation_count "
+            "FROM tournament_participants tp "
+            "JOIN addresses a ON a.id = tp.address_id "
+            "WHERE tp.tournament_id = ? " + where_active + " ORDER BY a.id ASC"
+        )
+        params.append(int(tournament_id))
+
+    rows = db.q(con, sql, tuple(params))
+    scanned = len(rows)
+    changed = 0
+
+    for r in rows:
+        aid = int(r["id"])
+        ty_old = (r["tournament_years"] or "").strip()
+        lt_old = (r["last_tournament_at"] or "").strip()
+        pc_old = int(r["participation_count"] or 0)
+
+        ty_new, lt_new, pc_new = _recalc_from_tournament_years(ty_old)
+
+        if (ty_new or "") != ty_old or (lt_new or "") != lt_old or pc_new != pc_old:
+            con.execute(
+                """
+                UPDATE addresses
+                SET tournament_years=?,
+                    last_tournament_at=?,
+                    participation_count=?,
+                    updated_at=datetime('now')
+                WHERE id=?
+                """,
+                (ty_new, lt_new, pc_new, aid),
+            )
+            changed += 1
+
+    return changed, scanned

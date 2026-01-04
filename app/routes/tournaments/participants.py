@@ -24,6 +24,7 @@ from .helpers import (
     _to_int,
     _tournament_counts,
     _validate_marker_for_event_date,
+    _guard_close_requires_complete_scores,  # ✅ NEU: Abschluss nur wenn Ergebnisse vollständig
 )
 
 
@@ -136,7 +137,7 @@ def tournament_participants(tournament_id: int):
             """,
             (tournament_id,),
         )
-        
+
         audit = db.q(
             con,
             """
@@ -394,6 +395,15 @@ def tournament_close_participations(tournament_id: int):
             ca = _closed_at_str(t)
             flash(f"Dieses Turnier ist bereits abgeschlossen (seit {ca}).", "info")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        # ------------------------------------------------------------------
+        # ✅ NEU: Abschließen nur, wenn alle Ergebnisse vollständig sind
+        # ------------------------------------------------------------------
+        block_msg = _guard_close_requires_complete_scores(con, tournament_id)
+        if block_msg:
+            flash(block_msg, "error")
+            return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+        # ------------------------------------------------------------------
 
         event_date = str(t["event_date"] or "").strip()
         marker = (t["marker"] or "").strip()

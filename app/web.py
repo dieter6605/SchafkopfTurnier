@@ -1,6 +1,7 @@
 # app/web.py
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -25,6 +26,7 @@ from .routes.help import bp as help_bp
 
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app = Flask(__name__)
+    app.config["SKT_DEV_MODE"] = (os.environ.get("SKT_DEV_MODE", "").strip() == "1")
     app.secret_key = "dev-secret-change-me"
 
     db.init_db(db_path)
@@ -43,6 +45,8 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
         return {
             "home_image": app.config.get("SKT_HOME_IMAGE", ""),
             "print_logo": app.config.get("SKT_PRINT_LOGO", ""),
+            "dev_mode": bool(app.config.get("SKT_DEV_MODE", False)),
+            "skt_debug": bool(app.debug),
         }
 
     # -------------------------------------------------------------------------
@@ -79,6 +83,7 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
             "tournaments.tournament_detail",
             "tournaments.tournament_round",
             "tournaments.tournament_standings",
+            "tournaments.tournament_reopen",  # ✅ neu
         )
         return endpoint in SAFE
 
@@ -237,16 +242,11 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
         else:
             back_url = ""
 
-        # Flash-Meldung (Kategorie "warning" passt gut)
-        # In deinem layout werden unbekannte Kategorien als "secondary" angezeigt.
-        # Wenn du "warning" als gelb willst, sag kurz Bescheid, dann erweitern wir layout.html minimal.
         flash(msg, "warning")
 
-        # Bei schreibenden Requests (POST/PUT/...) immer redirect (303) zurück (oder home)
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             return redirect(back_url or home_url, code=303)
 
-        # Bei GET: auch redirect (weil Nutzer meist von einem Klick kommt)
         return redirect(back_url or home_url, code=302)
 
     # -------------------------------------------------------------------------
