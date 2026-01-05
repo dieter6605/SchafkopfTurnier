@@ -1,13 +1,17 @@
 {% extends "layout.html" %}
 {% block content %}
 
+{% set pct_active = (100*active/total) if total else 0 %}
+{% set pct_inactive = (100*inactive/total) if total else 0 %}
+
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
     <h3 class="mb-0">Adressbuch – Statistik</h3>
     <div class="text-muted small">Auswertung aus dem Standard-Adressbuch</div>
   </div>
-  <div>
+  <div class="d-flex gap-2 flex-wrap">
     <a class="btn btn-outline-secondary" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('addresses.addresses_list', view='all') }}">Alle Adressen</a>
   </div>
 </div>
 
@@ -17,6 +21,7 @@
       <div class="card-body">
         <div class="text-muted small">Adressen gesamt</div>
         <div class="fs-3 fw-semibold">{{ total }}</div>
+        <div class="text-muted small">100%</div>
       </div>
     </div>
   </div>
@@ -25,6 +30,11 @@
       <div class="card-body">
         <div class="text-muted small">Aktiv</div>
         <div class="fs-3 fw-semibold">{{ active }}</div>
+        <div class="text-muted small">{{ "%.1f"|format(pct_active) }}%</div>
+        <div class="mt-2">
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('addresses.addresses_list', view='all', status='aktiv') }}">anzeigen</a>
+        </div>
       </div>
     </div>
   </div>
@@ -33,32 +43,226 @@
       <div class="card-body">
         <div class="text-muted small">Nicht aktiv</div>
         <div class="fs-3 fw-semibold">{{ inactive }}</div>
+        <div class="text-muted small">{{ "%.1f"|format(pct_inactive) }}%</div>
+        <div class="mt-2">
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('addresses.addresses_list', view='all', status='inaktiv') }}">inaktiv</a>
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('addresses.addresses_list', view='all', status='verzogen') }}">verzogen</a>
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('addresses.addresses_list', view='all', status='verstorben') }}">verstorben</a>
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('addresses.addresses_list', view='all', status='gesperrt') }}">gesperrt</a>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-{% if has_invite %}
-  <div class="card shadow-sm mb-3">
-    <div class="card-body">
-      <h5 class="mb-2">Einladungen</h5>
+{# ==========================================================
+   Datenqualität
+========================================================== #}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <h5 class="mb-1">Datenqualität</h5>
+        <div class="text-muted small">
+          Schnelle Pflege-Hinweise (fehlende Kontaktdaten, unvollständige Adresse, Dubletten, Inkonsistenzen).
+        </div>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_list', view='all') }}">Liste öffnen</a>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Check</th>
+                <th class="text-end">Anzahl</th>
+                <th class="text-end">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>E-Mail fehlt</td>
+                <td class="text-end">{{ missing_email }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('addresses.addresses_list', view='all', email='fehlt') }}">anzeigen</a>
+                </td>
+              </tr>
+              <tr>
+                <td>Telefon fehlt</td>
+                <td class="text-end">{{ missing_phone }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('addresses.addresses_list', view='all', phone='fehlt') }}">anzeigen</a>
+                </td>
+              </tr>
+              <tr>
+                <td>PLZ/Ort unvollständig</td>
+                <td class="text-end">{{ missing_plzort }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('addresses.addresses_list', view='all', plzort='fehlt') }}">anzeigen</a>
+                </td>
+              </tr>
+              <tr>
+                <td>Straße/Hausnr. unvollständig</td>
+                <td class="text-end">{{ missing_street }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('addresses.addresses_list', view='all', street='fehlt') }}">anzeigen</a>
+                </td>
+              </tr>
+
+              <tr>
+                <td><strong>Dubletten-Kandidaten</strong> (Nachname+Vorname+Wohnort)</td>
+                <td class="text-end"><strong>{{ dup_candidates|length }}</strong></td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="#dup">Details</a>
+                </td>
+              </tr>
+
+              {% if has_participation %}
+              <tr>
+                <td><strong>Inkonsistenz</strong>: participation_count ≠ Marker-Anzahl</td>
+                <td class="text-end"><strong>{{ mismatch_pc_markers }}</strong></td>
+                <td class="text-end">
+                  {% if has_pc and has_years %}
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('addresses.addresses_list', view='all', mismatch='1') }}">anzeigen</a>
+                  {% else %}
+                    <span class="text-muted small">n/v</span>
+                  {% endif %}
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Inkonsistenz</strong>: last_tournament_at nicht in Marker-Liste</td>
+                <td class="text-end"><strong>{{ mismatch_last_not_in_list }}</strong></td>
+                <td class="text-end">
+                  {% if has_last and has_years %}
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="{{ url_for('addresses.addresses_list', view='all', last_in_list='1') }}">anzeigen</a>
+                  {% else %}
+                    <span class="text-muted small">n/v</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+        <div class="text-muted small mt-2">
+          Hinweis: Inkonsistenz-Checks sind defensiv und DB-kompatibel – ideal für schnelle Plausibilität.
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        {% if has_invite %}
+          <div class="card border-0">
+            <div class="card-body p-0">
+              <h6 class="mb-2">Einladungen &amp; Erreichbarkeit</h6>
+              <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Kategorie</th>
+                      <th class="text-end">Anzahl</th>
+                      <th class="text-end">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Einladbar (invite=1)</td>
+                      <td class="text-end">{{ invite_yes }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.addresses_list', view='all', invite='an') }}">anzeigen</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Einladbar &amp; E-Mail vorhanden</td>
+                      <td class="text-end">{{ invite_yes_email }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.addresses_list', view='all', invite='an', email='vorhanden') }}">anzeigen</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Einladbar &amp; <strong>keine</strong> E-Mail</td>
+                      <td class="text-end">{{ invite_yes_no_email }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.addresses_list', view='all', invite='an', email='fehlt') }}">anzeigen</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Nicht einladbar (invite=0/leer)</td>
+                      <td class="text-end">{{ invite_no }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.addresses_list', view='all', invite='aus') }}">anzeigen</a>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-muted small mt-2">
+                Praxis: „Einladbar &amp; keine E-Mail“ ist meist die wichtigste Pflege-Liste.
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="alert alert-secondary mb-0">
+            Spalte <code>invite</code> ist in dieser DB nicht vorhanden.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if dup_candidates and dup_candidates|length > 0 %}
+      <hr class="my-3">
+      <h6 class="mb-2" id="dup">Dubletten-Kandidaten (Top 20)</h6>
       <div class="table-responsive">
-        <table class="table table-sm mb-0">
+        <table class="table table-sm table-striped align-middle mb-0">
           <thead>
             <tr>
-              <th>Kategorie</th>
-              <th class="text-end">Anzahl</th>
+              <th>Nachname</th>
+              <th>Vorname</th>
+              <th>Wohnort</th>
+              <th class="text-end">Treffer</th>
+              <th class="text-end">Aktion</th>
             </tr>
           </thead>
           <tbody>
-            <tr><td>Einladbar (invite=1)</td><td class="text-end">{{ invite_yes }}</td></tr>
-            <tr><td>Nicht einladbar (invite=0 / leer)</td><td class="text-end">{{ invite_no }}</td></tr>
+            {% for d in dup_candidates %}
+              <tr>
+                <td>{{ d.nachname }}</td>
+                <td>{{ d.vorname }}</td>
+                <td>{{ d.wohnort }}</td>
+                <td class="text-end">{{ d.c }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('addresses.addresses_list', view='all', q=(d.nachname ~ ' ' ~ d.vorname ~ ' ' ~ d.wohnort)) }}">anzeigen</a>
+                </td>
+              </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
-    </div>
+      <div class="text-muted small mt-2">
+        Tipp: Dubletten sind Kandidaten – prüfen (z.B. unterschiedliche Telefonnummern/E-Mails).
+      </div>
+    {% endif %}
   </div>
-{% endif %}
+</div>
 
 {% if has_participation %}
   <div class="row g-3">
@@ -67,7 +271,7 @@
         <div class="card-body">
           <h5 class="mb-2">Teilnahmen (Häufigkeit)</h5>
           <div class="table-responsive">
-            <table class="table table-sm mb-0">
+            <table class="table table-sm table-striped align-middle mb-0">
               <thead>
                 <tr>
                   <th>Teilnahmen</th>
@@ -84,7 +288,7 @@
             </table>
           </div>
           <div class="text-muted small mt-2">
-            participation_count wird genutzt; falls leer/nicht vorhanden, wird aus der Marker-Liste (tournament_years) gezählt.
+            participation_count wird genutzt; falls nicht vorhanden, wird aus der Marker-Liste (tournament_years) gezählt.
           </div>
         </div>
       </div>
@@ -95,7 +299,7 @@
         <div class="card-body">
           <h5 class="mb-2">Letzte Teilnahme (Aktualität)</h5>
           <div class="table-responsive">
-            <table class="table table-sm mb-0">
+            <table class="table table-sm table-striped align-middle mb-0">
               <thead>
                 <tr>
                   <th>Kategorie</th>
@@ -125,31 +329,140 @@
       <h5 class="mb-2">Teilnahmen pro Jahr</h5>
       {% if years_sorted and years_sorted|length > 0 %}
         <div class="table-responsive">
-          <table class="table table-sm mb-0">
+          <table class="table table-sm table-striped align-middle mb-0">
             <thead>
               <tr>
                 <th>Jahr</th>
                 <th class="text-end">Personen (mind. 1 Teilnahme)</th>
+                <th class="text-end">Marker gesamt (Häufigkeit)</th>
               </tr>
             </thead>
             <tbody>
-              {% for y,c in years_sorted %}
+              {% for y,persons,markers in years_sorted %}
                 <tr>
                   <td class="font-monospace">{{ y }}</td>
-                  <td class="text-end">{{ c }}</td>
+                  <td class="text-end">{{ persons }}</td>
+                  <td class="text-end">{{ markers }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
         <div class="text-muted small mt-2">
-          Die Jahreswerte werden aus dem Datumsteil der Marker (JJMMTTxxxx) abgeleitet.
+          Personen = eindeutige Personen pro Jahr. Marker gesamt = Summe aller Marker-Tokens des Jahres.
         </div>
       {% else %}
         <div class="text-muted">Keine Marker-/Jahresdaten vorhanden (tournament_years leer oder ohne gültige Marker).</div>
       {% endif %}
     </div>
   </div>
+
+  {# ==========================================================
+     Top-Listen
+  ========================================================== #}
+  <div class="row g-3 mt-0">
+    <div class="col-lg-4">
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h5 class="mb-2">Top 10 – Teilnahmen</h5>
+          {% if top_by_part and top_by_part|length > 0 %}
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th class="text-end">#</th>
+                    <th class="text-end">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for x in top_by_part %}
+                    <tr>
+                      <td>{{ x.name }}</td>
+                      <td class="text-end">{{ x.pc }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.address_edit', address_id=x.id, next=url_for('addresses.addresses_stats')) }}">öffnen</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-muted">Keine Daten.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h5 class="mb-2">Top 10 – zuletzt teilgenommen</h5>
+          {% if top_recent and top_recent|length > 0 %}
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th class="text-end">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for x in top_recent %}
+                    <tr>
+                      <td>{{ x.name }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.address_edit', address_id=x.id, next=url_for('addresses.addresses_stats')) }}">öffnen</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-muted">Keine Daten.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h5 class="mb-2">Top 10 – lange nicht gesehen (aktiv)</h5>
+          {% if top_old and top_old|length > 0 %}
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Person</th>
+                    <th class="text-end">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for x in top_old %}
+                    <tr>
+                      <td>{{ x.name }}</td>
+                      <td class="text-end">
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('addresses.address_edit', address_id=x.id, next=url_for('addresses.addresses_stats')) }}">öffnen</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-muted">Keine Daten.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
 {% else %}
   <div class="alert alert-secondary">
     Teilnahmefelder sind in dieser DB nicht vorhanden (participation_count/tournament_years).

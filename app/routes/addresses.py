@@ -92,7 +92,7 @@ def _csv_text_response(filename: str, text: str) -> Response:
 
 
 # -----------------------------------------------------------------------------
-# Marker-Parsing (NEU: statt Jahreslisten)
+# Marker-Parsing (Marker statt Jahreslisten)
 # -----------------------------------------------------------------------------
 def _parse_markers(s: Any) -> list[str]:
     """
@@ -111,12 +111,10 @@ def _parse_markers(s: Any) -> list[str]:
         p = part.strip().upper()
         if not p:
             continue
-        # Marker: exakt 10, alnum
         if len(p) == 10 and p.isalnum():
             markers.add(p)
             continue
-        # Legacy (Jahreszahl) -> ignorieren in Marker-Statistik
-        # (Stats bleiben trotzdem robust über last_tournament_at)
+        # Legacy-Jahr ignorieren
     return sorted(markers)
 
 
@@ -161,7 +159,6 @@ def _bucket_participation(n: int) -> str:
 
 
 def _bucket_recency(last_year: int | None, now_year: int) -> str:
-    # Wir bucketen weiterhin nach Jahresdifferenz (wie bisher), nur dass last_year nun aus Marker stammt.
     if not last_year:
         return "nie"
     d = now_year - int(last_year)
@@ -190,14 +187,34 @@ def _clamp_page(v: Any) -> int:
     return n if n >= 1 else 1
 
 
-def _qs_for_list(*, q: str, status: str, email: str, wohnort: str, invite: str, view: str, per_page: int, page: int) -> dict[str, Any]:
+def _qs_for_list(
+    *,
+    q: str,
+    status: str,
+    email: str,
+    phone: str,
+    plzort: str,
+    street: str,
+    wohnort: str,
+    invite: str,
+    mismatch: str,
+    last_in_list: str,
+    view: str,
+    per_page: int,
+    page: int,
+) -> dict[str, Any]:
     """Helper: saubere Querystring-Parameter für url_for (None entfernt Flask automatisch)."""
     return {
         "q": q or None,
         "status": status if status else "alle",
         "email": email if email else "alle",
+        "phone": phone if phone else "alle",
+        "plzort": plzort if plzort else "alle",
+        "street": street if street else "alle",
         "wohnort": wohnort or None,
         "invite": invite if invite else "alle",
+        "mismatch": mismatch if mismatch else "0",
+        "last_in_list": last_in_list if last_in_list else "0",
         "view": view if view else "latest",
         "per_page": per_page,
         "page": page,
@@ -220,8 +237,15 @@ def addresses_list():
     # Filter
     status_filter = (request.args.get("status") or "alle").strip().lower()
     email_filter = (request.args.get("email") or "alle").strip().lower()      # alle|vorhanden|fehlt
+    phone_filter = (request.args.get("phone") or "alle").strip().lower()      # alle|vorhanden|fehlt
+    plzort_filter = (request.args.get("plzort") or "alle").strip().lower()    # alle|voll|fehlt
+    street_filter = (request.args.get("street") or "alle").strip().lower()    # alle|voll|fehlt
     wohnort_filter = (request.args.get("wohnort") or "").strip()
     invite_filter = (request.args.get("invite") or "alle").strip().lower()    # alle|an|aus
+
+    # Inkonsistenzfilter (nur wenn Spalten vorhanden)
+    mismatch = (request.args.get("mismatch") or "0").strip()                  # 1 => participation_count != Anzahl Marker
+    last_in_list = (request.args.get("last_in_list") or "0").strip()          # 1 => last_tournament_at nicht in tournament_years enthalten
 
     # Pagination
     per_page = _clamp_per_page(request.args.get("per_page"))
@@ -234,6 +258,12 @@ def addresses_list():
 
     with db.connect() as con:
         default_ab_id = _default_ab_id(con)
+
+        # Spalten prüfen (damit Filter robust sind)
+        has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
 
         cnt_all = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
         cnt_not_active = db.one(
@@ -260,6 +290,13 @@ def addresses_list():
         latest: list[Any] = []
         total_hits = 0
 
+        # --- SQL-Ausdruck: Marker-Anzahl aus CSV (kommabasiert)
+        # NOTE: zählt Tokens als 0 wenn leer, sonst commas+1. Keine Dedupe-Logik.
+        marker_count_expr = (
+            "(CASE WHEN COALESCE(TRIM(tournament_years),'')='' THEN 0 "
+            "ELSE (LENGTH(tournament_years) - LENGTH(REPLACE(tournament_years, ',', '')) + 1) END)"
+        )
+
         def build_where_and_params() -> tuple[list[str], list[Any]]:
             where = ["addressbook_id=?"]
             params: list[Any] = [default_ab_id]
@@ -276,16 +313,47 @@ def addresses_list():
             elif email_filter == "fehlt":
                 where.append("(email IS NULL OR TRIM(email)='')")
 
+            # Telefon vorhanden/fehlt
+            if phone_filter == "vorhanden":
+                where.append("telefon IS NOT NULL AND TRIM(telefon)!=''")
+            elif phone_filter == "fehlt":
+                where.append("(telefon IS NULL OR TRIM(telefon)='')")
+
+            # PLZ+Ort voll/fehlt
+            if plzort_filter == "voll":
+                where.append("plz IS NOT NULL AND TRIM(plz)!='' AND ort IS NOT NULL AND TRIM(ort)!=''")
+            elif plzort_filter == "fehlt":
+                where.append("((plz IS NULL OR TRIM(plz)='') OR (ort IS NULL OR TRIM(ort)=''))")
+
+            # Straße+Hausnummer voll/fehlt
+            if street_filter == "voll":
+                where.append("strasse IS NOT NULL AND TRIM(strasse)!='' AND hausnummer IS NOT NULL AND TRIM(hausnummer)!=''")
+            elif street_filter == "fehlt":
+                where.append("((strasse IS NULL OR TRIM(strasse)='') OR (hausnummer IS NULL OR TRIM(hausnummer)=''))")
+
             # Wohnort
             if wohnort_filter:
                 where.append("wohnort=?")
                 params.append(wohnort_filter)
 
-            # Einladung an/aus
-            if invite_filter == "an":
-                where.append("COALESCE(invite,0)=1")
-            elif invite_filter == "aus":
-                where.append("COALESCE(invite,0)=0")
+            # Einladung an/aus (nur wenn Spalte existiert)
+            if has_invite:
+                if invite_filter == "an":
+                    where.append("COALESCE(invite,0)=1")
+                elif invite_filter == "aus":
+                    where.append("COALESCE(invite,0)=0")
+
+            # Inkonsistenzen (nur wenn Felder da sind)
+            if mismatch == "1" and has_pc and has_years:
+                where.append(f"COALESCE(participation_count,0) != {marker_count_expr}")
+
+            if last_in_list == "1" and has_last and has_years:
+                # last_tournament_at ist Marker => muss in der CSV-Liste enthalten sein
+                # (wenn last_tournament_at leer => ebenfalls "inkonsistent" im Sinne der Prüfung)
+                where.append(
+                    "(COALESCE(TRIM(last_tournament_at),'')='' "
+                    "OR instr(',' || COALESCE(tournament_years,'') || ',', ',' || TRIM(last_tournament_at) || ',') = 0)"
+                )
 
             return where, params
 
@@ -293,8 +361,13 @@ def addresses_list():
             bool(qtxt)
             or (status_filter != "alle")
             or (email_filter != "alle")
+            or (phone_filter != "alle")
+            or (plzort_filter != "alle")
+            or (street_filter != "alle")
             or bool(wohnort_filter)
             or (invite_filter != "alle")
+            or (mismatch == "1")
+            or (last_in_list == "1")
         )
 
         # --- LISTENMODUS: (a) Suche/Filter aktiv ODER (b) view=all -> paginierte Liste
@@ -358,12 +431,18 @@ def addresses_list():
         q=qtxt,
         cnt_all=cnt_all_i,
         cnt_not_active=cnt_not_active_i,
-        # Filter/Ansicht
+        # Filter/Ansicht (bestehende)
         view=view,
         status_filter=status_filter,
         email_filter=email_filter,
         wohnort_filter=wohnort_filter,
         invite_filter=invite_filter,
+        # Neue Filter (optional, templates die sie nicht kennen ignorieren sie)
+        phone_filter=phone_filter,
+        plzort_filter=plzort_filter,
+        street_filter=street_filter,
+        mismatch=mismatch,
+        last_in_list=last_in_list,
         wohnorte=wohnorte,
         allowed_status=sorted(ALLOWED_STATUS),
         # Pagination
@@ -417,7 +496,7 @@ def address_invite_toggle(address_id: int):
 
 
 # -----------------------------------------------------------------------------
-# NEU: Statistik fürs Adressbuch (UMGESTELLT: Marker statt Jahre)
+# Statistik fürs Adressbuch (Marker statt Jahre) + Datenqualität + Top-Listen
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/stats")
 def addresses_stats():
@@ -426,8 +505,8 @@ def addresses_stats():
 
         has_invite = _has_column(con, "addresses", "invite")
         has_pc = _has_column(con, "addresses", "participation_count")
-        has_last = _has_column(con, "addresses", "last_tournament_at")   # enthält nun idealerweise Marker (10-stellig)
-        has_years = _has_column(con, "addresses", "tournament_years")    # enthält nun idealerweise Marker-Liste (CSV)
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
 
         total = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
         active = db.one(
@@ -442,6 +521,7 @@ def addresses_stats():
         not_active_i = int((not_active["c"] or 0) if not_active else 0)
 
         invite_yes = invite_no = None
+        invite_yes_email = invite_yes_no_email = None
         if has_invite:
             r1 = db.one(
                 con,
@@ -456,7 +536,105 @@ def addresses_stats():
             invite_yes = int((r1["c"] or 0) if r1 else 0)
             invite_no = int((r0["c"] or 0) if r0 else 0)
 
-        cols = ["status"]
+            r_ie = db.one(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND invite=1 AND email IS NOT NULL AND TRIM(email)!=''",
+                (default_ab_id,),
+            )
+            r_in = db.one(
+                con,
+                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND invite=1 AND (email IS NULL OR TRIM(email)='')",
+                (default_ab_id,),
+            )
+            invite_yes_email = int((r_ie["c"] or 0) if r_ie else 0)
+            invite_yes_no_email = int((r_in["c"] or 0) if r_in else 0)
+
+        # Datenqualität (SQL)
+        q_missing_email = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND (email IS NULL OR TRIM(email)='')",
+            (default_ab_id,),
+        )
+        q_missing_phone = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND (telefon IS NULL OR TRIM(telefon)='')",
+            (default_ab_id,),
+        )
+        q_missing_plzort = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND ((plz IS NULL OR TRIM(plz)='') OR (ort IS NULL OR TRIM(ort)=''))",
+            (default_ab_id,),
+        )
+        q_missing_street = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND ((strasse IS NULL OR TRIM(strasse)='') OR (hausnummer IS NULL OR TRIM(hausnummer)=''))",
+            (default_ab_id,),
+        )
+
+        missing_email = int((q_missing_email["c"] or 0) if q_missing_email else 0)
+        missing_phone = int((q_missing_phone["c"] or 0) if q_missing_phone else 0)
+        missing_plzort = int((q_missing_plzort["c"] or 0) if q_missing_plzort else 0)
+        missing_street = int((q_missing_street["c"] or 0) if q_missing_street else 0)
+
+        # Dubletten-Kandidaten: gleiche (nachname, vorname, wohnort) mehrfach
+        dup_rows = db.q(
+            con,
+            """
+            SELECT nachname, vorname, wohnort, COUNT(*) AS c
+            FROM addresses
+            WHERE addressbook_id=?
+              AND TRIM(COALESCE(nachname,''))!=''
+              AND TRIM(COALESCE(vorname,''))!=''
+              AND TRIM(COALESCE(wohnort,''))!=''
+            GROUP BY nachname, vorname, wohnort
+            HAVING COUNT(*) > 1
+            ORDER BY c DESC, nachname COLLATE NOCASE, vorname COLLATE NOCASE
+            LIMIT 20
+            """,
+            (default_ab_id,),
+        )
+        dup_candidates = [
+            {"nachname": r["nachname"], "vorname": r["vorname"], "wohnort": r["wohnort"], "c": int(r["c"] or 0)}
+            for r in dup_rows
+        ]
+        dup_total = sum(int(x["c"]) for x in dup_candidates) if dup_candidates else 0
+
+        # Inkonsistenz: participation_count != Anzahl Marker (SQL zählt Tokens per Komma)
+        mismatch_pc_markers = 0
+        mismatch_last_not_in_list = 0
+        if has_pc and has_years:
+            r_mis = db.one(
+                con,
+                """
+                SELECT COUNT(*) AS c
+                FROM addresses
+                WHERE addressbook_id=?
+                  AND COALESCE(participation_count,0) !=
+                      (CASE WHEN COALESCE(TRIM(tournament_years),'')='' THEN 0
+                            ELSE (LENGTH(tournament_years) - LENGTH(REPLACE(tournament_years, ',', '')) + 1) END)
+                """,
+                (default_ab_id,),
+            )
+            mismatch_pc_markers = int((r_mis["c"] or 0) if r_mis else 0)
+
+        if has_last and has_years:
+            r_lmis = db.one(
+                con,
+                """
+                SELECT COUNT(*) AS c
+                FROM addresses
+                WHERE addressbook_id=?
+                  AND (COALESCE(TRIM(last_tournament_at),'')=''
+                       OR instr(',' || COALESCE(tournament_years,'') || ',', ',' || TRIM(last_tournament_at) || ',') = 0)
+                """,
+                (default_ab_id,),
+            )
+            mismatch_last_not_in_list = int((r_lmis["c"] or 0) if r_lmis else 0)
+
+        # Stats-Berechnung per Python (Buckets + Jahre + Top-Listen)
+        cols = ["id", "nachname", "vorname", "wohnort", "status", "email", "telefon", "plz", "ort", "strasse", "hausnummer"]
+        if has_invite:
+            cols.append("invite")
         if has_pc:
             cols.append("participation_count")
         if has_last:
@@ -480,65 +658,108 @@ def addresses_stats():
             "vor 4–5 Jahren": 0,
             "vor >5 Jahren": 0,
         }
-        year_counts: dict[int, int] = {}
+
+        # Teilnahmen pro Jahr:
+        # - persons_by_year: Anzahl Personen mit mind. 1 Marker in diesem Jahr
+        # - markers_by_year: Anzahl Marker-Tokens in Summe (Häufigkeit) pro Jahr
+        persons_by_year: dict[int, set[int]] = {}
+        markers_by_year: dict[int, int] = {}
+
+        # Top-Listen vorbereiten
+        top_by_part: list[dict[str, Any]] = []
+        top_recent: list[dict[str, Any]] = []
+        top_old: list[dict[str, Any]] = []
+
+        def _safe_str(x: Any) -> str:
+            return ("" if x is None else str(x)).strip()
 
         for r in rows:
-            # participation_count: wenn vorhanden, nehmen; sonst aus Marker-Liste ableiten
-            pc = 0
-            if has_pc:
-                try:
-                    pc = int(r["participation_count"] or 0)
-                except Exception:
-                    pc = 0
+            aid = int(r["id"])
 
+            # effektive Marker-Liste
             markers: list[str] = []
             if has_years:
                 markers = _parse_markers(r["tournament_years"])
-                if not has_pc:
-                    pc = len(markers)
 
-                # Year-Counts aus Marker-Datum
-                for m in markers:
-                    y = _year_from_marker(m)
-                    if y:
-                        year_counts[y] = year_counts.get(y, 0) + 1
-
-            # last_tournament_at: kann Legacy-Jahr sein oder Marker
-            last_year: int | None = None
-            if has_last:
+            # participation_count (effektiv)
+            pc_eff = 0
+            if has_pc:
                 try:
-                    v = r["last_tournament_at"]
-                    s = ("" if v is None else str(v)).strip()
-                    if s:
-                        # Legacy: Jahr
-                        if s.isdigit() and len(s) == 4:
-                            last_year = int(s)
-                        else:
-                            # Marker
-                            y = _year_from_marker(s)
-                            if y:
-                                last_year = y
+                    pc_eff = int(r["participation_count"] or 0)
                 except Exception:
-                    last_year = None
+                    pc_eff = 0
+            else:
+                pc_eff = len(markers)
 
-            # Fallback: falls last_tournament_at nicht gesetzt ist, aber Marker-Liste existiert -> max(Marker-Datum)
-            if last_year is None and markers:
-                # robust: sortiere nach Datum, nehme max
-                best_year = None
+            # last_tournament_year (effektiv)
+            last_year: int | None = None
+            last_dt: datetime | None = None
+
+            if has_last:
+                s = _safe_str(r["last_tournament_at"])
+                if s:
+                    if s.isdigit() and len(s) == 4:
+                        last_year = int(s)
+                        try:
+                            last_dt = datetime(last_year, 1, 1)
+                        except Exception:
+                            last_dt = None
+                    else:
+                        dt = _marker_to_date(s)
+                        if dt:
+                            last_year = dt.year
+                            last_dt = dt
+
+            # Fallback: aus Markern den neuesten nehmen
+            if last_dt is None and markers:
                 best_dt = None
                 for m in markers:
                     dt = _marker_to_date(m)
                     if dt and (best_dt is None or dt > best_dt):
                         best_dt = dt
-                        best_year = dt.year
-                last_year = best_year
+                last_dt = best_dt
+                last_year = best_dt.year if best_dt else None
 
-            part_buckets[_bucket_participation(pc)] = part_buckets.get(_bucket_participation(pc), 0) + 1
-            recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(
-                _bucket_recency(last_year, now_year), 0
-            ) + 1
+            part_buckets[_bucket_participation(pc_eff)] = part_buckets.get(_bucket_participation(pc_eff), 0) + 1
+            recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(_bucket_recency(last_year, now_year), 0) + 1
 
-        years_sorted = sorted(year_counts.items(), key=lambda t: t[0])
+            # Jahre zählen
+            if markers:
+                years_here: set[int] = set()
+                for m in markers:
+                    y = _year_from_marker(m)
+                    if not y:
+                        continue
+                    years_here.add(y)
+                    markers_by_year[y] = markers_by_year.get(y, 0) + 1
+                for y in years_here:
+                    persons_by_year.setdefault(y, set()).add(aid)
+
+            # Top-Listen Datensätze
+            nm = _safe_str(r["nachname"])
+            vm = _safe_str(r["vorname"])
+            wo = _safe_str(r["wohnort"])
+            disp = f"{nm}, {vm}" + (f" · {wo}" if wo else "")
+
+            top_by_part.append({"id": aid, "name": disp, "pc": pc_eff, "last": last_dt})
+            if last_dt is not None:
+                top_recent.append({"id": aid, "name": disp, "pc": pc_eff, "last": last_dt, "status": _safe_str(r["status"])})
+                top_old.append({"id": aid, "name": disp, "pc": pc_eff, "last": last_dt, "status": _safe_str(r["status"])})
+
+        # Top 10: nach participation_count
+        top_by_part_sorted = sorted(top_by_part, key=lambda x: (int(x["pc"]), x["name"]), reverse=True)[:10]
+
+        # Top 10: zuletzt teilgenommen (neueste last_dt)
+        top_recent_sorted = sorted(top_recent, key=lambda x: (x["last"], x["name"]), reverse=True)[:10]
+
+        # Top 10: lange nicht gesehen (älteste last_dt), aber nur status=aktiv (operativ)
+        top_old_active = [x for x in top_old if (x.get("status") or "").lower() == "aktiv"]
+        top_old_sorted = sorted(top_old_active, key=lambda x: (x["last"], x["name"]))[:10]
+
+        # Years table
+        years_sorted = sorted(((y, len(ids), markers_by_year.get(y, 0)) for y, ids in persons_by_year.items()), key=lambda t: t[0])
+
+        has_participation = has_pc or has_years
 
     return render_template(
         "addresses_stats.html",
@@ -548,10 +769,29 @@ def addresses_stats():
         has_invite=has_invite,
         invite_yes=invite_yes,
         invite_no=invite_no,
-        has_participation=has_pc or has_years,
+        invite_yes_email=invite_yes_email,
+        invite_yes_no_email=invite_yes_no_email,
+        has_participation=has_participation,
         part_buckets=part_buckets,
         recency_buckets=recency_buckets,
-        years_sorted=years_sorted,
+        years_sorted=years_sorted,  # (year, persons, markers)
+        # Datenqualität
+        missing_email=missing_email,
+        missing_phone=missing_phone,
+        missing_plzort=missing_plzort,
+        missing_street=missing_street,
+        dup_candidates=dup_candidates,
+        dup_total=dup_total,
+        mismatch_pc_markers=mismatch_pc_markers,
+        mismatch_last_not_in_list=mismatch_last_not_in_list,
+        # Top-Listen
+        top_by_part=top_by_part_sorted,
+        top_recent=top_recent_sorted,
+        top_old=top_old_sorted,
+        # Flags für Link-Logik
+        has_years=has_years,
+        has_pc=has_pc,
+        has_last=has_last,
     )
 
 
@@ -822,7 +1062,7 @@ def address_update(address_id: int):
 
 
 # -----------------------------------------------------------------------------
-# Soft-Delete: Deaktivieren / Reaktivieren (optional, falls später wieder Buttons)
+# Soft-Delete: Deaktivieren / Reaktivieren
 # -----------------------------------------------------------------------------
 @bp.post("/addresses/<int:address_id>/deactivate")
 def address_deactivate(address_id: int):
