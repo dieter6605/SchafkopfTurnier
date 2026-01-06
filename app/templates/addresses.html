@@ -8,6 +8,15 @@
   .sk-pill { border-radius: 999px; }
 </style>
 
+{# ------------------------------------------------------------
+   NEU: Querystring für "Export Trefferliste"
+   - wir übernehmen die aktuellen Filter/Suche
+   - page wird bewusst entfernt => Export aller Treffer, nicht nur der aktuellen Seite
+   - per_page ist egal, schadet aber nicht; page raus ist das Wichtige
+------------------------------------------------------------- #}
+{% set qp_export = request.args.to_dict(flat=True) %}
+{% if 'page' in qp_export %}{% set _ = qp_export.pop('page') %}{% endif %}
+
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
   <div>
     <h3 class="mb-0">Adressbuch</h3>
@@ -24,6 +33,14 @@
     </div>
   </div>
   <div class="d-flex gap-2 flex-wrap">
+    {# NEU: Export Trefferliste (aktuelle Filter/Suche) #}
+    <a class="btn btn-outline-secondary"
+       id="btnAddrExportFiltered"
+       href="{{ url_for('addresses.addresses_export_filtered', **qp_export) }}"
+       title="Exportiert die aktuelle Trefferliste (Filter/Suche) als CSV">
+      Export Treffer (CSV)
+    </a>
+
     <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrImport" href="{{ url_for('addresses.addresses_import') }}">Import (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrStats" href="{{ url_for('addresses.addresses_stats') }}">Statistik</a>
