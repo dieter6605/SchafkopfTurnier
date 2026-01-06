@@ -7,6 +7,8 @@
   <title>SchafkopfTurnier</title>
 
   <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='branding/favicon.ico') }}" sizes="32x32">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='branding/apple-touch-icon.png') }}">
 
   <style>
     /* Globales Logo: Bildschirm (Navbar) */
@@ -160,6 +162,13 @@
           </li>
           <li>
             <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='installation') }}">Installation</a>
+          </li>
+
+          <li><hr class="dropdown-divider"></li>
+
+          <!-- ✅ NEU: Tarifrechner -->
+          <li>
+            <a class="dropdown-item" href="{{ url_for('home.help_tarif') }}">Tarifrechner</a>
           </li>
 
           <li><hr class="dropdown-divider"></li>
