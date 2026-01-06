@@ -1,0 +1,300 @@
+{# app/templates/help/tarifrechner.html #}
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="mb-0">Tarifrechner Schafkopf</h3>
+    <div class="text-muted small">Hilfeseite · offline · keine Speicherung</div>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary" href="{{ url_for('home.help_readme') }}">Hilfe</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('home.home') }}">Dashboard</a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="border rounded p-3 h-100">
+          <h5 class="mb-3">Tarifwerte</h5>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="rateSchneider">Schneider/Schwarz &amp; Laufende</label>
+              <input class="form-control" id="rateSchneider" type="number" min="0" step="0.01" value="0.10">
+              <div class="text-muted small mt-1">Zuschlag je Laufende und je Stufe (Schneider/Schwarz/Ansage/Re).</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="rateSauspiel">Sauspiel</label>
+              <input class="form-control" id="rateSauspiel" type="number" min="0" step="0.01" value="0.20">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="rateSolo">Solo</label>
+              <input class="form-control" id="rateSolo" type="number" min="0" step="0.01" value="0.50">
+              <div class="text-muted small mt-1">Gilt auch für Wenz.</div>
+            </div>
+          </div>
+
+          <div class="text-muted small mt-2">
+            Beträge in € · Ausgabe gerundet auf 2 Nachkommastellen.
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="border rounded p-3 h-100">
+          <h5 class="mb-3">Spieldaten</h5>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="gameType">Art des Spiels</label>
+              <select class="form-select" id="gameType">
+                <option value="sauspiel">Sauspiel</option>
+                <option value="farbsolo">Farb-Solo</option>
+                <option value="wenz">Wenz</option>
+              </select>
+              <div class="text-muted small mt-1">Steuert Standard-Gewinner (2/1) und Laufende-Auswahl.</div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="laufende">Laufende</label>
+              <select class="form-select" id="laufende"></select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="winners">Gewinner</label>
+              <select class="form-select" id="winners">
+                <option value="1">1</option>
+                <option value="2">2</option>
+              </select>
+
+              <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="winnersManual">
+                <label class="form-check-label" for="winnersManual">
+                  manuell
+                </label>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label" for="steigerung">Spielerhöhungen (Legen, Kontra)</label>
+              <select class="form-select" id="steigerung">
+                <option value="0">Nicht gesteigert (×1)</option>
+                <option value="1">1x (×2)</option>
+                <option value="2">2x (×4)</option>
+                <option value="3">3x (×8)</option>
+                <option value="4">4x (×16)</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="weitere">Weitere Erhöhungen</label>
+              <select class="form-select" id="weitere">
+                <option value="0">Keine</option>
+                <option value="1">Re</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="ansage">Ankündigung</label>
+              <select class="form-select" id="ansage">
+                <option value="0">Keine</option>
+                <option value="1">Sie</option>
+                <option value="2">Tout</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label" for="ausgang">Spielausgang</label>
+              <select class="form-select" id="ausgang">
+                <option value="0">Normal</option>
+                <option value="1">Schneider</option>
+                <option value="2">Schwarz</option>
+              </select>
+            </div>
+
+            <div class="col-md-6 d-flex align-items-end">
+              <button class="btn btn-primary w-100" id="calcBtn" type="button">
+                Tarif berechnen
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-3" id="output"></div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="my-4">
+
+    <div class="row g-3">
+      <div class="col-12">
+        <h5 class="mb-2">Rechenschritte</h5>
+        <pre class="mb-0" id="breakdown" style="white-space:pre-wrap;background:#f6f8fa;padding:12px;border-radius:8px;border:1px solid #e5e7eb;"></pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const el = (id) => document.getElementById(id);
+
+  const laufSel = el("laufende");
+  const winnersSel = el("winners");
+  const winnersManual = el("winnersManual");
+  const gameTypeSel = el("gameType");
+
+  const money = (x) => (Math.round((x + Number.EPSILON) * 100) / 100).toFixed(2);
+
+  function gameTypeLabel(gt) {
+    return ({ sauspiel: "Sauspiel", farbsolo: "Farb-Solo", wenz: "Wenz" })[gt] || gt;
+  }
+
+  function baseRate(gameType, sauspielRate, soloRate) {
+    // Vorgabe: Sauspiel=0,20; Solo/Wenz/Farbsolo=0,50
+    return (gameType === "sauspiel") ? sauspielRate : soloRate;
+  }
+
+  function multiplierFromSteigerung(n) {
+    // 0 => 1, 1 => 2, 2 => 4, 3 => 8, 4 => 16
+    return Math.pow(2, Number(n));
+  }
+
+  function defaultWinnersFor(gameType) {
+    // Sauspiel: 2 Gewinner (Spieler+Partner), Solo/Wenz: 1 Gewinner
+    return (gameType === "sauspiel") ? 2 : 1;
+  }
+
+  function rebuildLaufendeOptions(gameType) {
+    // Vorgabe aus deinem Wunsch: 0 und 2..14
+    // Optimierung: Sauspiel typischerweise nicht bis 14 -> 0 oder 2..8 (konservativ)
+    // (Wenn du es überall bis 14 willst: einfach sauspielMax auf 14 setzen)
+    const max = (gameType === "sauspiel") ? 8 : 14;
+
+    const values = [0];
+    for (let i = 2; i <= max; i++) values.push(i);
+
+    const current = laufSel.value;
+
+    laufSel.innerHTML = "";
+    for (const v of values) {
+      const o = document.createElement("option");
+      o.value = String(v);
+      o.textContent = String(v);
+      laufSel.appendChild(o);
+    }
+
+    // Versuch, bisherigen Wert beizubehalten, sonst 0
+    if ([...laufSel.options].some(o => o.value === current)) {
+      laufSel.value = current;
+    } else {
+      laufSel.value = "0";
+    }
+  }
+
+  function enforceWinnersAuto(gameType) {
+    if (winnersManual.checked) return;
+    const w = defaultWinnersFor(gameType);
+    winnersSel.value = String(w);
+    winnersSel.disabled = true;
+  }
+
+  function updateWinnersEnabledState() {
+    winnersSel.disabled = !winnersManual.checked;
+    if (!winnersManual.checked) {
+      winnersSel.value = String(defaultWinnersFor(gameTypeSel.value));
+    }
+  }
+
+  function calc() {
+    const rateSchneider = Number(el("rateSchneider").value || 0);
+    const rateSauspiel  = Number(el("rateSauspiel").value || 0);
+    const rateSolo      = Number(el("rateSolo").value || 0);
+
+    const gameType   = gameTypeSel.value;
+    const laufende   = Number(laufSel.value || 0);
+    const steigerung = Number(el("steigerung").value || 0);
+    const weitereRe  = Number(el("weitere").value || 0);
+    const ansage     = Number(el("ansage").value || 0);   // 0 keine, 1 Sie, 2 Tout
+    const ausgang    = Number(el("ausgang").value || 0);  // 0 normal, 1 schneider, 2 schwarz
+
+    // Gewinner: auto oder manuell
+    const winners = Number(winnersSel.value || defaultWinnersFor(gameType));
+    const losers = 4 - winners;
+
+    const grund = baseRate(gameType, rateSauspiel, rateSolo);
+
+    // Zuschläge:
+    const laufZ = laufende * rateSchneider;
+    const ausgZ = ausgang * rateSchneider;    // Schneider=1, Schwarz=2
+    const ansgZ = ansage * rateSchneider;     // Sie=1, Tout=2
+    const reZ   = weitereRe * rateSchneider;  // Re=1
+
+    const sumBeforeMult = grund + laufZ + ausgZ + ansgZ + reZ;
+    const mult = multiplierFromSteigerung(steigerung);
+    const tariff = sumBeforeMult * mult;
+
+    // Auszahlung:
+    // Jeder Gewinner bekommt von jedem Verlierer den Tarifbetrag.
+    const perWinner = tariff * losers;
+    const perLoser  = -tariff * winners;
+
+    const out = el("output");
+    out.innerHTML =
+      `<div class="alert alert-secondary mb-0">` +
+      `<div><strong>Tarif pro Paarung (Gewinner ↔ Verlierer):</strong> <span class="font-monospace">${money(tariff)} €</span></div>` +
+      `<div><strong>Je Gewinner (${winners}):</strong> <span class="font-monospace">${money(perWinner)} €</span></div>` +
+      `<div><strong>Je Verlierer (${losers}):</strong> <span class="font-monospace">${money(perLoser)} €</span></div>` +
+      `</div>`;
+
+    const bd = [];
+    bd.push(`Spiel: ${gameTypeLabel(gameType)}   (Gewinner: ${winners}, Verlierer: ${losers})`);
+    bd.push(``);
+    bd.push(`Grundtarif:                           ${money(grund)} €`);
+    bd.push(`+ Laufende (${laufende} × ${money(rateSchneider)}):              ${money(laufZ)} €`);
+    bd.push(`+ Spielausgang (${["Normal","Schneider","Schwarz"][ausgang]}):              ${money(ausgZ)} €`);
+    bd.push(`+ Ansage (${["Keine","Sie","Tout"][ansage]}):                     ${money(ansgZ)} €`);
+    bd.push(`+ Weitere Erhöhung (${weitereRe ? "Re" : "Keine"}):               ${money(reZ)} €`);
+    bd.push(`= Zwischensumme:                          ${money(sumBeforeMult)} €`);
+    bd.push(`× Steigerung (Legen/Kontra: ${steigerung}x → ×${mult}):           ${money(tariff)} €`);
+    bd.push(``);
+    bd.push(`Auszahlung:`);
+    bd.push(`  Gewinner je:  ${money(tariff)} × ${losers} = ${money(perWinner)} €`);
+    bd.push(`  Verlierer je: ${money(tariff)} × ${winners} = ${money(perLoser)} €`);
+
+    el("breakdown").textContent = bd.join("\n");
+  }
+
+  // Events
+  el("calcBtn").addEventListener("click", calc);
+
+  // Auto-Regeln beim Spieltypwechsel
+  gameTypeSel.addEventListener("change", () => {
+    rebuildLaufendeOptions(gameTypeSel.value);
+    enforceWinnersAuto(gameTypeSel.value);
+    calc();
+  });
+
+  winnersManual.addEventListener("change", () => {
+    updateWinnersEnabledState();
+    calc();
+  });
+
+  // Live-Recalc bei relevanten Inputs
+  ["rateSchneider","rateSauspiel","rateSolo","laufende","steigerung","weitere","ansage","ausgang","winners"]
+    .forEach(id => el(id).addEventListener("change", calc));
+
+  // Init
+  rebuildLaufendeOptions(gameTypeSel.value);
+  updateWinnersEnabledState();
+  enforceWinnersAuto(gameTypeSel.value);
+  calc();
+</script>
+{% endblock %}

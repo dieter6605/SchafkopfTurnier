@@ -93,27 +93,36 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
     return out
 
 
+def _safe_filename(s: str) -> str:
+    s2 = "".join(ch for ch in (s or "") if ch.isalnum() or ch in (" ", "-", "_")).strip()
+    s2 = s2.replace(" ", "_")
+    return s2 or "Turnier"
+
+
 # -----------------------------------------------------------------------------
 # DOCX builder (no template)
 # -----------------------------------------------------------------------------
 def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[TableInfo]) -> bytes:
+    from pathlib import Path
+
+    from flask import current_app
     from docx import Document
-    from docx.shared import Pt, Cm, Mm, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE, WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    from docx.shared import Cm, Mm, Pt, RGBColor
 
     doc = Document()
 
     # --- Page setup ---
     sec = doc.sections[0]
-    sec.top_margin = Mm(12)
-    sec.bottom_margin = Mm(12)
+    sec.top_margin = Mm(10)
+    sec.bottom_margin = Mm(10)
     sec.left_margin = Mm(10)
     sec.right_margin = Mm(10)
 
-    # header/footer distances + clear content
+    # header/footer distances + clear content (no header/footer at all)
     try:
         sec.header_distance = Mm(0)
         sec.footer_distance = Mm(0)
@@ -121,6 +130,12 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         pass
     try:
         sec.different_first_page_header_footer = False
+    except Exception:
+        pass
+    try:
+        # ensure not using "linked previous" oddities; single section anyway
+        sec.header.is_linked_to_previous = False
+        sec.footer.is_linked_to_previous = False
     except Exception:
         pass
     for p in sec.header.paragraphs:
@@ -152,6 +167,49 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
     SHADE_BOTTOM = "F2F2F2"
     SHADE_WHITE = "FFFFFF"
 
+    # -----------------------------------------------------------------------------
+    # Dealer marker (Geber-Markierung): app/static/branding/favicon.png
+    # - Spiel 1: A, Spiel 2: B, Spiel 3: C, Spiel 4: D, dann wieder A ...
+    # - Marker wird oben in der jeweiligen Spielzeile in der "linken" Zelle des 2er-Paares gesetzt:
+    #   A -> Spalten 2+3 => col index 1
+    #   B -> Spalten 4+5 => col index 3
+    #   C -> Spalten 6+7 => col index 5
+    #   D -> Spalten 8+9 => col index 7
+    # -----------------------------------------------------------------------------
+    dealer_icon_path = Path(current_app.root_path) / "static" / "branding" / "favicon.png"
+    DEALER_SEATS = ("A", "B", "C", "D")
+    DEALER_COL_BY_SEAT = {"A": 1, "B": 3, "C": 5, "D": 7}
+
+    def _dealer_seat_for_game(game_no: int) -> str:
+        return DEALER_SEATS[(int(game_no) - 1) % 4]
+
+    def _add_dealer_marker_to_cell(cell) -> None:
+        """
+        Adds favicon.png into the cell, aligned top/center, as Geber marker.
+        """
+        if not dealer_icon_path.exists():
+            return
+
+        cell.text = ""
+        if not cell.paragraphs:
+            cell.add_paragraph()
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        try:
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = 1.0
+        except Exception:
+            pass
+
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+        run = p.add_run()
+        try:
+            run.add_picture(str(dealer_icon_path), width=Mm(4))
+        except Exception:
+            run.add_picture(str(dealer_icon_path))
+
     # -------- low-level XML helpers --------
     def _rgb(color: str | None) -> RGBColor | None:
         if not color:
@@ -181,7 +239,15 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         shd.set(qn("w:color"), "auto")
         shd.set(qn("w:fill"), c.upper())
 
-    def _set_table_cell_margins(tbl, *, top_tw: int = 60, bottom_tw: int = 60, left_tw: int = 90, right_tw: int = 90) -> None:
+    def _set_table_cell_margins(
+        tbl,
+        *,
+        top_tw: int = 60,
+        bottom_tw: int = 60,
+        left_tw: int = 90,
+        right_tw: int = 90,
+    ) -> None:
+        # tblCellMar is on tblPr
         tblPr = tbl._tbl.tblPr
         mar = tblPr.find(qn("w:tblCellMar"))
         if mar is None:
@@ -202,6 +268,10 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         _set("right", right_tw)
 
     def _set_table_borders(tbl, *, outer_pt: float = 2.0, inner_pt: float = 1.0) -> None:
+        """
+        Set table-level borders via w:tblBorders.
+        Note: Cell-level borders (w:tcBorders) can override these in Word.
+        """
         outer_sz = str(int(round(outer_pt * 8)))  # 2pt -> 16
         inner_sz = str(int(round(inner_pt * 8)))  # 1pt -> 8
 
@@ -230,7 +300,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
 
     def _set_cell_borders(cell, *, left=None, right=None, top=None, bottom=None) -> None:
         """
-        Each side may be a dict: {"sz": int_twips8, "val": "dashed"/"single", "color": "000000"}
+        Each side may be a dict: {"sz": int_eighths_pt, "val": "dashed"/"single", "color": "000000"}
         sz is in eighths of a point (w:sz).
         """
         tcPr = cell._tc.get_or_add_tcPr()
@@ -309,7 +379,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         bold: bool = False,
         italic: bool = False,
         color: str = "",
-    ):
+    ) -> None:
         cell.text = ""
         p = cell.paragraphs[0]
         p.alignment = align
@@ -330,7 +400,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
 
     def _clear_cell(cell) -> None:
         cell.text = ""
-        # ensure at least one paragraph exists
         if not cell.paragraphs:
             cell.add_paragraph()
 
@@ -341,10 +410,15 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         player_no: int,
         name: str,
         email: str,
+        include_email: bool,
     ) -> None:
         """
-        Header cell content:
-          'Platz X — Nr' in one line, then Name, then 'E-Mail: xxx' left-aligned.
+        Header cell content (page1):
+          - line1 centered: "Platz X" (bold) + " — Teiln.-Nr. N" (smaller, not bold)
+          - line2 centered: Name (auto-fit, wrap/ellipsis)
+          - line3 left: "E-Mail: " + email (smaller)
+        Header cell content (page2):
+          - same, but WITHOUT email line (include_email=False)
         All vertically TOP aligned.
         """
         _clear_cell(cell)
@@ -354,7 +428,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         name_lines = _fit_text_lines(name, max_chars_per_line=28, max_lines=2)
         email_lines = _fit_text_lines(email, max_chars_per_line=26, max_lines=2)
 
-        # line 1: Platz X — <Nr>
+        # line 1
         p1 = cell.paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         try:
@@ -364,12 +438,17 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         except Exception:
             pass
 
-        r1 = p1.add_run(f"Platz {seat} — {int(player_no)}")
-        r1.bold = True
-        r1.font.name = "Source Sans Pro"
-        r1.font.size = Pt(12)
+        r_pl = p1.add_run(f"Platz {seat}")
+        r_pl.bold = True
+        r_pl.font.name = "Source Sans Pro"
+        r_pl.font.size = Pt(12)
 
-        # line 2: Name (center)
+        r_tail = p1.add_run(f" — Teiln.-Nr. {int(player_no)}")
+        r_tail.bold = False
+        r_tail.font.name = "Source Sans Pro"
+        r_tail.font.size = Pt(10)
+
+        # line 2: Name
         p2 = cell.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         try:
@@ -382,7 +461,10 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         r2.font.name = "Source Sans Pro"
         r2.font.size = Pt(name_pt)
 
-        # line 3: E-Mail: <...> (left, smaller)
+        if not include_email:
+            return
+
+        # line 3: E-Mail
         p3 = cell.add_paragraph()
         p3.alignment = WD_ALIGN_PARAGRAPH.LEFT
         try:
@@ -410,30 +492,43 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         for c in row.cells:
             _set_cell_shading(c, fill=fill)
 
-    def _merge_pairs(row):
+    def _merge_pairs(row) -> None:
         row.cells[1].merge(row.cells[2])
         row.cells[3].merge(row.cells[4])
         row.cells[5].merge(row.cells[6])
         row.cells[7].merge(row.cells[8])
 
-    def _apply_dashed_internal_separators(tbl) -> None:
+    # -------- IMPORTANT FIX: separators only on non-merged rows --------
+    def _apply_dashed_internal_separators(tbl, *, row_indices: list[int]) -> None:
         """
-        Set vertical dashed 0.5pt separators between:
-          (2|3), (4|5), (6|7), (8|9)  => 0-based boundaries: between 1|2, 3|4, 5|6, 7|8
-        Use cell borders: right border on left cell and left border on right cell.
+        Set vertical dashed 0.5pt separators only on selected rows.
+        Boundaries: (2|3), (4|5), (6|7), (8|9) => 0-based: 1|2, 3|4, 5|6, 7|8
         """
         dashed = {"val": "dashed", "sz": 4, "color": "000000"}  # 0.5pt -> 4
         boundaries = [(1, 2), (3, 4), (5, 6), (7, 8)]
-        for row in tbl.rows:
+        for rix in row_indices:
+            row = tbl.rows[rix]
             for a, b in boundaries:
                 try:
                     _set_cell_borders(row.cells[a], right=dashed)
                     _set_cell_borders(row.cells[b], left=dashed)
                 except Exception:
-                    # some merged rows might not have expected cells; ignore
                     pass
 
-    def _apply_table_layout(tbl, *, page_no: int):
+    def _enforce_outer_right_border(tbl, *, outer_pt: float = 2.0) -> None:
+        """
+        Force right outer border on last column cells, because tcBorders from
+        separators can override tblBorders in Word (especially bottom-right).
+        """
+        outer_sz = int(round(outer_pt * 8))  # 2pt -> 16
+        spec = {"val": "single", "sz": outer_sz, "color": "000000"}
+        for row in tbl.rows:
+            try:
+                _set_cell_borders(row.cells[-1], right=spec)
+            except Exception:
+                pass
+
+    def _apply_table_layout(tbl, *, page_no: int) -> None:
         tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
         tbl.style = "Table Grid"
 
@@ -442,41 +537,38 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 cell.width = col_widths[ci]
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
-        _set_table_cell_margins(tbl, top_tw=60, bottom_tw=60, left_tw=90, right_tw=90)
+        # minimal but not "sticky"
+        _set_table_cell_margins(tbl, top_tw=30, bottom_tw=30, left_tw=45, right_tw=45)
 
-        # Heights (EXACT) based on previous tuned values, with requested reductions
-        # Base values from previous version:
-        header_h = 22.0 * 1.2                # first row +20%
-        plusminus_h = 6.5                    # already reduced before
-        carry_h_page2 = 10.5                 # was +50%, now needs -20%
-        game_h = 8.5
-        sum_h = 9.0 * 1.5                    # currently +50%, then -10% (last two rows)
-        bottom_h = 9.0 * 1.5                 # same, then -10%
+        # Borders: outer 2pt, inner 1pt
+        _set_table_borders(tbl, outer_pt=2.0, inner_pt=1.0)
 
-        # Apply requested deltas:
-        # - Plus rows 20% lower
-        plusminus_h *= 0.8                   # -20%
-        # - "Übertrag" row on page 2 (row index 1) 20% lower
-        carry_h_page2 *= 0.8                 # -20%
-        # - page1 row2 (plus row) and page2 row3 (plus row) already addressed by plusminus_h
-        # - last two rows each table 10% lower
-        sum_h *= 0.9
-        bottom_h *= 0.9
-        # - email line can be a bit tighter: achieved by font sizes and TOP alignment
+        # Heights (EXACT)
+        # Requested:
+        # - page1 header row height: 28.0
+        # - page2 header row height: 16.0 and no email in header cells
+        header_h_page1 = 28.0
+        header_h_page2 = 16.0
+
+        plusminus_h = 5.5
+        carry_h_page2 = 8.3
+        game_h = 8.3
+        sum_h = 8.3
+        bottom_h = 8.3
 
         heights_mm: dict[int, float] = {}
 
         if page_no == 1:
-            # 24 rows: [0 header], [1 plus], [2..21 games], [22 sum], [23 bottom]
-            heights_mm[0] = header_h
+            heights_mm[0] = header_h_page1
             heights_mm[1] = plusminus_h
             for rix in range(2, 22):
                 heights_mm[rix] = game_h
             heights_mm[22] = sum_h
             heights_mm[23] = bottom_h
+
+            dashed_rows = list(range(2, 22)) + [22]
         else:
-            # 25 rows: [0 header], [1 carry], [2 plus], [3..22 games], [23 sum], [24 bottom]
-            heights_mm[0] = header_h
+            heights_mm[0] = header_h_page2
             heights_mm[1] = carry_h_page2
             heights_mm[2] = plusminus_h
             for rix in range(3, 23):
@@ -484,11 +576,15 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             heights_mm[23] = sum_h
             heights_mm[24] = bottom_h
 
+            dashed_rows = list(range(3, 23)) + [23]
+
         for rix, row in enumerate(tbl.rows):
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
             row.height = Mm(heights_mm.get(rix, game_h))
 
-        # Make sure font + spacing are compact everywhere
+        _apply_dashed_internal_separators(tbl, row_indices=dashed_rows)
+        _enforce_outer_right_border(tbl, outer_pt=2.0)
+
         for row in tbl.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
@@ -501,14 +597,8 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                     for run in p.runs:
                         run.font.name = "Source Sans Pro"
 
-        # borders: outer 2pt, inner 1pt
-        _set_table_borders(tbl, outer_pt=2.0, inner_pt=1.0)
-
-        # dashed separators 0.5pt on specified vertical boundaries
-        _apply_dashed_internal_separators(tbl)
-
     # -------- row fillers --------
-    def _fill_header_row(tbl, table: TableInfo):
+    def _fill_header_row(tbl, table: TableInfo, *, include_email: bool) -> None:
         _merge_pairs(tbl.rows[0])
         _shade_row(tbl.rows[0], fill=SHADE_HEADER)
 
@@ -523,23 +613,24 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 player_no=int(s.player_no),
                 name=str(s.display_name or ""),
                 email=str(s.email or ""),
+                include_email=include_email,
             )
 
-    def _fill_carry_in_row(tbl, *, row_index: int):
+    def _fill_carry_in_row(tbl, *, row_index: int) -> None:
         row = tbl.rows[row_index]
         _merge_pairs(row)
         _shade_row(row, fill=SHADE_LIGHT)
 
-        # smaller text, left aligned, TOP aligned
         c0 = row.cells[0]
         c0.vertical_alignment = WD_ALIGN_VERTICAL.TOP
         _set_cell_paragraph(c0, "Übertrag", align=WD_ALIGN_PARAGRAPH.LEFT, pt=10, color="444444")
+
         for c in [row.cells[1], row.cells[3], row.cells[5], row.cells[7]]:
             c.text = ""
             c.vertical_alignment = WD_ALIGN_VERTICAL.TOP
             c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    def _fill_plusminus_row(tbl, *, row_index: int):
+    def _fill_plusminus_row(tbl, *, row_index: int) -> None:
         row = tbl.rows[row_index]
         _merge_pairs(row)
         _shade_row(row, fill=SHADE_LIGHT)
@@ -556,7 +647,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 p.paragraph_format.line_spacing = 1.0
             except Exception:
                 pass
-            run = p.add_run("Plus+ / -Minus")
+            run = p.add_run("Plus  + / -  Minus")
             run.italic = True
             run.font.name = "Source Sans Pro"
             run.font.size = Pt(10)
@@ -573,23 +664,27 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         bottom_row: int,
         bottom_label: str,
         bottom_label_pt: int,
-    ):
+    ) -> None:
         for i in range(20):
             rix = start_row + i
             game_no = start_game_no + i
 
-            # zebra
             _shade_row(tbl.rows[rix], fill=("FCFCFC" if i % 2 == 1 else SHADE_WHITE))
 
-            # left numbering
             tbl.rows[rix].cells[0].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             _set_cell_paragraph(tbl.rows[rix].cells[0], str(game_no), align=WD_ALIGN_PARAGRAPH.RIGHT, pt=12)
 
+            # Clear score cells
             for ci in range(1, 9):
                 c = tbl.rows[rix].cells[ci]
                 c.text = ""
-                p = c.paragraphs[0]
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                c.vertical_alignment = WD_ALIGN_VERTICAL.TOP
+
+            # Geber-Markierung (favicon.png) in der passenden Spalte
+            seat = _dealer_seat_for_game(game_no)
+            col = DEALER_COL_BY_SEAT[seat]
+            _add_dealer_marker_to_cell(tbl.rows[rix].cells[col])
 
         # Summe
         sumr = tbl.rows[sum_row]
@@ -615,27 +710,48 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             c.text = ""
             c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    def _add_tablesheet_page(table: TableInfo, *, page_no: int):
-        # Title line (bigger)
+    def _add_tablesheet_page(table: TableInfo, *, page_no: int) -> None:
+        # Title line with "Tisch X" bigger and "Seite X/Y" right-aligned
         p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         try:
             p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after = Pt(6)
+            p.paragraph_format.space_after = Pt(12)
             p.paragraph_format.line_spacing = 1.0
         except Exception:
             pass
 
-        title_text = f"{tournament_title}  Runde {int(round_no)}  Tisch {int(table.table_no)}  ·  Seite {page_no}/2"
-        r = p.add_run(title_text)
-        r.font.name = "Source Sans Pro"
-        r.font.size = Pt(16)
-        r.bold = True
+        # right tab stop at text area width
+        right_pos = sec.page_width - sec.left_margin - sec.right_margin
+        try:
+            ts = p.paragraph_format.tab_stops
+            try:
+                ts.clear_all()
+            except Exception:
+                pass
+            ts.add_tab_stop(right_pos, alignment=WD_TAB_ALIGNMENT.RIGHT, leader=WD_TAB_LEADER.SPACES)
+        except Exception:
+            pass
 
+        r1 = p.add_run(f"{tournament_title}  Runde {int(round_no)}  ")
+        r1.font.name = "Source Sans Pro"
+        r1.font.size = Pt(16)
+        r1.bold = True
+
+        r2 = p.add_run(f"Tisch {int(table.table_no)}")
+        r2.font.name = "Source Sans Pro"
+        r2.font.size = Pt(24)  # 16 * 1.5
+        r2.bold = True
+
+        r3 = p.add_run(f"\tSeite {page_no}/2")
+        r3.font.name = "Source Sans Pro"
+        r3.font.size = Pt(12)
+        r3.bold = False
+
+        # Build table per page
         if page_no == 1:
             tbl = doc.add_table(rows=24, cols=9)
             _apply_table_layout(tbl, page_no=1)
-            _fill_header_row(tbl, table)
+            _fill_header_row(tbl, table, include_email=True)
             _fill_plusminus_row(tbl, row_index=1)
             _fill_games_and_totals(
                 tbl,
@@ -649,7 +765,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         else:
             tbl = doc.add_table(rows=25, cols=9)
             _apply_table_layout(tbl, page_no=2)
-            _fill_header_row(tbl, table)
+            _fill_header_row(tbl, table, include_email=False)
             _fill_carry_in_row(tbl, row_index=1)
             _fill_plusminus_row(tbl, row_index=2)
             _fill_games_and_totals(
@@ -662,7 +778,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 bottom_label_pt=12,
             )
 
-    # Build document
+    # Build document: for each table => page1, break, page2, break (between tables)
     for idx, table in enumerate(tables):
         _add_tablesheet_page(table, page_no=1)
         doc.add_page_break()
@@ -673,12 +789,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
-
-
-def _safe_filename(s: str) -> str:
-    s2 = "".join(ch for ch in (s or "") if ch.isalnum() or ch in (" ", "-", "_")).strip()
-    s2 = s2.replace(" ", "_")
-    return s2 or "Turnier"
 
 
 # -----------------------------------------------------------------------------
