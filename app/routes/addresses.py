@@ -60,6 +60,19 @@ def _has_column(con, table: str, column: str) -> bool:
         return False
 
 
+def _table_columns(con, table: str) -> list[str]:
+    """
+    Liefert die Spalten in Tabellenreihenfolge (PRAGMA table_info).
+    Robust bei Alt-DBs / Erweiterungen.
+    """
+    try:
+        rows = con.execute(f"PRAGMA table_info({table});").fetchall()
+        cols = [str(r["name"]) for r in rows if r and r["name"]]
+        return cols
+    except Exception:
+        return []
+
+
 def _upsert_wohnort(con, wohnort: str, plz: str | None, ort: str | None) -> None:
     """
     Pflegt Wohnort/PLZ/Ort in die Lookup-Tabelle 'wohnorte'.
@@ -89,6 +102,22 @@ def _csv_text_response(filename: str, text: str) -> Response:
     resp = Response(data, mimetype="text/csv; charset=utf-8")
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+def _csv_escape(v: Any) -> str:
+    """
+    Excel-freundliches CSV (Semikolon) + korrektes Quoting:
+    - Quotes verdoppeln
+    - Feld in Quotes, wenn ; " oder newline vorkommt
+    """
+    s = "" if v is None else str(v)
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    needs_quote = (";" in s) or ('"' in s) or ("\n" in s)
+    if '"' in s:
+        s = s.replace('"', '""')
+    if needs_quote:
+        s = f'"{s}"'
+    return s
 
 
 # -----------------------------------------------------------------------------
@@ -291,7 +320,6 @@ def addresses_list():
         total_hits = 0
 
         # --- SQL-Ausdruck: Marker-Anzahl aus CSV (kommabasiert)
-        # NOTE: zählt Tokens als 0 wenn leer, sonst commas+1. Keine Dedupe-Logik.
         marker_count_expr = (
             "(CASE WHEN COALESCE(TRIM(tournament_years),'')='' THEN 0 "
             "ELSE (LENGTH(tournament_years) - LENGTH(REPLACE(tournament_years, ',', '')) + 1) END)"
@@ -348,8 +376,6 @@ def addresses_list():
                 where.append(f"COALESCE(participation_count,0) != {marker_count_expr}")
 
             if last_in_list == "1" and has_last and has_years:
-                # last_tournament_at ist Marker => muss in der CSV-Liste enthalten sein
-                # (wenn last_tournament_at leer => ebenfalls "inkonsistent" im Sinne der Prüfung)
                 where.append(
                     "(COALESCE(TRIM(last_tournament_at),'')='' "
                     "OR instr(',' || COALESCE(tournament_years,'') || ',', ',' || TRIM(last_tournament_at) || ',') = 0)"
@@ -437,7 +463,7 @@ def addresses_list():
         email_filter=email_filter,
         wohnort_filter=wohnort_filter,
         invite_filter=invite_filter,
-        # Neue Filter (optional, templates die sie nicht kennen ignorieren sie)
+        # Neue Filter
         phone_filter=phone_filter,
         plzort_filter=plzort_filter,
         street_filter=street_filter,
@@ -549,7 +575,6 @@ def addresses_stats():
             invite_yes_email = int((r_ie["c"] or 0) if r_ie else 0)
             invite_yes_no_email = int((r_in["c"] or 0) if r_in else 0)
 
-        # Datenqualität (SQL)
         q_missing_email = db.one(
             con,
             "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND (email IS NULL OR TRIM(email)='')",
@@ -576,7 +601,6 @@ def addresses_stats():
         missing_plzort = int((q_missing_plzort["c"] or 0) if q_missing_plzort else 0)
         missing_street = int((q_missing_street["c"] or 0) if q_missing_street else 0)
 
-        # Dubletten-Kandidaten: gleiche (nachname, vorname, wohnort) mehrfach
         dup_rows = db.q(
             con,
             """
@@ -599,7 +623,6 @@ def addresses_stats():
         ]
         dup_total = sum(int(x["c"]) for x in dup_candidates) if dup_candidates else 0
 
-        # Inkonsistenz: participation_count != Anzahl Marker (SQL zählt Tokens per Komma)
         mismatch_pc_markers = 0
         mismatch_last_not_in_list = 0
         if has_pc and has_years:
@@ -631,7 +654,6 @@ def addresses_stats():
             )
             mismatch_last_not_in_list = int((r_lmis["c"] or 0) if r_lmis else 0)
 
-        # Stats-Berechnung per Python (Buckets + Jahre + Top-Listen)
         cols = ["id", "nachname", "vorname", "wohnort", "status", "email", "telefon", "plz", "ort", "strasse", "hausnummer"]
         if has_invite:
             cols.append("invite")
@@ -659,13 +681,9 @@ def addresses_stats():
             "vor >5 Jahren": 0,
         }
 
-        # Teilnahmen pro Jahr:
-        # - persons_by_year: Anzahl Personen mit mind. 1 Marker in diesem Jahr
-        # - markers_by_year: Anzahl Marker-Tokens in Summe (Häufigkeit) pro Jahr
         persons_by_year: dict[int, set[int]] = {}
         markers_by_year: dict[int, int] = {}
 
-        # Top-Listen vorbereiten
         top_by_part: list[dict[str, Any]] = []
         top_recent: list[dict[str, Any]] = []
         top_old: list[dict[str, Any]] = []
@@ -676,12 +694,10 @@ def addresses_stats():
         for r in rows:
             aid = int(r["id"])
 
-            # effektive Marker-Liste
             markers: list[str] = []
             if has_years:
                 markers = _parse_markers(r["tournament_years"])
 
-            # participation_count (effektiv)
             pc_eff = 0
             if has_pc:
                 try:
@@ -691,7 +707,6 @@ def addresses_stats():
             else:
                 pc_eff = len(markers)
 
-            # last_tournament_year (effektiv)
             last_year: int | None = None
             last_dt: datetime | None = None
 
@@ -710,7 +725,6 @@ def addresses_stats():
                             last_year = dt.year
                             last_dt = dt
 
-            # Fallback: aus Markern den neuesten nehmen
             if last_dt is None and markers:
                 best_dt = None
                 for m in markers:
@@ -723,7 +737,6 @@ def addresses_stats():
             part_buckets[_bucket_participation(pc_eff)] = part_buckets.get(_bucket_participation(pc_eff), 0) + 1
             recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(_bucket_recency(last_year, now_year), 0) + 1
 
-            # Jahre zählen
             if markers:
                 years_here: set[int] = set()
                 for m in markers:
@@ -735,7 +748,6 @@ def addresses_stats():
                 for y in years_here:
                     persons_by_year.setdefault(y, set()).add(aid)
 
-            # Top-Listen Datensätze
             nm = _safe_str(r["nachname"])
             vm = _safe_str(r["vorname"])
             wo = _safe_str(r["wohnort"])
@@ -746,17 +758,11 @@ def addresses_stats():
                 top_recent.append({"id": aid, "name": disp, "pc": pc_eff, "last": last_dt, "status": _safe_str(r["status"])})
                 top_old.append({"id": aid, "name": disp, "pc": pc_eff, "last": last_dt, "status": _safe_str(r["status"])})
 
-        # Top 10: nach participation_count
         top_by_part_sorted = sorted(top_by_part, key=lambda x: (int(x["pc"]), x["name"]), reverse=True)[:10]
-
-        # Top 10: zuletzt teilgenommen (neueste last_dt)
         top_recent_sorted = sorted(top_recent, key=lambda x: (x["last"], x["name"]), reverse=True)[:10]
-
-        # Top 10: lange nicht gesehen (älteste last_dt), aber nur status=aktiv (operativ)
         top_old_active = [x for x in top_old if (x.get("status") or "").lower() == "aktiv"]
         top_old_sorted = sorted(top_old_active, key=lambda x: (x["last"], x["name"]))[:10]
 
-        # Years table
         years_sorted = sorted(((y, len(ids), markers_by_year.get(y, 0)) for y, ids in persons_by_year.items()), key=lambda t: t[0])
 
         has_participation = has_pc or has_years
@@ -775,7 +781,6 @@ def addresses_stats():
         part_buckets=part_buckets,
         recency_buckets=recency_buckets,
         years_sorted=years_sorted,  # (year, persons, markers)
-        # Datenqualität
         missing_email=missing_email,
         missing_phone=missing_phone,
         missing_plzort=missing_plzort,
@@ -784,11 +789,9 @@ def addresses_stats():
         dup_total=dup_total,
         mismatch_pc_markers=mismatch_pc_markers,
         mismatch_last_not_in_list=mismatch_last_not_in_list,
-        # Top-Listen
         top_by_part=top_by_part_sorted,
         top_recent=top_recent_sorted,
         top_old=top_old_sorted,
-        # Flags für Link-Logik
         has_years=has_years,
         has_pc=has_pc,
         has_last=has_last,
@@ -804,6 +807,439 @@ def addresses_export():
         default_ab_id = _default_ab_id(con)
         text, filename = addressbook_io.export_addresses_csv(con=con, addressbook_id=default_ab_id)
     return _csv_text_response(filename, text)
+
+
+# -----------------------------------------------------------------------------
+# ✅ NEU: Export direkt aus der Trefferliste (Filter/Suche wie /addresses)
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/export-filtered")
+def addresses_export_filtered():
+    """
+    Exportiert genau die aktuelle Trefferliste basierend auf denselben Query-Parametern
+    wie /addresses (Suche/Filter).
+
+    Query-Parameter (wie in addresses_list):
+      q, view, status, email, phone, plzort, street, wohnort, invite, mismatch, last_in_list
+    """
+    qtxt = (request.args.get("q") or "").strip()
+    like = f"%{qtxt}%"
+
+    view = (request.args.get("view") or "latest").strip().lower()
+    if view not in ("latest", "all"):
+        view = "latest"
+
+    status_filter = (request.args.get("status") or "alle").strip().lower()
+    email_filter = (request.args.get("email") or "alle").strip().lower()
+    phone_filter = (request.args.get("phone") or "alle").strip().lower()
+    plzort_filter = (request.args.get("plzort") or "alle").strip().lower()
+    street_filter = (request.args.get("street") or "alle").strip().lower()
+    wohnort_filter = (request.args.get("wohnort") or "").strip()
+    invite_filter = (request.args.get("invite") or "alle").strip().lower()
+    mismatch = (request.args.get("mismatch") or "0").strip()
+    last_in_list = (request.args.get("last_in_list") or "0").strip()
+
+    # Legacy Verhalten angleichen
+    if (request.args.get("show_inactive") or "") == "0" and (request.args.get("status") is None):
+        status_filter = "aktiv"
+
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+
+        has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
+
+        # dynamisch alle Spalten exportieren (robust)
+        cols = _table_columns(con, "addresses")
+        if not cols:
+            flash("Export fehlgeschlagen: Konnte Spalten der Tabelle addresses nicht lesen.", "error")
+            return redirect(url_for("addresses.addresses_list"))
+
+        marker_count_expr = (
+            "(CASE WHEN COALESCE(TRIM(tournament_years),'')='' THEN 0 "
+            "ELSE (LENGTH(tournament_years) - LENGTH(REPLACE(tournament_years, ',', '')) + 1) END)"
+        )
+
+        where = ["addressbook_id=?"]
+        params: list[Any] = [default_ab_id]
+
+        if status_filter and status_filter != "alle" and status_filter in ALLOWED_STATUS:
+            where.append("status=?")
+            params.append(status_filter)
+
+        if email_filter == "vorhanden":
+            where.append("email IS NOT NULL AND TRIM(email)!=''")
+        elif email_filter == "fehlt":
+            where.append("(email IS NULL OR TRIM(email)='')")
+
+        if phone_filter == "vorhanden":
+            where.append("telefon IS NOT NULL AND TRIM(telefon)!=''")
+        elif phone_filter == "fehlt":
+            where.append("(telefon IS NULL OR TRIM(telefon)='')")
+
+        if plzort_filter == "voll":
+            where.append("plz IS NOT NULL AND TRIM(plz)!='' AND ort IS NOT NULL AND TRIM(ort)!=''")
+        elif plzort_filter == "fehlt":
+            where.append("((plz IS NULL OR TRIM(plz)='') OR (ort IS NULL OR TRIM(ort)=''))")
+
+        if street_filter == "voll":
+            where.append("strasse IS NOT NULL AND TRIM(strasse)!='' AND hausnummer IS NOT NULL AND TRIM(hausnummer)!=''")
+        elif street_filter == "fehlt":
+            where.append("((strasse IS NULL OR TRIM(strasse)='') OR (hausnummer IS NULL OR TRIM(hausnummer)=''))")
+
+        if wohnort_filter:
+            where.append("wohnort=?")
+            params.append(wohnort_filter)
+
+        if has_invite:
+            if invite_filter == "an":
+                where.append("COALESCE(invite,0)=1")
+            elif invite_filter == "aus":
+                where.append("COALESCE(invite,0)=0")
+
+        if mismatch == "1" and has_pc and has_years:
+            where.append(f"COALESCE(participation_count,0) != {marker_count_expr}")
+
+        if last_in_list == "1" and has_last and has_years:
+            where.append(
+                "(COALESCE(TRIM(last_tournament_at),'')='' "
+                "OR instr(',' || COALESCE(tournament_years,'') || ',', ',' || TRIM(last_tournament_at) || ',') = 0)"
+            )
+
+        if qtxt:
+            where.append(
+                "("
+                "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
+                "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
+                "strasse LIKE ? OR hausnummer LIKE ?"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like, like, like, like])
+
+        # Falls keinerlei Filter aktiv und view=latest, exportieren wir analog zur Startseite
+        any_filter = (
+            bool(qtxt)
+            or (status_filter != "alle")
+            or (email_filter != "alle")
+            or (phone_filter != "alle")
+            or (plzort_filter != "alle")
+            or (street_filter != "alle")
+            or bool(wohnort_filter)
+            or (invite_filter != "alle")
+            or (mismatch == "1")
+            or (last_in_list == "1")
+        )
+
+        if not any_filter and view != "all":
+            # "latest" Export (wie UI): zuletzt bearbeitet
+            sql = f"""
+                SELECT {", ".join(cols)}
+                FROM addresses
+                WHERE addressbook_id=?
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 80
+            """
+            rows = con.execute(sql, (default_ab_id,)).fetchall()
+        else:
+            sql = f"""
+                SELECT {", ".join(cols)}
+                FROM addresses
+                WHERE {" AND ".join(where)}
+                ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id ASC
+            """
+            rows = con.execute(sql, tuple(params)).fetchall()
+
+    # CSV bauen
+    lines = [";".join(_csv_escape(c) for c in cols)]
+    for r in rows:
+        # sqlite Row: dict-like
+        lines.append(";".join(_csv_escape(r[c] if c in r.keys() else "") for c in cols))
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"addresses_filtered_{stamp}.csv"
+    return _csv_text_response(filename, "\n".join(lines) + "\n")
+
+
+# -----------------------------------------------------------------------------
+# Export: Einladungsliste
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/export-invites")
+def addresses_export_invites():
+    """
+    CSV-Export für Einladungen/Serienmail:
+    Standard:
+      - status='aktiv'
+      - invite=1 (falls Spalte existiert)
+    Optional Query:
+      - status=alle|aktiv|inaktiv|...
+      - invite=alle|an|aus
+      - emails_only=1  -> nur mit E-Mail
+    """
+    status_filter = (request.args.get("status") or "aktiv").strip().lower()
+    invite_filter = (request.args.get("invite") or "an").strip().lower()
+    emails_only = (request.args.get("emails_only") or "").strip() == "1"
+
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+
+        has_invite = _has_column(con, "addresses", "invite")
+        if not has_invite:
+            invite_filter = "alle"
+
+        where = ["addressbook_id=?"]
+        params: list[Any] = [default_ab_id]
+
+        if status_filter and status_filter != "alle":
+            if status_filter in ALLOWED_STATUS:
+                where.append("status=?")
+                params.append(status_filter)
+
+        if invite_filter == "an":
+            where.append("COALESCE(invite,0)=1")
+        elif invite_filter == "aus":
+            where.append("COALESCE(invite,0)=0")
+
+        if emails_only:
+            where.append("email IS NOT NULL AND TRIM(email)!=''")
+
+        sql = f"""
+            SELECT id, nachname, vorname, wohnort, plz, ort, strasse, hausnummer, email, telefon, status
+            FROM addresses
+            WHERE {' AND '.join(where)}
+            ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id ASC
+        """
+        rows = db.q(con, sql, tuple(params))
+
+    header = [
+        "id", "nachname", "vorname", "wohnort", "plz", "ort",
+        "strasse", "hausnummer", "email", "telefon", "status",
+    ]
+    lines = [";".join(header)]
+    for r in rows:
+        vals = [
+            str(r["id"] or ""),
+            str(r["nachname"] or ""),
+            str(r["vorname"] or ""),
+            str(r["wohnort"] or ""),
+            str(r["plz"] or ""),
+            str(r["ort"] or ""),
+            str(r["strasse"] or ""),
+            str(r["hausnummer"] or ""),
+            str(r["email"] or ""),
+            str(r["telefon"] or ""),
+            str(r["status"] or ""),
+        ]
+        lines.append(";".join(v.replace("\n", " ").replace("\r", " ").strip() for v in vals))
+
+    filename = f"addresses_invites_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return _csv_text_response(filename, "\n".join(lines) + "\n")
+
+
+# -----------------------------------------------------------------------------
+# Export: Datenqualität
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/export-quality")
+def addresses_export_quality():
+    """
+    CSV-Export für Datenpflege:
+    - fehlende email
+    - fehlende telefon
+    - fehlende wohnort/plz/ort
+    - optional: inkonsistente Teilnahme (participation_count vs tournament_years-marker count)
+    """
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_years = _has_column(con, "addresses", "tournament_years")
+
+        cols = [
+            "id", "nachname", "vorname", "wohnort", "plz", "ort",
+            "strasse", "hausnummer", "email", "telefon", "status",
+        ]
+        if has_pc:
+            cols.append("participation_count")
+        if has_years:
+            cols.append("tournament_years")
+
+        rows = db.q(
+            con,
+            f"""
+            SELECT {", ".join(cols)}
+            FROM addresses
+            WHERE addressbook_id=?
+            ORDER BY nachname COLLATE NOCASE, vorname COLLATE NOCASE, id ASC
+            """,
+            (default_ab_id,),
+        )
+
+    header = cols + ["issue_email", "issue_telefon", "issue_wohnort", "issue_participation"]
+    lines = [";".join(header)]
+
+    for r in rows:
+        email = str(r["email"] or "").strip()
+        telefon = str(r["telefon"] or "").strip()
+        wohnort = str(r["wohnort"] or "").strip()
+        plz = str(r["plz"] or "").strip()
+        ort = str(r["ort"] or "").strip()
+
+        issue_email = "1" if not email else "0"
+        issue_telefon = "1" if not telefon else "0"
+        issue_wohnort = "1" if (not wohnort or not plz or not ort) else "0"
+
+        issue_part = "0"
+        if has_pc and has_years:
+            try:
+                pc = int(r["participation_count"] or 0)
+            except Exception:
+                pc = 0
+            markers = _parse_markers(r["tournament_years"])
+            if pc != len(markers):
+                issue_part = "1"
+
+        vals = []
+        for c in cols:
+            v = r[c] if c in r.keys() else ""
+            vals.append(str(v or "").replace("\n", " ").replace("\r", " ").strip())
+
+        vals.extend([issue_email, issue_telefon, issue_wohnort, issue_part])
+        lines.append(";".join(vals))
+
+    filename = f"addresses_quality_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return _csv_text_response(filename, "\n".join(lines) + "\n")
+
+
+# -----------------------------------------------------------------------------
+# Export: Statistik
+# -----------------------------------------------------------------------------
+@bp.get("/addresses/stats/export")
+def addresses_stats_export():
+    """
+    Exportiert die Statistik als CSV (Key/Value + Tabellenblöcke).
+    """
+    with db.connect() as con:
+        default_ab_id = _default_ab_id(con)
+
+        has_invite = _has_column(con, "addresses", "invite")
+        has_pc = _has_column(con, "addresses", "participation_count")
+        has_last = _has_column(con, "addresses", "last_tournament_at")
+        has_years = _has_column(con, "addresses", "tournament_years")
+
+        total = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?", (default_ab_id,))
+        active = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status='aktiv'", (default_ab_id,))
+        not_active = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status!='aktiv'", (default_ab_id,))
+
+        total_i = int((total["c"] or 0) if total else 0)
+        active_i = int((active["c"] or 0) if active else 0)
+        not_active_i = int((not_active["c"] or 0) if not_active else 0)
+
+        invite_yes = invite_no = 0
+        if has_invite:
+            r1 = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND invite=1", (default_ab_id,))
+            r0 = db.one(con, "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND (invite=0 OR invite IS NULL)", (default_ab_id,))
+            invite_yes = int((r1["c"] or 0) if r1 else 0)
+            invite_no = int((r0["c"] or 0) if r0 else 0)
+
+        cols = ["status"]
+        if has_pc:
+            cols.append("participation_count")
+        if has_last:
+            cols.append("last_tournament_at")
+        if has_years:
+            cols.append("tournament_years")
+
+        rows = con.execute(
+            f"SELECT {', '.join(cols)} FROM addresses WHERE addressbook_id=?",
+            (default_ab_id,),
+        ).fetchall()
+
+        now_year = datetime.now().year
+
+        part_buckets: dict[str, int] = {"0": 0, "1–2": 0, "3–5": 0, "6–10": 0, ">10": 0}
+        recency_buckets: dict[str, int] = {
+            "nie": 0,
+            "dieses Jahr": 0,
+            "letztes Jahr": 0,
+            "vor 2–3 Jahren": 0,
+            "vor 4–5 Jahren": 0,
+            "vor >5 Jahren": 0,
+        }
+        year_counts: dict[int, int] = {}
+
+        for r in rows:
+            pc = 0
+            if has_pc:
+                try:
+                    pc = int(r["participation_count"] or 0)
+                except Exception:
+                    pc = 0
+
+            markers: list[str] = []
+            if has_years:
+                markers = _parse_markers(r["tournament_years"])
+                if not has_pc:
+                    pc = len(markers)
+
+                for m in markers:
+                    y = _year_from_marker(m)
+                    if y:
+                        year_counts[y] = year_counts.get(y, 0) + 1
+
+            last_year: int | None = None
+            if has_last:
+                try:
+                    s = ("" if r["last_tournament_at"] is None else str(r["last_tournament_at"])).strip()
+                    if s:
+                        if s.isdigit() and len(s) == 4:
+                            last_year = int(s)
+                        else:
+                            y = _year_from_marker(s)
+                            if y:
+                                last_year = y
+                except Exception:
+                    last_year = None
+
+            if last_year is None and markers:
+                best_dt = None
+                best_year = None
+                for m in markers:
+                    dt = _marker_to_date(m)
+                    if dt and (best_dt is None or dt > best_dt):
+                        best_dt = dt
+                        best_year = dt.year
+                last_year = best_year
+
+            part_buckets[_bucket_participation(pc)] = part_buckets.get(_bucket_participation(pc), 0) + 1
+            recency_buckets[_bucket_recency(last_year, now_year)] = recency_buckets.get(
+                _bucket_recency(last_year, now_year), 0
+            ) + 1
+
+        years_sorted = sorted(year_counts.items(), key=lambda t: t[0])
+
+    out = []
+    out.append("section;key;value")
+    out.append(f"summary;total;{total_i}")
+    out.append(f"summary;active;{active_i}")
+    out.append(f"summary;inactive;{not_active_i}")
+    if has_invite:
+        out.append(f"invite;invite_yes;{invite_yes}")
+        out.append(f"invite;invite_no;{invite_no}")
+
+    out.append("participation_bucket;bucket;count")
+    for k in ["0", "1–2", "3–5", "6–10", ">10"]:
+        out.append(f"participation_bucket;{k};{part_buckets.get(k,0)}")
+
+    out.append("recency_bucket;bucket;count")
+    for k in ["nie", "dieses Jahr", "letztes Jahr", "vor 2–3 Jahren", "vor 4–5 Jahren", "vor >5 Jahren"]:
+        out.append(f"recency_bucket;{k};{recency_buckets.get(k,0)}")
+
+    out.append("year;year;persons_with_participation")
+    for y, c in years_sorted:
+        out.append(f"year;{y};{c}")
+
+    filename = f"addresses_stats_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    return _csv_text_response(filename, "\n".join(out) + "\n")
 
 
 @bp.get("/addresses/import")

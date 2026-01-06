@@ -193,6 +193,13 @@
     </button>
 
     {% if current_drawn %}
+<a class="btn btn-outline-secondary"
+   href="{{ url_for('tournaments.tournament_round_tablesheets_docx_merged',
+                    tournament_id=t.id,
+                    round_no=round_no) }}">
+  Tischblätter (DOCX)
+</a>
+
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
         Ergebnisseingabe
