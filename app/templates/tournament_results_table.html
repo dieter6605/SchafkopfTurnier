@@ -65,6 +65,15 @@
       Gesamtwertung
     </a>
 
+    {# ✅ NEU: Tischblatt (nur dieser Tisch) als DOCX #}
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_round_tablesheet_docx_single',
+                        tournament_id=t.id,
+                        round_no=round_no,
+                        table_no=table_no) }}">
+      Tischblatt (DOCX)
+    </a>
+
     {% if next_table %}
       <a class="btn btn-outline-secondary"
          href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">
@@ -175,7 +184,6 @@
 {% block scripts %}
 <script>
 (function() {
-  // robust gegen "Undefined" im Kontext (kein bool-Filter in Jinja!)
   const IS_CLOSED = {{ (true if (is_closed|default(false)) else false)|tojson }};
 
   const form = document.getElementById("skResultsForm");

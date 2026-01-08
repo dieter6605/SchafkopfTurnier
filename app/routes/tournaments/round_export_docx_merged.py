@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import io
+import zipfile
 
 from flask import flash, redirect, send_file, url_for
 
@@ -93,6 +94,14 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
     return out
 
 
+def _fetch_single_table(con, tournament_id: int, round_no: int, table_no: int) -> TableInfo | None:
+    tables = _fetch_round_tables(con, tournament_id, round_no)
+    for t in tables:
+        if int(t.table_no) == int(table_no):
+            return t
+    return None
+
+
 def _safe_filename(s: str) -> str:
     s2 = "".join(ch for ch in (s or "") if ch.isalnum() or ch in (" ", "-", "_")).strip()
     s2 = s2.replace(" ", "_")
@@ -103,6 +112,10 @@ def _safe_filename(s: str) -> str:
 # DOCX builder (no template)
 # -----------------------------------------------------------------------------
 def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[TableInfo]) -> bytes:
+    """
+    Baut ein DOCX, das für jeden Tisch zwei Seiten enthält (Seite 1/2 und 2/2).
+    Diese Funktion enthält den kompletten Layout-/Tabellenbau.
+    """
     from pathlib import Path
 
     from flask import current_app
@@ -133,7 +146,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
     except Exception:
         pass
     try:
-        # ensure not using "linked previous" oddities; single section anyway
         sec.header.is_linked_to_previous = False
         sec.footer.is_linked_to_previous = False
     except Exception:
@@ -169,12 +181,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
 
     # -----------------------------------------------------------------------------
     # Dealer marker (Geber-Markierung): app/static/branding/favicon.png
-    # - Spiel 1: A, Spiel 2: B, Spiel 3: C, Spiel 4: D, dann wieder A ...
-    # - Marker wird oben in der jeweiligen Spielzeile in der "linken" Zelle des 2er-Paares gesetzt:
-    #   A -> Spalten 2+3 => col index 1
-    #   B -> Spalten 4+5 => col index 3
-    #   C -> Spalten 6+7 => col index 5
-    #   D -> Spalten 8+9 => col index 7
     # -----------------------------------------------------------------------------
     dealer_icon_path = Path(current_app.root_path) / "static" / "branding" / "favicon.png"
     DEALER_SEATS = ("A", "B", "C", "D")
@@ -184,12 +190,8 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         return DEALER_SEATS[(int(game_no) - 1) % 4]
 
     def _add_dealer_marker_to_cell(cell) -> None:
-        """
-        Adds favicon.png into the cell, aligned top/center, as Geber marker.
-        """
         if not dealer_icon_path.exists():
             return
-
         cell.text = ""
         if not cell.paragraphs:
             cell.add_paragraph()
@@ -201,9 +203,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             p.paragraph_format.line_spacing = 1.0
         except Exception:
             pass
-
         cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
-
         run = p.add_run()
         try:
             run.add_picture(str(dealer_icon_path), width=Mm(4))
@@ -247,7 +247,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         left_tw: int = 90,
         right_tw: int = 90,
     ) -> None:
-        # tblCellMar is on tblPr
         tblPr = tbl._tbl.tblPr
         mar = tblPr.find(qn("w:tblCellMar"))
         if mar is None:
@@ -268,12 +267,8 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         _set("right", right_tw)
 
     def _set_table_borders(tbl, *, outer_pt: float = 2.0, inner_pt: float = 1.0) -> None:
-        """
-        Set table-level borders via w:tblBorders.
-        Note: Cell-level borders (w:tcBorders) can override these in Word.
-        """
-        outer_sz = str(int(round(outer_pt * 8)))  # 2pt -> 16
-        inner_sz = str(int(round(inner_pt * 8)))  # 1pt -> 8
+        outer_sz = str(int(round(outer_pt * 8)))
+        inner_sz = str(int(round(inner_pt * 8)))
 
         tblPr = tbl._tbl.tblPr
         borders = tblPr.find(qn("w:tblBorders"))
@@ -299,10 +294,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         _border("insideV", inner_sz)
 
     def _set_cell_borders(cell, *, left=None, right=None, top=None, bottom=None) -> None:
-        """
-        Each side may be a dict: {"sz": int_eighths_pt, "val": "dashed"/"single", "color": "000000"}
-        sz is in eighths of a point (w:sz).
-        """
         tcPr = cell._tc.get_or_add_tcPr()
         tcBorders = tcPr.find(qn("w:tcBorders"))
         if tcBorders is None:
@@ -412,15 +403,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         email: str,
         include_email: bool,
     ) -> None:
-        """
-        Header cell content (page1):
-          - line1 centered: "Platz X" (bold) + " — Teiln.-Nr. N" (smaller, not bold)
-          - line2 centered: Name (auto-fit, wrap/ellipsis)
-          - line3 left: "E-Mail: " + email (smaller)
-        Header cell content (page2):
-          - same, but WITHOUT email line (include_email=False)
-        All vertically TOP aligned.
-        """
         _clear_cell(cell)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
@@ -428,7 +410,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         name_lines = _fit_text_lines(name, max_chars_per_line=28, max_lines=2)
         email_lines = _fit_text_lines(email, max_chars_per_line=26, max_lines=2)
 
-        # line 1
         p1 = cell.paragraphs[0]
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         try:
@@ -448,7 +429,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         r_tail.font.name = "Source Sans Pro"
         r_tail.font.size = Pt(10)
 
-        # line 2: Name
         p2 = cell.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         try:
@@ -464,7 +444,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         if not include_email:
             return
 
-        # line 3: E-Mail
         p3 = cell.add_paragraph()
         p3.alignment = WD_ALIGN_PARAGRAPH.LEFT
         try:
@@ -498,12 +477,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         row.cells[5].merge(row.cells[6])
         row.cells[7].merge(row.cells[8])
 
-    # -------- IMPORTANT FIX: separators only on non-merged rows --------
     def _apply_dashed_internal_separators(tbl, *, row_indices: list[int]) -> None:
-        """
-        Set vertical dashed 0.5pt separators only on selected rows.
-        Boundaries: (2|3), (4|5), (6|7), (8|9) => 0-based: 1|2, 3|4, 5|6, 7|8
-        """
         dashed = {"val": "dashed", "sz": 4, "color": "000000"}  # 0.5pt -> 4
         boundaries = [(1, 2), (3, 4), (5, 6), (7, 8)]
         for rix in row_indices:
@@ -516,10 +490,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                     pass
 
     def _enforce_outer_right_border(tbl, *, outer_pt: float = 2.0) -> None:
-        """
-        Force right outer border on last column cells, because tcBorders from
-        separators can override tblBorders in Word (especially bottom-right).
-        """
         outer_sz = int(round(outer_pt * 8))  # 2pt -> 16
         spec = {"val": "single", "sz": outer_sz, "color": "000000"}
         for row in tbl.rows:
@@ -537,16 +507,9 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 cell.width = col_widths[ci]
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
-        # minimal but not "sticky"
         _set_table_cell_margins(tbl, top_tw=30, bottom_tw=30, left_tw=45, right_tw=45)
-
-        # Borders: outer 2pt, inner 1pt
         _set_table_borders(tbl, outer_pt=2.0, inner_pt=1.0)
 
-        # Heights (EXACT)
-        # Requested:
-        # - page1 header row height: 28.0
-        # - page2 header row height: 16.0 and no email in header cells
         header_h_page1 = 28.0
         header_h_page2 = 16.0
 
@@ -565,7 +528,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 heights_mm[rix] = game_h
             heights_mm[22] = sum_h
             heights_mm[23] = bottom_h
-
             dashed_rows = list(range(2, 22)) + [22]
         else:
             heights_mm[0] = header_h_page2
@@ -573,9 +535,9 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             heights_mm[2] = plusminus_h
             for rix in range(3, 23):
                 heights_mm[rix] = game_h
+            heights_mm[rix + 1] = game_h  # no-op safety
             heights_mm[23] = sum_h
             heights_mm[24] = bottom_h
-
             dashed_rows = list(range(3, 23)) + [23]
 
         for rix, row in enumerate(tbl.rows):
@@ -597,7 +559,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                     for run in p.runs:
                         run.font.name = "Source Sans Pro"
 
-    # -------- row fillers --------
     def _fill_header_row(tbl, table: TableInfo, *, include_email: bool) -> None:
         _merge_pairs(tbl.rows[0])
         _shade_row(tbl.rows[0], fill=SHADE_HEADER)
@@ -674,19 +635,16 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             tbl.rows[rix].cells[0].vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             _set_cell_paragraph(tbl.rows[rix].cells[0], str(game_no), align=WD_ALIGN_PARAGRAPH.RIGHT, pt=12)
 
-            # Clear score cells
             for ci in range(1, 9):
                 c = tbl.rows[rix].cells[ci]
                 c.text = ""
                 c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
                 c.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
-            # Geber-Markierung (favicon.png) in der passenden Spalte
             seat = _dealer_seat_for_game(game_no)
             col = DEALER_COL_BY_SEAT[seat]
             _add_dealer_marker_to_cell(tbl.rows[rix].cells[col])
 
-        # Summe
         sumr = tbl.rows[sum_row]
         _shade_row(sumr, fill=SHADE_SUM)
         _set_cell_paragraph(sumr.cells[0], "Summe", align=WD_ALIGN_PARAGRAPH.RIGHT, pt=12, bold=True)
@@ -694,7 +652,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             sumr.cells[ci].text = ""
             sumr.cells[ci].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Bottom row
         bot = tbl.rows[bottom_row]
         _shade_row(bot, fill=SHADE_BOTTOM)
         _set_cell_paragraph(
@@ -711,7 +668,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     def _add_tablesheet_page(table: TableInfo, *, page_no: int) -> None:
-        # Title line with "Tisch X" bigger and "Seite X/Y" right-aligned
         p = doc.add_paragraph()
         try:
             p.paragraph_format.space_before = Pt(0)
@@ -720,7 +676,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         except Exception:
             pass
 
-        # right tab stop at text area width
         right_pos = sec.page_width - sec.left_margin - sec.right_margin
         try:
             ts = p.paragraph_format.tab_stops
@@ -739,7 +694,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
 
         r2 = p.add_run(f"Tisch {int(table.table_no)}")
         r2.font.name = "Source Sans Pro"
-        r2.font.size = Pt(24)  # 16 * 1.5
+        r2.font.size = Pt(24)
         r2.bold = True
 
         r3 = p.add_run(f"\tSeite {page_no}/2")
@@ -747,7 +702,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         r3.font.size = Pt(12)
         r3.bold = False
 
-        # Build table per page
         if page_no == 1:
             tbl = doc.add_table(rows=24, cols=9)
             _apply_table_layout(tbl, page_no=1)
@@ -778,7 +732,6 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 bottom_label_pt=12,
             )
 
-    # Build document: for each table => page1, break, page2, break (between tables)
     for idx, table in enumerate(tables):
         _add_tablesheet_page(table, page_no=1)
         doc.add_page_break()
@@ -791,8 +744,14 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
     return buf.getvalue()
 
 
+def _build_single_docx(*, tournament_title: str, round_no: int, table: TableInfo) -> bytes:
+    # Single = merged mit genau einem Tisch
+    return _build_merged_docx(tournament_title=tournament_title, round_no=round_no, tables=[table])
+
+
 # -----------------------------------------------------------------------------
-# Route: merged tablesheets DOCX (no template)
+# Route: merged tablesheets DOCX (all tables in one doc)
+# Endpoint used in template: tournaments.tournament_round_tablesheets_docx_merged
 # -----------------------------------------------------------------------------
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/tablesheets-docx-merged")
 def tournament_round_tablesheets_docx_merged(tournament_id: int, round_no: int):
@@ -823,5 +782,86 @@ def tournament_round_tablesheets_docx_merged(tournament_id: int, round_no: int):
         as_attachment=True,
         download_name=fn,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        max_age=0,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Route: single table tablesheet DOCX
+# Endpoint used in results template: tournaments.tournament_round_tablesheet_docx_single
+# -----------------------------------------------------------------------------
+@bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/tablesheets-docx/<int:table_no>")
+def tournament_round_tablesheet_docx_single(tournament_id: int, round_no: int, table_no: int):
+    try:
+        import docx  # noqa: F401
+    except ModuleNotFoundError:
+        flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
+        return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
+
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        table = _fetch_single_table(con, tournament_id, round_no, table_no)
+        if not table:
+            flash(f"Tisch {table_no} in Runde {round_no} nicht gefunden (oder nicht vollständig).", "error")
+            return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
+
+        title = str(t["title"] or "").strip() or "Turnier"
+
+    payload = _build_single_docx(tournament_title=title, round_no=int(round_no), table=table)
+    fn = f"{_safe_filename(title)}_R{int(round_no):02d}_T{int(table_no):02d}.docx"
+    return send_file(
+        io.BytesIO(payload),
+        as_attachment=True,
+        download_name=fn,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        max_age=0,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Route: all tables as individual DOCX files in a ZIP
+# Endpoint used in round template: tournaments.tournament_round_tablesheets_docx_zip
+# -----------------------------------------------------------------------------
+@bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/tablesheets-docx-zip")
+def tournament_round_tablesheets_docx_zip(tournament_id: int, round_no: int):
+    try:
+        import docx  # noqa: F401
+    except ModuleNotFoundError:
+        flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
+        return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
+
+    with db.connect() as con:
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+
+        tables = _fetch_round_tables(con, tournament_id, round_no)
+        if not tables:
+            flash(f"Keine vollständigen 4er-Tische für Runde {round_no} gefunden (Auslosung fehlt?).", "error")
+            return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
+
+        title = str(t["title"] or "").strip() or "Turnier"
+
+    safe = _safe_filename(title)
+    zip_name = f"{safe}_R{int(round_no):02d}_Tischblaetter.zip"
+
+    zbuf = io.BytesIO()
+    with zipfile.ZipFile(zbuf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for table in tables:
+            docx_payload = _build_single_docx(tournament_title=title, round_no=int(round_no), table=table)
+            docx_name = f"{safe}_R{int(round_no):02d}_T{int(table.table_no):02d}.docx"
+            zf.writestr(docx_name, docx_payload)
+
+    zbuf.seek(0)
+    return send_file(
+        zbuf,
+        as_attachment=True,
+        download_name=zip_name,
+        mimetype="application/zip",
         max_age=0,
     )

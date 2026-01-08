@@ -223,12 +223,10 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
     - ON DELETE CASCADE auf tournaments -> (participants, rounds, seats, scores)
     - UNIQUEs wie im Basisschema
     """
-    # Wenn die Tabellen nicht existieren, nichts zu migrieren.
     needed = ["tournament_participants", "tournament_rounds", "tournament_seats", "tournament_scores"]
     if not all(_has_table(con, t) for t in needed):
         return
 
-    # FK-Checks sollen beim Kopieren nicht blockieren, wir bauen danach sauber wieder auf.
     con.execute("PRAGMA foreign_keys=OFF;")
     con.execute("BEGIN;")
 
@@ -254,7 +252,6 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
             );
             """
         )
-        # Spalten möglichst robust kopieren (updated_at kann alt fehlen)
         if _has_column(con, "tournament_participants_old", "updated_at"):
             con.execute(
                 """
@@ -283,6 +280,11 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
                 round_no INTEGER NOT NULL,
+
+                -- ✅ NEU: deterministische Auslosungsmetadaten
+                draw_seed INTEGER,
+                draw_attempt INTEGER NOT NULL DEFAULT 0,
+
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
 
                 UNIQUE(tournament_id, round_no),
@@ -290,13 +292,35 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
             );
             """
         )
-        con.execute(
-            """
-            INSERT INTO tournament_rounds(id,tournament_id,round_no,created_at)
-            SELECT id,tournament_id,round_no,created_at
-            FROM tournament_rounds_old;
-            """
-        )
+
+        has_seed = _has_column(con, "tournament_rounds_old", "draw_seed")
+        has_attempt = _has_column(con, "tournament_rounds_old", "draw_attempt")
+
+        if has_seed and has_attempt:
+            con.execute(
+                """
+                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+                SELECT id,tournament_id,round_no,draw_seed,COALESCE(draw_attempt,0),created_at
+                FROM tournament_rounds_old;
+                """
+            )
+        elif has_seed and (not has_attempt):
+            con.execute(
+                """
+                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+                SELECT id,tournament_id,round_no,draw_seed,0,created_at
+                FROM tournament_rounds_old;
+                """
+            )
+        else:
+            con.execute(
+                """
+                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+                SELECT id,tournament_id,round_no,NULL,0,created_at
+                FROM tournament_rounds_old;
+                """
+            )
+
         con.execute("DROP TABLE tournament_rounds_old;")
         con.execute("CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);")
 
@@ -514,6 +538,11 @@ def init_db(db_path: Path) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tournament_id INTEGER NOT NULL,
                 round_no INTEGER NOT NULL,
+
+                -- ✅ NEU: deterministische Auslosungsmetadaten
+                draw_seed INTEGER,
+                draw_attempt INTEGER NOT NULL DEFAULT 0,
+
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE(tournament_id, round_no),
                 FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
@@ -567,7 +596,7 @@ def init_db(db_path: Path) -> None:
         # Migrationen (Bestands-DBs)
         # ---------------------------------------------------------------------
 
-        # 0) tournaments.closed_at (Altbestand)  ✅ NEU
+        # 0) tournaments.closed_at (Altbestand)
         _ensure_column(con, "tournaments", "closed_at", "TEXT")
 
         # 1) addresses.invite (Altbestand)
@@ -591,6 +620,16 @@ def init_db(db_path: Path) -> None:
         if sv < 2:
             _migrate_tournament_tables_v2(con)
             _set_schema_version(con, 2)
+
+        # 6) ✅ NEU: draw_seed/draw_attempt in tournament_rounds (Altbestand)
+        #    (für DBs, die bereits v2 haben, aber die Spalten noch nicht)
+        if sv < 3:
+            _ensure_column(con, "tournament_rounds", "draw_seed", "INTEGER")
+            _ensure_column(con, "tournament_rounds", "draw_attempt", "INTEGER NOT NULL DEFAULT 0")
+            # vorhandene NULLs glattziehen (SQLite-DEFAULT greift nicht rückwirkend)
+            if _has_table(con, "tournament_rounds") and _has_column(con, "tournament_rounds", "draw_attempt"):
+                con.execute("UPDATE tournament_rounds SET draw_attempt=0 WHERE draw_attempt IS NULL;")
+            _set_schema_version(con, 3)
 
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
