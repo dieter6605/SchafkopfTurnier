@@ -50,6 +50,16 @@
     margin-bottom: 0;
   }
 
+  /* Kleine Metazeile für Seed/Attempt */
+  .sk-drawmeta {
+    margin-top: .35rem;
+    font-size: .85rem;
+    color: rgba(0,0,0,.55);
+  }
+  .sk-drawmeta .badge {
+    font-weight: 700;
+  }
+
   @media print {
     .no-break { break-inside: avoid; page-break-inside: avoid; }
 
@@ -134,6 +144,13 @@
 {% set _last_rn = (last_round_no|default(0))|int %}
 {% set allow_draw_next = (current_drawn and (_rn == _last_rn)) %}
 
+{# --- ✅ NEU: draw_seed / draw_attempt robust aus Context --- #}
+{% set _draw_seed = (draw_seed if draw_seed is defined else None) %}
+{% set _draw_attempt = (draw_attempt if draw_attempt is defined else 0) %}
+{% set _draw_attempt_int = (_draw_attempt|default(0))|int %}
+{% set _draw_seed_str = ((_draw_seed|string)|trim) if _draw_seed is not none else '' %}
+{% set _has_drawmeta = (current_drawn and (_draw_attempt_int > 0 or (_draw_seed_str|length > 0))) %}
+
 {% if is_closed %}
   <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div>
@@ -147,9 +164,21 @@
   <div>
     <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }}</h3>
     <div class="text-muted small">{{ t.event_date }} · {{ t.start_time }}</div>
+
     <div class="text-muted small mt-1">
       Sitzplätze: A–D · Tische: fortlaufend
     </div>
+
+    {# ✅ NEU: Meta-Anzeige für Auslosung # / Seed #}
+    {% if _has_drawmeta %}
+      <div class="sk-drawmeta">
+        <span class="badge text-bg-secondary">Auslosung #{{ _draw_attempt_int }}</span>
+        {% if _draw_seed_str|length > 0 %}
+          <span class="ms-2">Seed: <span class="sk-mono">{{ _draw_seed_str }}</span></span>
+        {% endif %}
+      </div>
+    {% endif %}
+
     <div class="sk-kbd mt-1">
       Tastatur:
       <span class="fw-semibold">T</span> = Turnier ·
@@ -193,12 +222,19 @@
     </button>
 
     {% if current_drawn %}
-<a class="btn btn-outline-secondary"
-   href="{{ url_for('tournaments.tournament_round_tablesheets_docx_merged',
-                    tournament_id=t.id,
-                    round_no=round_no) }}">
-  Tischblätter (DOCX)
-</a>
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('tournaments.tournament_round_tablesheets_docx_merged',
+                          tournament_id=t.id,
+                          round_no=round_no) }}">
+        Tischblätter (DOCX)
+      </a>
+
+      <a class="btn btn-outline-primary"
+         href="{{ url_for('tournaments.tournament_round_tablesheets_docx_zip',
+                          tournament_id=t.id,
+                          round_no=round_no) }}">
+        Tischblätter (ZIP)
+      </a>
 
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
@@ -216,6 +252,12 @@
       Gesamtwertung
     </a>
 
+    {# ✅ Tooltiptext robust + aussagekräftig #}
+    {% set _redraw_title = (
+      "Neu auslosen erhöht die Auslosungsnummer (Attempt) und erzeugt einen neuen Seed.\n"
+      "Damit entsteht eine andere, aber weiterhin deterministische Auslosung."
+    ) %}
+
     <form method="post"
           id="formDraw"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
@@ -223,10 +265,16 @@
           {% if not is_closed %}
           onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
           {% endif %}>
-      <button class="btn btn-warning" id="btnRedraw" type="submit"
+      <button class="btn btn-warning"
+              id="btnRedraw"
+              type="submit"
+              title="{{ _redraw_title }}"
               {% if is_closed %}disabled aria-disabled="true"{% endif %}>
         {% if current_drawn %}
           Runde {{ round_no }} neu auslosen
+          {% if _draw_attempt_int > 0 %}
+            (Auslosung #{{ _draw_attempt_int + 1 }})
+          {% endif %}
         {% else %}
           Runde {{ round_no }} auslosen
         {% endif %}
@@ -488,6 +536,10 @@
   // Robust: nie Undefined in JSON serialisieren
   window.__SKT_ALLOW_DRAW_NEXT__ = {{ ((allow_draw_next|default(false)) and (not (is_closed|default(false))))|tojson }};
   window.__SKT_TOURNAMENT_CLOSED__ = {{ (is_closed|default(false))|tojson }};
+
+  // ✅ NEU: Draw-Metadaten (immer definierter Wert: Zahl oder leerer String)
+  window.__SKT_DRAW_ATTEMPT__ = {{ (_draw_attempt_int|default(0))|tojson }};
+  window.__SKT_DRAW_SEED__ = {{ (_draw_seed_str|default(''))|tojson }};
 </script>
 <script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 {% endblock %}

@@ -7,7 +7,12 @@ from flask import flash, redirect, render_template, url_for
 
 from ... import db
 from . import bp
-from .draw import _history_pairs, _improve_tables
+from .draw import (
+    _history_pairs,
+    _improve_tables,
+    _seed_for_tournament_round,
+    _fisher_yates_shuffle,
+)
 from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso
 
 
@@ -51,7 +56,11 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                     )
                     if last_round_no > 0:
                         return redirect(
-                            url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no)
+                            url_for(
+                                "tournaments.tournament_round_view",
+                                tournament_id=tournament_id,
+                                round_no=last_round_no,
+                            )
                         )
                     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
@@ -62,7 +71,11 @@ def tournament_round_draw(tournament_id: int, round_no: int):
                         "error",
                     )
                     return redirect(
-                        url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=last_round_no + 1)
+                        url_for(
+                            "tournaments.tournament_round_view",
+                            tournament_id=tournament_id,
+                            round_no=last_round_no + 1,
+                        )
                     )
 
         rows = db.q(
@@ -82,23 +95,57 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         if (n % 4) != 0:
-            flash(f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. Bitte erst auf 4er auffüllen, dann auslosen.", "error")
+            flash(
+                f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. "
+                "Bitte erst auf 4er auffüllen, dann auslosen.",
+                "error",
+            )
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         tp_ids = [tp["id"] for tp in tps]
         hist_pairs = _history_pairs(con, tournament_id, round_no)
 
+        # ✅ Attempt bestimmen, BEVOR wir löschen (damit "Neu auslosen" hochzählt)
+        prev = db.one(
+            con,
+            "SELECT draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
+            (tournament_id, round_no),
+        )
+        prev_attempt = int(prev["draw_attempt"]) if (prev and prev["draw_attempt"] is not None) else 0
+        attempt = prev_attempt + 1 if prev_attempt >= 0 else 1
+        if attempt < 1:
+            attempt = 1
+
+        # ✅ Seed jetzt abhängig von Attempt (damit Neu-Auslosung neue Ergebnisse erzeugt)
+        seed = _seed_for_tournament_round(tournament_id, round_no, attempt)
+        rng = random.Random(seed)
+
+        # Alte Daten dieser Runde entfernen
         con.execute("DELETE FROM tournament_scores WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
         con.execute("DELETE FROM tournament_seats  WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
         con.execute("DELETE FROM tournament_rounds WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
-        con.execute("INSERT INTO tournament_rounds(tournament_id, round_no) VALUES (?,?)", (tournament_id, round_no))
 
-        tables = _improve_tables(tps, tp_ids, hist_pairs)
+        # Runde neu anlegen inkl. Metadaten
+        con.execute(
+            "INSERT INTO tournament_rounds(tournament_id, round_no, draw_seed, draw_attempt) VALUES (?,?,?,?)",
+            (tournament_id, round_no, int(seed), int(attempt)),
+        )
 
+        # ✅ Auslosung (deterministisch je T+R+Attempt)
+        tables = _improve_tables(
+            tps,
+            tp_ids,
+            hist_pairs,
+            tournament_id=tournament_id,
+            round_no=round_no,
+            attempt=attempt,
+        )
+
+        # ✅ Sitzverteilung am Tisch ebenfalls deterministisch (Fisher-Yates mit demselben RNG)
         seats = ["A", "B", "C", "D"]
         for table_no, ids in enumerate(tables, start=1):
             ids2 = ids[:]
-            random.shuffle(ids2)
+            _fisher_yates_shuffle(ids2, rng)
             for seat, tp_id in zip(seats, ids2):
                 con.execute(
                     """
@@ -173,6 +220,15 @@ def tournament_round_view(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
+        # ✅ NEU: draw_seed / draw_attempt der Runde (für Anzeige/JS)
+        tr = db.one(
+            con,
+            "SELECT draw_seed, draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
+            (tournament_id, round_no),
+        )
+        draw_seed = int(tr["draw_seed"]) if (tr and tr["draw_seed"] is not None) else None
+        draw_attempt = int(tr["draw_attempt"]) if (tr and tr["draw_attempt"] is not None) else 0
+
         # ✅ NEU: Welche Tische sind "fertig" (>= 4 Scores in tournament_scores)?
         done_rows = db.q(
             con,
@@ -231,6 +287,9 @@ def tournament_round_view(tournament_id: int, round_no: int):
         last_round_no=last_round_no,
         prev_round_no=prev_round_no,
         next_round_no=next_round_no,
-        done_tables=done_tables,  # ✅ NEU: fürs Accordion (fertig/ grün/ eingeklappt)
+        done_tables=done_tables,
         now=_now_local_iso(),
+        # ✅ NEU: damit Template/JS nie Undefined bekommt
+        draw_seed=draw_seed,
+        draw_attempt=draw_attempt,
     )
