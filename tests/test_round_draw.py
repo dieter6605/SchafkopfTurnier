@@ -9,6 +9,7 @@ from lxml import html
 
 from app import db
 from app.web import create_app
+from tests.form_client import form_client
 
 
 class RoundDrawTests(unittest.TestCase):
@@ -20,7 +21,7 @@ class RoundDrawTests(unittest.TestCase):
         root = Path(temp.name)
         self.app = create_app(db_path=root / "test.sqlite3", backup_dir=root / "backups")
         self.app.testing = True
-        self.client = self.app.test_client()
+        self.client = form_client(self.app)
         self.client.post("/tournaments/new", data={
             "title": "Rundenprobe", "event_date": "2026-11-12", "start_time": "18:00",
         })
@@ -102,7 +103,7 @@ class RoundDrawTests(unittest.TestCase):
         path = "/tournaments/1/rounds/2"
 
         def request_draw():
-            client = self.app.test_client()
+            client = form_client(self.app)
             barrier.wait(timeout=5)
             return client.post(path + "/draw", data={"expected_round_id": "0", "draw_mode": "seeding"})
 

@@ -13,6 +13,7 @@
     Das Ersetzen ist wegen vorhandener Turnieranmeldungen gesperrt. Du kannst eine CSV-Datei prüfen.
   </p>
   <form method="post" id="csvImport" action="{{ url_for('addresses.addresses_import_post') }}" enctype="multipart/form-data">
+    {{ csrf_field() }}
     <label for="csvFile" class="form-label">CSV-Datei auswählen</label>
     <input id="csvFile" class="form-control" type="file" name="file" required accept=".csv,text/csv" aria-describedby="csvHelp">
     <p class="form-text" id="csvHelp">UTF-8 mit Semikolon. Pflichtspalten sind <code>nachname</code>, <code>vorname</code> und <code>wohnort</code>.</p>

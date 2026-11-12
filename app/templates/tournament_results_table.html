@@ -115,6 +115,7 @@
     <form method="post"
           id="skResultsForm"
           action="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=table_no) }}">
+      {{ csrf_field() }}
       <input type="hidden" name="expected_round_id" value="{{ round_id }}">
       <input type="hidden" name="expected_score_state" value="{{ score_state }}">
       <div class="table-responsive">

@@ -72,6 +72,7 @@
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            {{ csrf_field() }}
             <input type="hidden" name="q" value="{{ q or '' }}">
             <button class="btn btn-sm btn-outline-secondary"
                     title="Prüft auf Lücken (Anzeige kommt als nächstes)"
@@ -82,6 +83,7 @@
 
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_check_numbers', tournament_id=t.id) }}">
+            {{ csrf_field() }}
             <input type="hidden" name="q" value="{{ q or '' }}">
             <input type="hidden" name="renumber" value="1">
             <button class="btn btn-sm btn-outline-danger"
@@ -93,7 +95,10 @@
 
           <form method="post"
                 action="{{ url_for('tournaments.tournament_participants_renumber_from', tournament_id=t.id) }}"
-                class="d-flex gap-2 align-items-center">
+                class="d-flex gap-2 align-items-center"
+                data-confirm="Ab dieser Nummer neu durchnummerieren?"
+                onsubmit="return window.confirm(this.dataset.confirm)">
+            {{ csrf_field() }}
             <input type="hidden" name="q" value="{{ q or '' }}">
             <span class="text-muted small">Ab Nr.</span>
 
@@ -109,7 +114,6 @@
 
             <button class="btn btn-sm btn-outline-warning"
                     title="Verdichtet ab dieser Nummer, Nummern darunter bleiben unverändert"
-                    onclick="return confirm({{ ('Ab dieser Nummer neu durchnummerieren?')|tojson }});"
                     {% if is_closed %}disabled{% endif %}>
               Renummerieren ab Nr.
             </button>
@@ -182,9 +186,6 @@
           {% endif %}
 
           <tr class="sk-hit{% if hit_disabled %} sk-hit-disabled{% endif %}"
-              {% if not hit_disabled %}
-                data-add-url="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}"
-              {% endif %}
               {% if hit_disabled %}
                 data-disabled-reason="{{ hit_reason }}"
               {% endif %}
@@ -197,6 +198,7 @@
             <td class="text-end">
               <form method="post"
                     action="{{ url_for('tournaments.tournament_participant_add', tournament_id=t.id, address_id=h.id, q=q or '') }}">
+                {{ csrf_field() }}
                 <button class="btn btn-sm btn-outline-primary"
                         {% if cap_ok is defined and not cap_ok %}disabled{% endif %}
                         {% if is_closed %}disabled{% endif %}>
@@ -227,6 +229,7 @@
     <form method="post"
           action="{{ url_for('tournaments.tournament_participant_quickadd', tournament_id=t.id) }}"
           class="row g-2">
+      {{ csrf_field() }}
       <input type="hidden" name="q" value="{{ q or '' }}">
 
       <div class="col-md-3">
@@ -418,6 +421,7 @@
                         action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}"
                         data-confirm="Teilnehmer Nr. {{ p.player_no }} entfernen? Die Nummer bleibt frei."
                         onsubmit="return window.confirm(this.dataset.confirm)">
+                    {{ csrf_field() }}
                     <input type="hidden" name="q" value="{{ q or '' }}">
                     <input type="hidden" name="expected_address_id" value="{{ p.address_id }}">
                     <button class="btn btn-sm btn-outline-danger" type="submit"
@@ -637,6 +641,7 @@
 
         <form id="sktSwapForm" method="post"
               action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}">
+          {{ csrf_field() }}
           <input type="hidden" name="q" value="{{ q or '' }}">
           <input type="hidden" name="tp_id" id="sktSwapTpId" value="">
           <input type="hidden" name="expected_address_id" id="sktExpectedAddress">

@@ -8,6 +8,7 @@ from lxml import html
 from app import db
 from app.services import addressbook_io
 from app.web import create_app
+from tests.form_client import form_client
 
 
 SAMPLE = (Path(__file__).parent / "fixtures" / "Adressprobe.csv").read_bytes()
@@ -21,7 +22,7 @@ class AddressbookTests(unittest.TestCase):
         base = Path(temp.name)
         app = create_app(db_path=base / "test.sqlite3", backup_dir=base / "backups")
         app.testing = True
-        self.client = app.test_client()
+        self.client = form_client(app)
         self.con = db.connect()
         self.addCleanup(self.con.close)
         self.con.execute("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort) VALUES(1,'Alt','Ada','Ort')")

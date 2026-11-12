@@ -400,9 +400,14 @@
       const resp = await fetch(url, {
         method: "POST",
         body: fd,
-        headers: { "Accept": "application/json" }
+        headers: { "Accept": "application/json", "X-CSRF-Token": {{ csrf_token()|tojson }} }
       });
 
+      if (resp.status === 403) {
+        const problem = await resp.json();
+        window.SKT.toast(problem.error);
+        return;
+      }
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
       if (!data || data.ok !== true) throw new Error("bad json");

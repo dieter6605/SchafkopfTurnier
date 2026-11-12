@@ -9,6 +9,7 @@ from lxml import html
 
 from app import db
 from app.web import create_app
+from tests.form_client import form_client
 
 
 class ResultConflictTests(unittest.TestCase):
@@ -21,8 +22,8 @@ class ResultConflictTests(unittest.TestCase):
         base = Path(temp.name)
         self.app = create_app(db_path=base / "test.sqlite3", backup_dir=base / "backups")
         self.app.testing = True
-        self.first = self.app.test_client()
-        self.second = self.app.test_client()
+        self.first = form_client(self.app)
+        self.second = form_client(self.app)
         self.first.post("/tournaments/new", data={
             "title": "Tischprobe", "event_date": "2026-11-12", "start_time": "18:00",
         })
@@ -81,7 +82,8 @@ class ResultConflictTests(unittest.TestCase):
         self.assertEqual(self.first.post(self.first_table, data=initial).status_code, 302)
         old = self.form(self.second.get(self.first_table))
         form_b = self.form(self.second.get(self.second_table))
-        self.first.post(self.first_table, data=self.values(old, soli=(1, 0, 0, 0)))
+        correction = self.form(self.first.get(self.first_table))
+        self.first.post(self.first_table, data=self.values(correction, soli=(1, 0, 0, 0)))
         self.assertEqual(self.second.post(self.first_table, data=self.values(old)).status_code, 409)
         self.assertEqual(self.second.post(self.second_table, data=self.values(form_b)).status_code, 302)
         self.assertEqual(self.stored(), [(30, 1), (-10, 0), (-10, 0), (-10, 0)])
@@ -107,7 +109,7 @@ class ResultConflictTests(unittest.TestCase):
         corrections = [((60, -20, -20, -20), (1, 2, 3, 4)), ((-15, 5, 5, 5), (4, 3, 2, 1))]
 
         def save(points, soli):
-            client = self.app.test_client()
+            client = form_client(self.app)
             form = self.form(client.get(self.first_table))
             barrier.wait(timeout=5)
             return client.post(self.first_table, data=self.values(form, points, soli)).status_code

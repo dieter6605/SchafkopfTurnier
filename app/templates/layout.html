@@ -1,6 +1,9 @@
 {% macro static_asset(filename) -%}
   {{ filename if pdf_mode|default(false) else url_for('static', filename=filename) }}
 {%- endmacro %}
+{% macro csrf_field() -%}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{%- endmacro %}
 <!-- app/templates/layout.html -->
 <!doctype html>
 <html lang="de">

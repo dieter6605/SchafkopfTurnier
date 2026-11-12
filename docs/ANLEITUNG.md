@@ -159,6 +159,8 @@ Turnierübersicht
 - Bei Problemen: Seite neu laden – Daten bleiben erhalten
 - Zwischendurch Backups erstellen
 
+Beim Speichern prüft die Anwendung, ob das Formular zur aktuellen Browsersitzung gehört. Erscheint beim Speichern die Meldung zur Sitzung, die eingegebenen Werte kurz notieren, die Seite neu laden und die Eingabe erneut absenden.
+
 ## 12. Ende des Turniers
 - Gesamtwertung anzeigen
 - Gesamtwertung drucken

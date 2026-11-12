@@ -143,6 +143,7 @@
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_import') }}">CSV-Import</a>
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_export') }}">CSV-Export</a>
           <form method="post" action="{{ url_for('home.backup') }}">
+            {{ csrf_field() }}
             <button class="btn btn-sm btn-outline-primary" {% if not backup_dir %}disabled{% endif %}>
               Backup
             </button>
@@ -291,6 +292,7 @@
           <div class="border rounded p-3">
             <div class="fw-semibold mb-2">Backup hochladen (nur speichern)</div>
             <form method="post" action="{{ url_for('home.upload_only') }}" enctype="multipart/form-data">
+              {{ csrf_field() }}
               <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
               <button class="btn btn-sm btn-outline-secondary mt-2" {% if not backup_dir %}disabled{% endif %}>
                 Hochladen
@@ -303,6 +305,7 @@
           <div class="border rounded p-3">
             <div class="fw-semibold mb-2">Upload + sofort wiederherstellen</div>
             <form method="post" action="{{ url_for('home.restore_upload') }}" enctype="multipart/form-data">
+              {{ csrf_field() }}
               <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
               <button class="btn btn-sm btn-outline-danger mt-2"
                       {% if not backup_dir %}disabled{% endif %}
@@ -341,6 +344,7 @@
                     </a>
 
                     <form method="post" action="{{ url_for('home.restore', filename=b.name) }}">
+                      {{ csrf_field() }}
                       <button class="btn btn-sm btn-outline-warning"
                               onclick="return confirm('Den aktuellen Datenstand durch diese Sicherung ersetzen?');">
                         Restore
@@ -348,6 +352,7 @@
                     </form>
 
                     <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}">
+                      {{ csrf_field() }}
                       <button class="btn btn-sm btn-outline-danger"
                               onclick="return confirm('Backup wirklich löschen?');">
                         Löschen

@@ -10,6 +10,7 @@ from lxml import html
 
 from app import db
 from app.web import create_app
+from tests.form_client import form_client
 
 
 class ParticipantIntegrityTests(unittest.TestCase):
@@ -24,7 +25,7 @@ class ParticipantIntegrityTests(unittest.TestCase):
         app = create_app(db_path=path / "test.sqlite3", backup_dir=path / "backups")
         app.testing = True
         self.app = app
-        self.client = app.test_client()
+        self.client = form_client(app)
         self.client.post("/tournaments/new", data={
             "title": "Probe", "event_date": "2026-11-12", "start_time": "19:00", "marker": "261112TEST",
         })
@@ -103,11 +104,12 @@ class ParticipantIntegrityTests(unittest.TestCase):
 
     def test_simultaneous_score_and_exchange_keep_the_right_players(self):
         self.draw()
+        # Die Tischmaske vor dem Tausch in der Sitzung des erfassenden Spielers öffnen.
         values = self.form()
         start = Barrier(2)
 
         def send(path, data):
-            client = self.app.test_client()
+            client = self.client if path == self.table else form_client(self.app)
             start.wait(timeout=5)
             return client.post(path, data=data).status_code
 

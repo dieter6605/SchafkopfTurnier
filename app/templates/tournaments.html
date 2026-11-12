@@ -121,12 +121,11 @@
                     <form method="post"
                           id="delForm{{ t.id }}"
                           action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
-                          class="d-inline">
-                      <button class="btn btn-sm btn-outline-danger"
-                              type="submit"
-                              onclick="return confirm({{
-                                (('Turnier „' ~ (t.title or '') ~ '“ wirklich löschen?\n\nHinweis: Alle Teilnehmer dieses Turniers werden ebenfalls gelöscht.')) | tojson
-                              }});">
+                          class="d-inline"
+                          data-confirm="Turnier „{{ t.title or '' }}“ wirklich löschen?&#10;&#10;Alle Teilnehmer dieses Turniers werden ebenfalls gelöscht."
+                          onsubmit="return window.confirm(this.dataset.confirm)">
+                      {{ csrf_field() }}
+                      <button class="btn btn-sm btn-outline-danger" type="submit">
                         Löschen
                       </button>
                     </form>
@@ -204,7 +203,6 @@
     const form = document.getElementById(formId);
     if (!form) return;
 
-    // Klick auf den Button triggert confirm() aus onclick
     const btn = form.querySelector("button[type='submit']");
     if (btn) btn.click();
   }

@@ -22,6 +22,7 @@
     <form method="post"
           action="{% if mode=='new' %}{{ url_for('addresses.address_create') }}{% else %}{{ url_for('addresses.address_update', address_id=a.id) }}{% endif %}"
           class="row g-2">
+      {{ csrf_field() }}
 
       <!-- Rücksprung beibehalten -->
       <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
@@ -140,6 +141,7 @@
         <form method="post"
               action="{{ url_for('addresses.address_delete', address_id=a.id) }}"
               class="d-inline">
+          {{ csrf_field() }}
           <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
           <button class="btn btn-outline-danger"
                   type="submit"
@@ -152,6 +154,7 @@
         <form method="post"
               action="{{ url_for('addresses.address_deactivate', address_id=a.id) }}"
               class="d-inline">
+          {{ csrf_field() }}
           <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
           <button class="btn btn-outline-secondary"
                   type="submit"
@@ -163,6 +166,7 @@
         <form method="post"
               action="{{ url_for('addresses.address_reactivate', address_id=a.id) }}"
               class="d-inline">
+          {{ csrf_field() }}
           <input type="hidden" name="next" value="{{ next or url_for('addresses.addresses_list') }}">
           <button class="btn btn-outline-success" type="submit">
             Reaktivieren

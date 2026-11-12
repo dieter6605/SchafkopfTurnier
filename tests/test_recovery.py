@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 
 from app import db
 from app.web import create_app
+from tests.form_client import form_client
 
 
 class RecoveryTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class RecoveryTests(unittest.TestCase):
         self.backups = self.directory / "backups"
         self.app = create_app(db_path=self.live, backup_dir=self.backups)
         self.app.testing = True
-        self.client = self.app.test_client()
+        self.client = form_client(self.app)
 
     def test_fresh_database_records_participants_and_restarts(self):
         self.client.post("/tournaments/new", data={

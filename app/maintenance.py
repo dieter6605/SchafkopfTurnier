@@ -1,4 +1,4 @@
-"""Sitzungsschlüssel und Formularschutz für die lokalen Wartungsfunktionen."""
+"""Sitzungsschlüssel und Formularschutz für die Turnierverwaltung."""
 from ipaddress import ip_address
 from pathlib import Path
 import secrets
@@ -56,18 +56,22 @@ def maintenance_enabled() -> bool:
     return host == "localhost" or _is_loopback(host)
 
 
-def maintenance_csrf_token() -> str:
-    if "maintenance_csrf" not in session:
-        session["maintenance_csrf"] = secrets.token_urlsafe(32)
-    return session["maintenance_csrf"]
+def csrf_token() -> str:
+    if "csrf_token" not in session:
+        # Bereits geöffnete Wartungsformulare bleiben beim Update gültig.
+        session["csrf_token"] = session.pop("maintenance_csrf", None) or secrets.token_urlsafe(32)
+    return session["csrf_token"]
 
 
-def guard_maintenance_forms():
-    if request.endpoint not in MAINTENANCE_ENDPOINTS or request.method != "POST":
+def guard_write_requests():
+    if request.endpoint is None or request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
         return
-    if not maintenance_enabled():
+    if request.endpoint in MAINTENANCE_ENDPOINTS and not maintenance_enabled():
         abort(403, description="Diese Aktion ist nur im lokalen Wartungsmodus freigegeben.")
-    expected = session.get("maintenance_csrf")
-    supplied = request.form.get("csrf_token", "")
-    if not expected or not supplied.isascii() or not secrets.compare_digest(expected, supplied):
-        abort(403, description="Bitte die Turnierseite neu laden und das Wartungsformular erneut öffnen.")
+
+    expected = session.get("csrf_token") or session.get("maintenance_csrf")
+    if expected:
+        submitted = request.form.get("csrf_token", request.headers.get("X-CSRF-Token", ""))
+        if submitted.isascii() and secrets.compare_digest(expected, submitted):
+            return
+    abort(403, description="Das Formular gehört nicht zur aktuellen Sitzung. Bitte die Seite neu laden und erneut versuchen.")

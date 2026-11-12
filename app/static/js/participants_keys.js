@@ -91,9 +91,7 @@
     if (!row) return false;
     if (row.classList.contains("sk-hit-disabled")) return true;
 
-    // Fallback: wenn data-add-url fehlt, ist Übernehmen nicht möglich
-    const url = row.dataset ? row.dataset.addUrl : "";
-    return !url;
+    return !row.querySelector("form button:enabled");
   }
 
   function disabledReasonMessage(row) {
@@ -119,14 +117,7 @@
       return;
     }
 
-    const url = row.dataset.addUrl;
-    if (!url) return;
-
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = url;
-    document.body.appendChild(form);
-    form.submit();
+    row.querySelector("form button").click();
   }
 
   function wireMouseSelection() {
@@ -187,7 +178,7 @@
 
       ev.preventDefault();
       const form = el.form;
-      if (form) form.submit();
+      if (form) form.requestSubmit();
       return true;
     }
     return false;

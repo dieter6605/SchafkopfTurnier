@@ -17,7 +17,7 @@ from flask import (
 from werkzeug.routing import BuildError
 
 from . import db
-from .maintenance import guard_maintenance_forms, local_session_key, maintenance_csrf_token, maintenance_enabled
+from .maintenance import csrf_token, guard_write_requests, local_session_key, maintenance_enabled
 from .routes.home import bp as home_bp
 from .routes.addresses import bp as addresses_bp
 from .routes.tournaments import bp as tournaments_bp
@@ -30,8 +30,8 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app.config["SKT_DEV_MODE"] = (os.environ.get("SKT_DEV_MODE", "").strip() == "1")
     app.secret_key = local_session_key(Path(db_path).parent)
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.before_request(guard_maintenance_forms)
-    app.add_template_global(maintenance_csrf_token)
+    app.before_request(guard_write_requests)
+    app.add_template_global(csrf_token)
 
     db.init_db(db_path)
 

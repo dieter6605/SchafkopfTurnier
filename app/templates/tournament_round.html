@@ -298,6 +298,7 @@
           class="d-inline"
           data-confirm="{% if current_drawn %}Sitzplan für Runde {{ round_no }} neu auslosen?{% else %}Runde {{ round_no }} auslosen?{% endif %}"
           onsubmit="return window.confirm(this.dataset.confirm)">
+      {{ csrf_field() }}
       <input type="hidden" name="expected_round_id" value="{{ round_id }}">
       <input type="hidden" name="draw_mode" id="drawModeHiddenDraw" value="{{ _default_draw_mode }}">
       <button class="btn btn-warning"
@@ -360,6 +361,7 @@
             class="d-inline"
             data-confirm="Runde {{ round_no + 1 }} auslosen?"
             onsubmit="return window.confirm(this.dataset.confirm)">
+        {{ csrf_field() }}
         <input type="hidden" name="expected_round_id" value="0">
         <input type="hidden" name="draw_mode" id="drawModeHiddenDrawNext" value="{{ _default_draw_mode }}">
         <button class="btn btn-outline-warning" id="btnDrawNext" type="submit"
@@ -543,6 +545,7 @@
             class="d-inline"
             data-confirm="Runde {{ round_no }} auslosen?"
             onsubmit="return window.confirm(this.dataset.confirm)">
+        {{ csrf_field() }}
         <input type="hidden" name="expected_round_id" value="{{ round_id }}">
         <input type="hidden" name="draw_mode" id="drawModeHiddenDraw2" value="{{ _default_draw_mode }}">
         <button class="btn btn-warning" type="submit"
