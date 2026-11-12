@@ -14,6 +14,8 @@ Kurzanleitung für den Turniertag
 - Startseite → „DB-Backup jetzt erstellen“
 - Meldung „Backup erstellt“ abwarten
 
+Beim ersten Start mit einer älteren Datenbank prüft die Anwendung die Sitzplätze und Ergebnisse. Fehlt zu einem Ergebnis der passende Sitzplatz oder zu einem Sitzplatz die Anmeldung oder Runde, bricht die Umstellung ab. Die Meldung nennt Turnier, Runde, Tisch und Teilnehmer-ID. Diese Angaben mit dem ursprünglichen Sitzplan vergleichen. Die Prüfung gilt auch bei der Wiederherstellung einer älteren Sicherung.
+
 **Adressen pflegen**
 
 - Tischblätter, Wertungen und Turnierexporte verwenden Namen und Wohnort aus dem aktuellen Adressbuch. Eine Korrektur gilt auch für Nachdrucke abgeschlossener Turniere.

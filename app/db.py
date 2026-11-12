@@ -4,13 +4,58 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from datetime import datetime
+from itertools import groupby
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
 from uuid import uuid4
 
 _DB_PATH: Optional[Path] = None
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+
+
+_CREATE_SEATS = """
+CREATE TABLE IF NOT EXISTS tournament_seats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_no INTEGER NOT NULL,
+    table_no INTEGER NOT NULL,
+    seat TEXT NOT NULL,
+    tp_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    UNIQUE(tournament_id, round_no, table_no, seat),
+    UNIQUE(tournament_id, round_no, tp_id),
+    UNIQUE(tournament_id, round_no, table_no, tp_id),
+
+    FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    FOREIGN KEY(tournament_id, tp_id) REFERENCES tournament_participants(tournament_id, id) ON DELETE CASCADE,
+    FOREIGN KEY(tournament_id, round_no) REFERENCES tournament_rounds(tournament_id, round_no)
+)
+"""
+
+_CREATE_SCORES = """
+CREATE TABLE IF NOT EXISTS tournament_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournament_id INTEGER NOT NULL,
+    round_no INTEGER NOT NULL,
+    table_no INTEGER NOT NULL,
+    tp_id INTEGER NOT NULL,
+
+    points INTEGER NOT NULL DEFAULT 0,
+    soli   INTEGER NOT NULL DEFAULT 0,
+
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    UNIQUE(tournament_id, round_no, tp_id),
+
+    FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+    FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE,
+    FOREIGN KEY(tournament_id, round_no, table_no, tp_id)
+        REFERENCES tournament_seats(tournament_id, round_no, table_no, tp_id)
+)
+"""
 
 
 # -----------------------------------------------------------------------------
@@ -57,6 +102,14 @@ def _has_column(con: sqlite3.Connection, table: str, column: str) -> bool:
         return False
     rows = con.execute(f"PRAGMA table_info({table});").fetchall()
     return any(r["name"] == column for r in rows)
+
+
+def _foreign_keys(con: sqlite3.Connection, table: str) -> set[tuple]:
+    rows = con.execute("""
+        SELECT id, "table", "from", "to", on_update, on_delete
+        FROM pragma_foreign_key_list(?) ORDER BY id, seq
+    """, (table,))
+    return {tuple(row[1:] for row in columns) for _, columns in groupby(rows, key=lambda row: row[0])}
 
 
 def _ensure_column(con: sqlite3.Connection, table: str, column: str, coldef: str) -> None:
@@ -213,23 +266,10 @@ def _migrate_years_to_markers_once(con: sqlite3.Connection) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Migration v2: Tournament-Tabellen mit FKs/UNIQUEs für Bestands-DBs absichern
+# Migration v2: Anmeldungen und Runden mit FKs/UNIQUEs absichern
 # -----------------------------------------------------------------------------
 def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
-    """
-    SQLite kann bestehende Tabellen nicht sauber 'ALTER TABLE ... ADD CONSTRAINT'.
-    Daher: Rebuild der Tournament-Tabellen (nur wenn sie existieren).
-    Ziel:
-    - ON DELETE CASCADE auf tournaments -> (participants, rounds, seats, scores)
-    - UNIQUEs wie im Basisschema
-    """
-    needed = ["tournament_participants", "tournament_rounds", "tournament_seats", "tournament_scores"]
-    if not all(_has_table(con, t) for t in needed):
-        return
-
-    # Auch gelöschte IDs bleiben nach dem Tabellenumbau verbraucht.
-    sequences = dict(con.execute("SELECT name, seq FROM sqlite_sequence"))
-
+    """Sitzplätze und Ergebnisse werden beim Umstieg auf v7 gemeinsam umgebaut."""
     # --- tournament_participants ---
     con.execute("ALTER TABLE tournament_participants RENAME TO tournament_participants_old;")
     con.execute(
@@ -323,27 +363,39 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
     con.execute("DROP TABLE tournament_rounds_old;")
     con.execute("CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);")
 
+
+def _migrate_seat_assignments_v7(con: sqlite3.Connection) -> None:
+    seat = con.execute("""
+        SELECT s.id, s.tournament_id, s.round_no, s.table_no, s.tp_id
+        FROM tournament_seats s
+        LEFT JOIN tournament_participants p ON p.id=s.tp_id AND p.tournament_id=s.tournament_id
+        LEFT JOIN tournament_rounds r ON r.round_no=s.round_no AND r.tournament_id=s.tournament_id
+        WHERE p.id IS NULL OR r.id IS NULL LIMIT 1
+    """).fetchone()
+    if seat:
+        raise ValueError(
+            f"Sitzplatz {seat['id']} passt nicht zur Anmeldung oder Runde "
+            f"(Turnier {seat['tournament_id']}, Runde {seat['round_no']}, Tisch {seat['table_no']}, "
+            f"Teilnehmer-ID {seat['tp_id']})."
+        )
+    score = con.execute("""
+        SELECT sc.id, sc.tournament_id, sc.round_no, sc.table_no, sc.tp_id
+        FROM tournament_scores sc
+        LEFT JOIN tournament_seats s ON s.tournament_id=sc.tournament_id AND s.round_no=sc.round_no
+                                    AND s.table_no=sc.table_no AND s.tp_id=sc.tp_id
+        WHERE s.id IS NULL LIMIT 1
+    """).fetchone()
+    if score:
+        raise ValueError(
+            f"Ergebnis {score['id']} hat keinen passenden Sitzplatz "
+            f"(Turnier {score['tournament_id']}, Runde {score['round_no']}, Tisch {score['table_no']}, "
+            f"Teilnehmer-ID {score['tp_id']})."
+        )
+
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tp_tournament_id ON tournament_participants(tournament_id, id)")
     # --- tournament_seats ---
     con.execute("ALTER TABLE tournament_seats RENAME TO tournament_seats_old;")
-    con.execute(
-        """
-        CREATE TABLE tournament_seats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tournament_id INTEGER NOT NULL,
-            round_no INTEGER NOT NULL,
-            table_no INTEGER NOT NULL,
-            seat TEXT NOT NULL,
-            tp_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-            UNIQUE(tournament_id, round_no, table_no, seat),
-            UNIQUE(tournament_id, round_no, tp_id),
-
-            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-            FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-        );
-        """
-    )
+    con.execute(_CREATE_SEATS)
     con.execute(
         """
         INSERT INTO tournament_seats(id,tournament_id,round_no,table_no,seat,tp_id,created_at)
@@ -357,28 +409,7 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
 
     # --- tournament_scores ---
     con.execute("ALTER TABLE tournament_scores RENAME TO tournament_scores_old;")
-    con.execute(
-        """
-        CREATE TABLE tournament_scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tournament_id INTEGER NOT NULL,
-            round_no INTEGER NOT NULL,
-            table_no INTEGER NOT NULL,
-            tp_id INTEGER NOT NULL,
-
-            points INTEGER NOT NULL DEFAULT 0,
-            soli   INTEGER NOT NULL DEFAULT 0,
-
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-            UNIQUE(tournament_id, round_no, tp_id),
-
-            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-            FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-        );
-        """
-    )
+    con.execute(_CREATE_SCORES)
     if _has_column(con, "tournament_scores_old", "updated_at"):
         con.execute(
             """
@@ -400,14 +431,6 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
     con.execute("CREATE INDEX IF NOT EXISTS idx_sc_tp    ON tournament_scores(tp_id);")
 
 
-    for table in needed:
-        if table in sequences:
-            con.execute(
-                "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?",
-                (sequences[table], table),
-            )
-
-
 # -----------------------------------------------------------------------------
 # Init / Migration
 # -----------------------------------------------------------------------------
@@ -427,7 +450,7 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
         # Basisschema (NEU-Installationen)
         # ---------------------------------------------------------------------
         con.executescript(
-            """
+            f"""
             -- Für den Tabellenumbau müssen diese Optionen VOR der Transaktion gelten.
             PRAGMA foreign_keys=OFF;
             PRAGMA legacy_alter_table=ON;
@@ -554,43 +577,12 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);
 
             -- Sitzplan
-            CREATE TABLE IF NOT EXISTS tournament_seats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                round_no INTEGER NOT NULL,
-                table_no INTEGER NOT NULL,
-                seat TEXT NOT NULL,
-                tp_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, round_no, table_no, seat),
-                UNIQUE(tournament_id, round_no, tp_id),
-
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-            );
+            {_CREATE_SEATS};
             CREATE INDEX IF NOT EXISTS idx_ts_round ON tournament_seats(tournament_id, round_no);
             CREATE INDEX IF NOT EXISTS idx_ts_tp ON tournament_seats(tp_id);
 
             -- Ergebnisse
-            CREATE TABLE IF NOT EXISTS tournament_scores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                round_no INTEGER NOT NULL,
-                table_no INTEGER NOT NULL,
-                tp_id INTEGER NOT NULL,
-
-                points INTEGER NOT NULL DEFAULT 0,
-                soli   INTEGER NOT NULL DEFAULT 0,
-
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, round_no, tp_id),
-
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-            );
+            {_CREATE_SCORES};
             CREATE INDEX IF NOT EXISTS idx_sc_round ON tournament_scores(tournament_id, round_no, table_no);
             CREATE INDEX IF NOT EXISTS idx_sc_tp    ON tournament_scores(tp_id);
             """
@@ -621,6 +613,13 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
 
         # 4) Einmalige Datenmigration: years -> markers
         _migrate_years_to_markers_once(con)
+
+        if sv < 7:
+            # Auch bereits gelöschte IDs bleiben nach dem Tabellenumbau verbraucht.
+            sequences = dict(con.execute("""
+                SELECT name, seq FROM sqlite_sequence
+                WHERE name IN ('tournament_participants', 'tournament_rounds', 'tournament_seats', 'tournament_scores')
+            """))
 
         # 5) Schema-Versionierte Migration (Tournament-Tabellen "hart" absichern)
         if sv < 2:
@@ -675,6 +674,12 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
                 DELETE FROM audit_log WHERE tournament_id = OLD.id;
             END
         """)
+
+        if sv < 7:
+            _migrate_seat_assignments_v7(con)
+            for table, seq in sequences.items():
+                con.execute("UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name=?", (seq, table))
+            _set_schema_version(con, 7)
 
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
@@ -742,6 +747,10 @@ def _prepare_restore(con: sqlite3.Connection) -> None:
             actual = {r["name"] for r in con.execute("SELECT name FROM pragma_table_info(?)", (table,))}
             if not expected.issubset(actual):
                 raise ValueError(f"Unvollständige Sicherung: In {table} fehlen benötigte Spalten.")
+            if table in ("tournament_seats", "tournament_scores"):
+                required = _foreign_keys(reference, table)
+                if not required.issubset(_foreign_keys(con, table)):
+                    raise ValueError(f"Unvollständige Sicherung: In {table} fehlt die Verknüpfung zum Sitzplan.")
     if con.execute("PRAGMA foreign_key_check").fetchone():
         raise ValueError("Die Sicherung enthält ungültige Datenbankverweise.")
 

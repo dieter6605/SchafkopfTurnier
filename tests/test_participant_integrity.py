@@ -195,17 +195,23 @@ class ParticipantIntegrityTests(unittest.TestCase):
             ("UPDATE tournament_scores SET points=points+1 WHERE tp_id=1", "Punktesumme beträgt 1"),
             ("UPDATE tournament_scores SET soli=-1 WHERE tp_id=1", "Soli müssen"),
             ("UPDATE tournament_scores SET soli='x' WHERE tp_id=1", "Soli müssen"),
-            ("UPDATE tournament_scores SET table_no=2 WHERE tp_id=1", "keinen passenden Sitzplatz"),
             ("INSERT INTO tournament_rounds(tournament_id,round_no) VALUES(1,2)", "Sitzplan fehlt"),
+        ]
+        broken_links = [
+            ("UPDATE tournament_scores SET table_no=2 WHERE tp_id=1", "keinen passenden Sitzplatz"),
             ("DELETE FROM tournament_rounds", "keiner ausgelosten Runde"),
         ]
         with closing(db.connect()) as con, closing(sqlite3.connect(":memory:")) as baseline:
             con.backup(baseline)
-            for sql, reason in cases:
+            for sql, reason in cases + broken_links:
                 with self.subTest(sql=sql):
                     baseline.backup(con)
+                    if (sql, reason) in broken_links:
+                        # Beschädigten Altbestand ausschließlich in der Testverbindung nachstellen.
+                        con.execute("PRAGMA foreign_keys=OFF")
                     with con:
                         con.execute(sql)
+                    con.execute("PRAGMA foreign_keys=ON")
                     detail = self.client.get(self.tournament).get_data(as_text=True)
                     self.assertIn(reason, detail)
                     self.assertTrue(html.fromstring(detail).xpath("//form[@action='/tournaments/1/close']//button[@disabled]"))
