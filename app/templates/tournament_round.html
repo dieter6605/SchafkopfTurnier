@@ -171,10 +171,6 @@
 {% set _draw_seed_str = ((_draw_seed|string)|trim) if _draw_seed is not none else '' %}
 {% set _has_drawmeta = (current_drawn and (_draw_attempt_int > 0 or (_draw_seed_str|length > 0))) %}
 
-{# --- ✅ Draw-Mode: UI-Auswahl (Setzliste erst ab Runde 2) --- #}
-{% set _can_seeding = ((_rn|int) >= 2) %}
-{% set _default_draw_mode = 'random' %}
-
 {% if is_closed %}
   <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
     <div>
@@ -203,16 +199,24 @@
       </div>
     {% endif %}
 
-    {# ✅ Auswahl Verfahren #}
-    <div class="sk-drawmode mt-2">
-      <label for="drawModeSelect">Auslosung:</label>
-      <select id="drawModeSelect" class="form-select form-select-sm" {% if is_closed %}disabled{% endif %}>
-        <option value="random" selected>Zufall (optimiert)</option>
-        {% if _can_seeding %}
-          <option value="seeding">Setzliste nach Gesamtwertung</option>
-        {% endif %}
-      </select>
-    </div>
+    {% for target, issue in seeding_issues.items() %}
+      <div class="mt-2">
+        <div class="sk-drawmode">
+          <label for="drawMode{{ target }}">Auslosung für Runde {{ target }}</label>
+          <select id="drawMode{{ target }}" name="draw_mode" class="form-select form-select-sm"
+                  form="{{ 'formDraw' if target == round_no else 'formDrawNext' }}"
+                  aria-describedby="seedingStatus{{ target }}">
+            <option value="random" selected>Zufall (optimiert)</option>
+            <option value="seeding"{% if issue %} disabled{% endif %}>Setzliste nach Gesamtwertung</option>
+          </select>
+        </div>
+        <div id="seedingStatus{{ target }}" class="form-text">
+          {% if issue %}Setzliste gesperrt. {{ issue }}
+          {% elif target == 2 %}Runde 1 vollständig gewertet.
+          {% else %}Runden 1 bis {{ target - 1 }} vollständig gewertet.{% endif %}
+        </div>
+      </div>
+    {% endfor %}
 
     <div class="sk-kbd mt-1">
       Tastatur:
@@ -300,7 +304,6 @@
           onsubmit="return window.confirm(this.dataset.confirm)">
       {{ csrf_field() }}
       <input type="hidden" name="expected_round_id" value="{{ round_id }}">
-      <input type="hidden" name="draw_mode" id="drawModeHiddenDraw" value="{{ _default_draw_mode }}">
       <button class="btn btn-warning"
               id="btnRedraw"
               type="submit"
@@ -363,7 +366,6 @@
             onsubmit="return window.confirm(this.dataset.confirm)">
         {{ csrf_field() }}
         <input type="hidden" name="expected_round_id" value="0">
-        <input type="hidden" name="draw_mode" id="drawModeHiddenDrawNext" value="{{ _default_draw_mode }}">
         <button class="btn btn-outline-warning" id="btnDrawNext" type="submit"
                 {% if is_closed %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no + 1 }} auslosen
@@ -539,20 +541,10 @@
     </div>
 
     <div class="d-flex gap-2 flex-wrap">
-      <form method="post"
-            id="formDraw2"
-            action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
-            class="d-inline"
-            data-confirm="Runde {{ round_no }} auslosen?"
-            onsubmit="return window.confirm(this.dataset.confirm)">
-        {{ csrf_field() }}
-        <input type="hidden" name="expected_round_id" value="{{ round_id }}">
-        <input type="hidden" name="draw_mode" id="drawModeHiddenDraw2" value="{{ _default_draw_mode }}">
-        <button class="btn btn-warning" type="submit"
-                {% if is_closed or has_results %}disabled aria-disabled="true"{% endif %}>
-          Runde {{ round_no }} auslosen
-        </button>
-      </form>
+      <button class="btn btn-warning" type="submit" form="formDraw"
+              {% if is_closed or has_results %}disabled aria-disabled="true"{% endif %}>
+        Runde {{ round_no }} auslosen
+      </button>
 
       <a class="btn btn-outline-primary"
          id="btnPrepareNext2"
@@ -575,25 +567,6 @@
   window.__SKT_DRAW_ATTEMPT__ = {{ draw_attempt|tojson }};
   window.__SKT_DRAW_SEED__ = {{ (draw_seed|string if draw_seed is not none else '')|tojson }};
 
-  // ✅ Draw-Mode Auswahl in alle POST-Forms spiegeln
-  (function () {
-    const sel = document.getElementById("drawModeSelect");
-    if (!sel) return;
-
-    const targets = [
-      document.getElementById("drawModeHiddenDraw"),
-      document.getElementById("drawModeHiddenDrawNext"),
-      document.getElementById("drawModeHiddenDraw2"),
-    ].filter(Boolean);
-
-    const sync = () => {
-      const v = sel.value || "random";
-      targets.forEach(el => { el.value = v; });
-    };
-
-    sel.addEventListener("change", sync);
-    sync();
-  })();
 </script>
 <script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 {% endblock %}

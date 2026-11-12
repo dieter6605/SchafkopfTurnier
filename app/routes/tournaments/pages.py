@@ -9,7 +9,7 @@ from ... import db
 from . import bp
 from .helpers import (
     _get_tournament,
-    _guard_close_requires_complete_scores,
+    _first_score_issue,
     _validate_marker_for_event_date,
     _guard_closed_redirect,
     _now_local_iso,
@@ -58,7 +58,7 @@ def tournaments_list():
             tournament = dict(row)
             tournament["scores_complete"] = (
                 row["expected_scores"] > 0 and row["scores_count"] == row["expected_scores"]
-                and _guard_close_requires_complete_scores(con, row["id"]) is None
+                and _first_score_issue(con, row["id"]) is None
             )
             tournaments.append(tournament)
     return render_template("tournaments.html", tournaments=tournaments, now=_now_local_iso())
@@ -174,7 +174,7 @@ def tournament_detail(tournament_id: int):
             "SELECT COUNT(*) FROM tournament_scores WHERE tournament_id=?", (tournament_id,),
         ).fetchone()[0]
         expected_scores = _scores_expected_count(con, tournament_id)
-        score_issue = _guard_close_requires_complete_scores(con, tournament_id)
+        score_issue = _first_score_issue(con, tournament_id)
         marker_issue = _validate_marker_for_event_date(t["marker"] or "", t["event_date"] or "")
 
         safe = {

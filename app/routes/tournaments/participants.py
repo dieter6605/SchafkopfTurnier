@@ -26,7 +26,7 @@ from .helpers import (
     _to_int,
     _tournament_counts,
     _validate_marker_for_event_date,
-    _guard_close_requires_complete_scores,  # ✅ NEU: Abschluss nur wenn Ergebnisse vollständig
+    _first_score_issue,  # ✅ NEU: Abschluss nur wenn Ergebnisse vollständig
 )
 
 
@@ -426,7 +426,7 @@ def tournament_close_participations(tournament_id: int):
         # ------------------------------------------------------------------
         # ✅ NEU: Abschließen nur, wenn alle Ergebnisse vollständig sind
         # ------------------------------------------------------------------
-        block_msg = _guard_close_requires_complete_scores(con, tournament_id)
+        block_msg = _first_score_issue(con, tournament_id)
         if block_msg:
             flash(block_msg, "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))

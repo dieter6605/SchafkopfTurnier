@@ -17,7 +17,14 @@ from .draw import (
     _seed_for_tournament_round,
     _tables_by_seeding,
 )
-from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso, _overall_standings_tp_ids
+from .helpers import (
+    _first_score_issue,
+    _get_tournament,
+    _guard_closed_redirect,
+    _is_closed,
+    _now_local_iso,
+    _overall_standings_tp_ids,
+)
 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/draw")
@@ -136,8 +143,6 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         tp_ids = [tp["id"] for tp in tps]
-        hist_pairs = _history_pairs(con, tournament_id, round_no)
-
         prev_attempt = int(prev["draw_attempt"]) if (prev and prev["draw_attempt"] is not None) else 0
         attempt = prev_attempt + 1 if prev_attempt >= 0 else 1
         if attempt < 1:
@@ -146,6 +151,28 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         # ✅ Seed jetzt abhängig von Attempt
         seed = _seed_for_tournament_round(tournament_id, round_no, attempt)
         rng = random.Random(seed)
+
+        # ✅ Auslosung wählen
+        if draw_mode == DRAW_MODE_SEEDING:
+            issue = _first_score_issue(con, tournament_id, through_round=round_no - 1)
+            if issue:
+                flash(f"Setzliste für Runde {round_no} gesperrt. {issue}", "warning")
+                return redirect(round_url)
+            ranked = _overall_standings_tp_ids(con, tournament_id, upto_round=round_no - 1)
+            if set(ranked) != set(tp_ids) or len(ranked) != n:
+                flash("Setzliste gesperrt. Die Gesamtwertung enthält nicht alle angemeldeten Teilnehmer.", "warning")
+                return redirect(round_url)
+            tables = _tables_by_seeding(ranked, 4)
+        else:
+            hist_pairs = _history_pairs(con, tournament_id, round_no)
+            tables = _improve_tables(
+                tps,
+                tp_ids,
+                hist_pairs,
+                tournament_id=tournament_id,
+                round_no=round_no,
+                attempt=attempt,
+            )
 
         # Ein bestehender Sitzplan ohne Ergebnisse darf neu ausgelost werden.
         con.execute("DELETE FROM tournament_seats  WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
@@ -156,25 +183,6 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             "INSERT INTO tournament_rounds(tournament_id, round_no, draw_seed, draw_attempt) VALUES (?,?,?,?)",
             (tournament_id, round_no, int(seed), int(attempt)),
         )
-
-        # ✅ Auslosung wählen
-        if draw_mode == DRAW_MODE_SEEDING:
-            tp_ids_sorted = _overall_standings_tp_ids(con, tournament_id, upto_round=int(round_no) - 1)
-
-            # Safety: falls irgendwas fehlt, fallback auf player_no Reihenfolge
-            if not tp_ids_sorted or len(tp_ids_sorted) != len(tp_ids):
-                tp_ids_sorted = tp_ids[:]
-
-            tables = _tables_by_seeding(tp_ids_sorted, 4)
-        else:
-            tables = _improve_tables(
-                tps,
-                tp_ids,
-                hist_pairs,
-                tournament_id=tournament_id,
-                round_no=round_no,
-                attempt=attempt,
-            )
 
         # ✅ Sitzverteilung am Tisch deterministisch
         seats = ["A", "B", "C", "D"]
@@ -310,6 +318,13 @@ def tournament_round_view(tournament_id: int, round_no: int):
         )
         reserve = [r for r in reserve if int(r["tp_id"]) not in seated_tp]
 
+        seeding_issues = {}
+        if not _is_closed(t):
+            if rn >= 2 and not done_rows:
+                seeding_issues[rn] = _first_score_issue(con, tournament_id, through_round=rn - 1)
+            if seats and rn == last_round_no:
+                seeding_issues[rn + 1] = _first_score_issue(con, tournament_id, through_round=rn)
+
         if not seats:
             flash(f"Für Runde {round_no} ist noch keine Auslosung vorhanden.", "info")
 
@@ -319,6 +334,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
         round_no=round_no,
         seats=seats,
         seats_alpha=seats_alpha,
+        seeding_issues=seeding_issues,
         reserve=reserve,
         last_round_no=last_round_no,
         prev_round_no=prev_round_no,

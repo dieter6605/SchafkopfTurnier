@@ -90,6 +90,7 @@ Runde 1
 
 Weitere Runden
 - „Nächste Runde vorbereiten“
+- Im Sitzplan unter „Auslosung für Runde X“ zwischen Zufall und „Setzliste nach Gesamtwertung“ wählen. Die Setzliste ist ab Runde 2 verfügbar, sobald alle Tische der vorherigen Runden gültig gewertet sind. Bei einer ausstehenden Wertung nennt die Anzeige Runde und Tisch. Nach der Ergebniseingabe den Sitzplan erneut öffnen oder die Seite neu laden.
 - „Runde X auslosen“
 - Im Sitzplan öffnet Umschalt+R eine vorhandene Folgerunde. Aus der letzten ausgelosten Runde heraus fragt die Anwendung, ob sie die nächste Runde auslosen soll.
 

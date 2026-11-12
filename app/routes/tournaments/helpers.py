@@ -108,13 +108,14 @@ def _scores_expected_count(con, tournament_id: int) -> int:
     ).fetchone()[0]
 
 
-def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None:
-    """Prüft die tatsächlich ausgelosten Tische und die dazugehörigen Wertungen."""
+def _first_score_issue(con, tournament_id: int, *, through_round: int | None = None) -> str | None:
+    """Erste fehlerhafte Tischwertung, für Setzlisten bis einschließlich der Vorrunde."""
+    params = (tournament_id, through_round, through_round)
     orphan_seat = db.one(con, """
         SELECT s.round_no, s.table_no FROM tournament_seats s
         LEFT JOIN tournament_rounds r ON r.tournament_id=s.tournament_id AND r.round_no=s.round_no
-        WHERE s.tournament_id=? AND r.id IS NULL LIMIT 1
-    """, (tournament_id,))
+        WHERE s.tournament_id=? AND (? IS NULL OR s.round_no <= ?) AND r.id IS NULL LIMIT 1
+    """, params)
     if orphan_seat:
         return f"Runde {orphan_seat['round_no']}, Tisch {orphan_seat['table_no']}: Der Sitzplan gehört zu keiner ausgelosten Runde."
 
@@ -122,8 +123,8 @@ def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None
         SELECT sc.round_no, sc.table_no FROM tournament_scores sc
         LEFT JOIN tournament_seats s ON s.tournament_id=sc.tournament_id AND s.round_no=sc.round_no
                                     AND s.table_no=sc.table_no AND s.tp_id=sc.tp_id
-        WHERE sc.tournament_id=? AND s.id IS NULL LIMIT 1
-    """, (tournament_id,))
+        WHERE sc.tournament_id=? AND (? IS NULL OR sc.round_no <= ?) AND s.id IS NULL LIMIT 1
+    """, params)
     if extra_score:
         return f"Runde {extra_score['round_no']}, Tisch {extra_score['table_no']}: Ein Ergebnis hat keinen passenden Sitzplatz."
 
@@ -134,12 +135,16 @@ def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None
         LEFT JOIN tournament_participants tp ON tp.id=s.tp_id AND tp.tournament_id=r.tournament_id
         LEFT JOIN tournament_scores sc ON sc.tournament_id=s.tournament_id AND sc.round_no=s.round_no
                                       AND sc.table_no=s.table_no AND sc.tp_id=s.tp_id
-        WHERE r.tournament_id=?
+        WHERE r.tournament_id=? AND (? IS NULL OR r.round_no <= ?)
         ORDER BY r.round_no, s.table_no, s.seat
-    """, (tournament_id,))
-    if not rows:
+    """, params)
+    if not rows and through_round is None:
         return "Es wurde noch keine Runde ausgelost."
+    last_seen = 0
     for (round_no, table_no), group in groupby(rows, key=itemgetter("round_no", "table_no")):
+        if through_round is not None and round_no > last_seen + 1:
+            return f"Runde {last_seen + 1} wurde noch nicht ausgelost."
+        last_seen = round_no
         if table_no is None:
             return f"Runde {round_no}: Der Sitzplan fehlt."
         seats = list(group)
@@ -159,6 +164,8 @@ def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None
         total = sum(r["points"] for r in seats)
         if total != 0:
             return f"{label}: Die Punktesumme beträgt {total} und muss 0 sein."
+    if through_round is not None and last_seen < through_round:
+        return f"Runde {last_seen + 1} wurde noch nicht ausgelost."
     return None
 
 

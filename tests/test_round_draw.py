@@ -76,6 +76,82 @@ class RoundDrawTests(unittest.TestCase):
         self.assertEqual(self.page(self.round_url).get_element_by_id("btnNextRound").get("href"), response.location)
         self.assertEqual(self.round_state(), before)
 
+    def test_partial_previous_round_blocks_seeding_from_both_views(self):
+        second = "/tournaments/1/rounds/2"
+        with closing(db.connect()) as con, con:
+            con.execute("""INSERT INTO tournament_scores(tournament_id,round_no,table_no,tp_id)
+                           SELECT tournament_id,round_no,table_no,tp_id FROM tournament_seats LIMIT 1""")
+        for url, form_id in [(self.round_url, "formDrawNext"), (second, "formDraw")]:
+            page = self.page(url)
+            select = page.get_element_by_id("drawMode2")
+            self.assertEqual(select.get("form"), form_id)
+            self.assertTrue(select.xpath("option[@value='seeding' and @disabled]"))
+            self.assertTrue(select.xpath("option[@value='random' and not(@disabled)]"))
+            self.assertIn("Runde 1, Tisch 1: 1 von 4", page.get_element_by_id("seedingStatus2").text_content())
+        before = self.round_state()
+        result = self.client.post(second + "/draw", data={"draw_mode": "seeding"}, follow_redirects=True)
+        self.assertIn("Setzliste für Runde 2 gesperrt.", result.get_data(as_text=True))
+        self.assertEqual(self.round_state(), before)
+        with closing(db.connect()) as con:
+            self.assertIsNone(con.execute("SELECT id FROM tournament_rounds WHERE round_no=2").fetchone())
+        self.client.post(second + "/draw", data={"draw_mode": "random"})
+        self.assertTrue(self.page(second).xpath("//a[@id='btnPrevRound']"))
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_seats WHERE round_no=2").fetchone()[0], 4)
+
+    def test_stale_seeding_form_cannot_replace_an_existing_plan(self):
+        second = "/tournaments/1/rounds/2"
+        self.client.post(self.round_url + "/results/1", data=self.result_form())
+        self.client.post(second + "/draw", data={"draw_mode": "seeding"})
+        page = self.page(second)
+        self.assertTrue(page.xpath("//select[@form='formDraw']/option[@value='seeding' and not(@disabled)]"))
+        self.assertTrue(page.xpath("//select[@form='formDrawNext']/option[@value='seeding' and @disabled]"))
+        form = page.get_element_by_id("formDraw")
+        values = dict(form.fields, draw_mode="seeding")
+        with closing(db.connect()) as con, con:
+            before = list(con.execute("SELECT * FROM tournament_seats WHERE round_no=2 ORDER BY id"))
+            con.execute("UPDATE tournament_scores SET points=points+1 WHERE tp_id=1")
+        result = self.client.post(form.get("action"), data=values, follow_redirects=True)
+        self.assertIn("Punktesumme beträgt 1", result.get_data(as_text=True))
+        with closing(db.connect()) as con:
+            after = list(con.execute("SELECT * FROM tournament_seats WHERE round_no=2 ORDER BY id"))
+            self.assertEqual(after, before)
+            self.assertEqual(str(con.execute("SELECT id FROM tournament_rounds WHERE round_no=2").fetchone()[0]),
+                             values["expected_round_id"])
+
+    def test_seeding_uses_every_round_in_the_overall_standings(self):
+        second = "/tournaments/1/rounds/2"
+        third = "/tournaments/1/rounds/3"
+        self.client.post(second + "/draw", data={"draw_mode": "random"})
+        with closing(db.connect()) as con, con:
+            con.execute("""INSERT INTO tournament_scores(tournament_id,round_no,table_no,tp_id)
+                           SELECT tournament_id,round_no,table_no,tp_id FROM tournament_seats WHERE round_no=2""")
+        self.assertIn("Runde 1, Tisch 1", self.page(second).get_element_by_id("seedingStatus3").text_content())
+        self.client.post(third + "/draw", data={"draw_mode": "seeding"})
+        with closing(db.connect()) as con:
+            self.assertIsNone(con.execute("SELECT id FROM tournament_rounds WHERE round_no=3").fetchone())
+        self.client.post(self.round_url + "/results/1", data=self.result_form())
+        self.assertIn("Runden 1 bis 2 vollständig gewertet", self.page(second).get_element_by_id("seedingStatus3").text_content())
+        self.client.post(third + "/draw", data={"draw_mode": "seeding"})
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_seats WHERE round_no=3").fetchone()[0], 4)
+
+    def test_late_signups_do_not_add_missing_scores_to_a_finished_round(self):
+        self.client.post(self.round_url + "/results/1", data=self.result_form())
+        for first in ("Eva", "Finn", "Gabi", "Hans"):
+            self.client.post("/tournaments/1/participants/quickadd", data={
+                "vorname": first, "nachname": "Reserve", "wohnort": "Testort",
+            })
+        select = self.page(self.round_url).get_element_by_id("drawMode2")
+        self.assertTrue(select.xpath("option[@value='seeding' and not(@disabled)]"))
+        self.client.post("/tournaments/1/rounds/2/draw", data={"draw_mode": "seeding"})
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_seats WHERE round_no=2").fetchone()[0], 8)
+            # Die drei Spieler mit negativen Punkten folgen den Nachmeldungen mit null Punkten.
+            table_one = set(r[0] for r in con.execute("SELECT tp_id FROM tournament_seats WHERE round_no=2 AND table_no=1"))
+            winner = con.execute("SELECT tp_id FROM tournament_scores WHERE points=30").fetchone()[0]
+            self.assertEqual(table_one, {winner, 5, 6, 7})
+
     def test_single_zero_score_blocks_even_an_unversioned_redraw(self):
         with closing(db.connect()) as con, con:
             con.execute("INSERT INTO tournament_scores(tournament_id, round_no, table_no, tp_id, points, soli) "
@@ -99,6 +175,7 @@ class RoundDrawTests(unittest.TestCase):
         self.assertEqual(len(self.round_state()["tournament_scores"]), 4)
 
     def test_two_simultaneous_requests_only_create_one_draw(self):
+        self.client.post(self.round_url + "/results/1", data=self.result_form())
         barrier = Barrier(2)
         path = "/tournaments/1/rounds/2"
 
