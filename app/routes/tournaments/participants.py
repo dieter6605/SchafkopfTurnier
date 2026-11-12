@@ -361,9 +361,9 @@ def tournament_participant_quickadd(tournament_id: int):
               addressbook_id, nachname, vorname, wohnort,
               plz, ort, strasse, hausnummer,
               telefon, email, status, notizen,
-              created_at, updated_at
+              invite, created_at, updated_at
             )
-            VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, datetime('now'), datetime('now'))
+            VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, 1, datetime('now'), datetime('now'))
             """,
             (
                 ab_id,

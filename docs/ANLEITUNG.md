@@ -16,6 +16,8 @@ Kurzanleitung für den Turniertag
 
 **Adressen pflegen**
 
+- Bei neuen Adressen ist „Einladung aktiv“ voreingestellt, auch bei der Schnellerfassung im Turnier. Im Adressbuch lässt sich das Kennzeichen ändern.
+- In der CSV-Spalte `invite` bedeutet `1` „an“. `0` und ein leeres Feld bedeuten „aus“. Fehlt die ganze Spalte, behalten bekannte Adress-IDs ihr Kennzeichen. Zeilen ohne bekannte ID erhalten „an“.
 - Bei einer Turnieranmeldung oder einer früheren Teilnahme ist „Löschen“ gesperrt. „Deaktivieren“ setzt eine aktive Adresse auf inaktiv und erhält ihre Teilnahmehistorie.
 - Zum CSV-Import eine UTF-8-Datei mit Semikolon und den Spalten `nachname`, `vorname` und `wohnort` auswählen und „Datei prüfen“ anklicken. Die Vorschau zählt gültige und fehlerhafte Zeilen. Sie nennt die Zeile, wenn ein Eintrag korrigiert werden muss.
 - „Standardadressbuch ersetzen“ übernimmt die geprüfte Datei. Eine reine Kopfzeile oder eine Datei mit fehlerhaften Zeilen wird abgewiesen. Bei vorhandenen Turnieranmeldungen im Standardadressbuch steht die Vorschau zur Verfügung, das Ersetzen ist gesperrt.

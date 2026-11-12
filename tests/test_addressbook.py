@@ -1,5 +1,6 @@
+import csv
 import unittest
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -89,6 +90,33 @@ class AddressbookTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(tuple(r[:3]) == ("aktiv", 1, 0) and r[3] and r[4] for r in rows))
         self.assertEqual(before["addressbooks"], self.snapshot()["addressbooks"])
+
+    def test_invite_csv_values_and_omitted_column(self):
+        with self.con:
+            self.con.execute("UPDATE addresses SET invite=0 WHERE id=1")
+        rows = "id;" + HEADER + "\n1;Alt;Ada;Ort\n2;Neu;Ben;Ort"
+        self.apply(rows)
+
+        def flags():
+            return dict(self.con.execute("SELECT id,invite FROM addresses"))
+
+        self.assertEqual(flags(), {1: 0, 2: 1})
+        self.apply("id;" + HEADER + ";invite\n1;Alt;Ada;Ort;1\n2;Neu;Ben;Ort;  \n3;Neu;Eva;Ort;0")
+        self.assertEqual(flags(), {1: 1, 2: 0, 3: 0})
+        self.apply("id;" + HEADER + "\n1;Alt;Ada;Ort\n2;Neu;Ben;Ort\n3;Neu;Eva;Ort")
+        self.assertEqual(flags(), {1: 1, 2: 0, 3: 0})
+
+    def test_legacy_invite_export_round_trip(self):
+        with self.con:
+            self.con.execute("ALTER TABLE addresses DROP COLUMN invite")
+            self.con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER")
+        export = self.client.get("/addresses/export").data.decode("utf-8-sig")
+        records = list(csv.DictReader(StringIO(export), delimiter=";"))
+        self.assertEqual([r["invite"] for r in records], ["0"])
+        self.apply(export)
+        self.assertEqual(self.con.execute("SELECT invite FROM addresses").fetchone()[0], 0)
+        self.apply(HEADER + ";invite\nAlt;Ada;Ort;")
+        self.assertEqual(self.con.execute("SELECT invite FROM addresses").fetchone()[0], 0)
 
     def test_other_books_shared_places_and_explicit_ids(self):
         with self.con:

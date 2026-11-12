@@ -33,7 +33,36 @@ class RecoveryTests(unittest.TestCase):
         with closing(db.connect()) as con:
             self.assertEqual(con.execute("SELECT action FROM audit_log").fetchone()[0], "quickadd")
             self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_participants").fetchone()[0], 1)
+            self.assertEqual(con.execute("SELECT invite FROM addresses").fetchone()[0], 1)
             self.assertEqual(con.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+
+    def test_legacy_invites_keep_selection_after_upgrade_quickadd_and_restart(self):
+        with closing(db.connect()) as con, con:
+            con.execute("ALTER TABLE addresses DROP COLUMN invite")
+            con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER")
+            con.execute("UPDATE meta SET v='4' WHERE k='schema_version'")
+            con.executemany("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort,invite) "
+                            "VALUES(1,?,'Test','Ort',?)", [("Leer", None), ("Aus", 0), ("An", 1)])
+        db.init_db(self.live)
+        self.client.post("/tournaments/new", data={"title": "Probe", "event_date": "2026-11-12", "start_time": "18:00"})
+        result = self.client.post("/tournaments/1/participants/quickadd", data={
+            "nachname": "Schnellerfassung", "vorname": "Test", "wohnort": "Ort",
+        })
+        self.assertEqual(result.status_code, 302)
+        db.init_db(self.live)
+        with closing(db.connect()) as con:
+            self.assertEqual(dict(con.execute("SELECT nachname,invite FROM addresses")),
+                             {"Leer": 0, "Aus": 0, "An": 1, "Schnellerfassung": 1})
+
+    def test_database_without_invite_column_keeps_previous_default(self):
+        with closing(db.connect()) as con, con:
+            con.execute("ALTER TABLE addresses DROP COLUMN invite")
+            con.execute("UPDATE meta SET v='4' WHERE k='schema_version'")
+            con.execute("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort) VALUES(1,'Alt','Ada','Ort')")
+        db.init_db(self.live)
+        with closing(db.connect()) as con, con:
+            con.execute("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort) VALUES(1,'Neu','Ben','Ort')")
+            self.assertEqual(dict(con.execute("SELECT nachname,invite FROM addresses")), {"Alt": 1, "Neu": 1})
 
     def test_restore_migrates_before_activation_and_keeps_safety_copy(self):
         legacy = db.backup_db(self.backups)

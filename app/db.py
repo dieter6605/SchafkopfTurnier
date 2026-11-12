@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 _DB_PATH: Optional[Path] = None
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 # -----------------------------------------------------------------------------
@@ -609,8 +609,7 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
 
         # 1) addresses.invite (Altbestand)
         if _has_table(con, "addresses") and not _has_column(con, "addresses", "invite"):
-            con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER;")
-            con.execute("UPDATE addresses SET invite=1 WHERE invite IS NULL;")
+            con.execute("ALTER TABLE addresses ADD COLUMN invite INTEGER NOT NULL DEFAULT 1")
 
         # 2) tournaments.marker (Altbestand)
         if _has_table(con, "tournaments") and not _has_column(con, "tournaments", "marker"):
@@ -657,6 +656,11 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
                         "ON audit_log(tournament_id, created_at DESC)")
             con.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)")
             _set_schema_version(con, 4)
+
+        if sv < 5:
+            # Leere Kennzeichen zählten in der Einladungsliste bereits als ausgeschaltet.
+            con.execute("UPDATE addresses SET invite=0 WHERE invite IS NULL")
+            _set_schema_version(con, 5)
 
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")

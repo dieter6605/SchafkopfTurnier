@@ -44,7 +44,11 @@ def export_addresses_csv(*, con: sqlite3.Connection, addressbook_id: int | None 
     buf = io.StringIO(newline="")
     writer = csv.writer(buf, delimiter=";", lineterminator="\r\n")
     writer.writerow(cols)
-    writer.writerows(tuple(row[c] for c in cols) for row in rows)
+    for row in rows:
+        values = dict(row)
+        if "invite" in values and values["invite"] is None:
+            values["invite"] = 0
+        writer.writerow([values[c] for c in cols])
     return buf.getvalue(), f"addresses-export-{datetime.now():%Y%m%d-%H%M%S}.csv"
 
 
@@ -83,7 +87,9 @@ def _parse_values(row, schema):
             continue  # Exporte können aus einer anderen Installation stammen.
         if name == "id" and not value:
             raise ValueError("Die Spalte id ist vorhanden, die ID fehlt.")
-        if not value:
+        if name == "invite" and not value:
+            values[name] = 0
+        elif not value:
             if schema[name]["notnull"] or schema[name]["dflt_value"] is not None:
                 continue  # SQLite übernimmt den Spaltenstandard.
             values[name] = None
@@ -100,8 +106,6 @@ def _parse_values(row, schema):
             values[name] = value.lower()
         else:
             values[name] = value if name in ("nachname", "vorname", "wohnort") else raw
-    if "invite" not in row and "invite" in schema:
-        values["invite"] = 1
     return values
 
 
@@ -126,6 +130,12 @@ def preview_addresses(con, csv_text):
     protected = {r["id"]: r for r in con.execute(
         f"SELECT * FROM addresses a WHERE a.addressbook_id=? AND ({HISTORY_SQL})", (book_id,),
     )}
+    inherit_invite = "invite" in schema and "invite" not in headers
+    existing_invites = {}
+    if inherit_invite and "id" in headers:
+        existing_invites = dict(con.execute(
+            "SELECT id, COALESCE(invite, 0) FROM addresses WHERE addressbook_id=?", (book_id,),
+        ))
     seen = set()
     while True:
         line = reader.line_num + 1
@@ -137,6 +147,8 @@ def preview_addresses(con, csv_text):
                 raise ValueError(f"{len(fields)} Felder statt {len(headers)}.")
             values = _parse_values(dict(zip(headers, fields)), schema)
             ident = values.get("id")
+            if inherit_invite:
+                values["invite"] = existing_invites.get(ident, 1)
             if ident is not None:
                 if ident in seen:
                     raise ValueError(f"ID {ident} kommt mehrfach vor.")
