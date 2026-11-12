@@ -17,6 +17,7 @@ from flask import (
 from werkzeug.routing import BuildError
 
 from . import db
+from .maintenance import guard_maintenance_forms, local_session_key, maintenance_csrf_token, maintenance_enabled
 from .routes.home import bp as home_bp
 from .routes.addresses import bp as addresses_bp
 from .routes.tournaments import bp as tournaments_bp
@@ -27,7 +28,10 @@ from .routes.help import bp as help_bp
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
     app = Flask(__name__)
     app.config["SKT_DEV_MODE"] = (os.environ.get("SKT_DEV_MODE", "").strip() == "1")
-    app.secret_key = "dev-secret-change-me"
+    app.secret_key = local_session_key(Path(db_path).parent)
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.before_request(guard_maintenance_forms)
+    app.add_template_global(maintenance_csrf_token)
 
     db.init_db(db_path)
 
@@ -45,7 +49,7 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
         return {
             "home_image": app.config.get("SKT_HOME_IMAGE", ""),
             "print_logo": app.config.get("SKT_PRINT_LOGO", ""),
-            "dev_mode": bool(app.config.get("SKT_DEV_MODE", False)),
+            "dev_mode": maintenance_enabled(),
             "skt_debug": bool(app.debug),
         }
 
@@ -272,7 +276,7 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
                 message=msg,
                 path=request.path,
                 home_url=_safe_home_url(),
-                back_url=request.headers.get("Referer") or "",
+                back_url=request.referrer if (request.referrer or "").startswith(request.host_url) else _safe_home_url(),
             ),
             403,
         )

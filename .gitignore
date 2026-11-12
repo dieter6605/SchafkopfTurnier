@@ -25,3 +25,6 @@ data/
 
 # logs
 *.log
+
+# Lokaler Sitzungsschlüssel
+.skt-session/

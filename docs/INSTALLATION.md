@@ -89,27 +89,29 @@ Für den laufenden PDF-Export werden das lokale Stylesheet, die Vereinslogos und
 
 ## 5. Lokalen Webserver starten
 
-**Beispiel: Startskript run.py**
+Für den Turnierbetrieb in der aktivierten Python-Umgebung starten.
 
 ```bash
-python run.py
+python run_waitress.py
 ```
 
-Oder direkt mit Flask:
+Waitress verwendet standardmäßig `127.0.0.1` und Port `8000`. Beim ersten Start der aktualisierten Anwendung entsteht neben der Datenbank die private Schlüsseldatei `.skt-session/key`. Sie signiert die Browsersitzungen und wird bei weiteren Starts wiederverwendet. Bereits vor der Umstellung geöffnete Wartungsformulare und Importvorschauen bitte neu laden.
+
+Für eine Wartung den laufenden Server mit Ctrl+C beenden. Unter macOS oder Linux gilt der folgende Aufruf für diesen einen Start.
 
 ```bash
-export FLASK_APP=app.web:create_app
-export FLASK_ENV=development
-flask run
+SKT_DEV_MODE=1 HOST=127.0.0.1 python run_waitress.py
 ```
 
-**Windows (PowerShell):**
+Unter Windows in PowerShell:
 
 ```powershell
-$env:FLASK_APP="app.web:create_app"
-$env:FLASK_ENV="development"
-flask run
+$env:SKT_DEV_MODE="1"
+$env:HOST="127.0.0.1"
+try { python run_waitress.py } finally { Remove-Item Env:SKT_DEV_MODE }
 ```
+
+Am Turnierrechner `http://127.0.0.1:8000` öffnen. Die Kopfzeile zeigt im Wartungsmodus **Wartung**. Nach der Wartung mit Ctrl+C beenden und wieder regulär starten. Für die Entwicklung gibt es weiterhin `python run.py`. Der Flask-Debugger lässt sich dort gezielt mit `FLASK_DEBUG=1` aktivieren. Die Wartungsfreigabe erfolgt über `SKT_DEV_MODE`.
 
 ## 6. Anwendung im Browser öffnen
 
@@ -135,10 +137,10 @@ deactivate
 
 ➡ Virtuelle Umgebung aktivieren und pip install -r requirements.txt erneut ausführen
 
-❌ Port 8000 belegt
+❌ Port 8000 belegt (macOS/Linux)
 
 ```bash
-flask run --port 8050
+PORT=8050 python run_waitress.py
 ```
 
 ❌ Python-Version zu alt

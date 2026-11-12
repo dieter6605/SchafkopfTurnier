@@ -31,8 +31,8 @@
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <h3 class="mb-0">{{ t.title }}</h3>
 
-      {% if skt_debug %}
-        <span class="badge text-bg-warning">DEV</span>
+      {% if dev_mode %}
+        <span class="badge text-bg-warning">Wartung</span>
       {% endif %}
 
       {% if is_closed %}
@@ -292,26 +292,27 @@
 </div>
 
 {# ==========================================================
-   ✅ DEV-TOOLS (nur im Debug)
+   Lokale Wartung
 ========================================================== #}
-{% if skt_debug %}
+{% if dev_mode %}
 
   {% if is_closed %}
   <div class="card shadow-sm mb-3 border-warning">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
         <div>
-          <h5 class="mb-1">DEV: Turnier wieder öffnen</h5>
+          <h5 class="mb-1">Turnier wieder öffnen</h5>
           <div class="text-muted small">
-            Entfernt Marker <span class="sk-mono">{{ marker_disp }}</span> aus den Adressen dieses Turniers
-            und berechnet <span class="sk-mono">participation_count</span> + <span class="sk-mono">last_tournament_at</span>
-            strikt aus <span class="sk-mono">tournament_years</span>.
+            Beim Wiederöffnen wird der Teilnahmemarker <span class="sk-mono">{{ marker_disp }}</span>
+            bei den angemeldeten Personen zurückgenommen. Die erfassten Ergebnisse bleiben erhalten.
           </div>
         </div>
 
         <form method="post"
               action="{{ url_for('tournaments.tournament_reopen', tournament_id=t.id) }}"
               onsubmit="return confirmReopen();">
+          <input type="hidden" name="csrf_token" value="{{ maintenance_csrf_token() }}">
+          <input type="hidden" name="expected_closed_at" value="{{ closed_at }}">
           <button class="btn btn-warning">
             Turnier wieder öffnen
           </button>
@@ -325,11 +326,10 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
         <div>
-          <h5 class="mb-1">DEV: Repair Adressen (Recalc)</h5>
+          <h5 class="mb-1">Teilnahmehistorie im Adressbuch reparieren</h5>
           <div class="text-muted small">
-            Setzt <span class="sk-mono">participation_count</span> = Anzahl Marker in <span class="sk-mono">tournament_years</span>
-            und <span class="sk-mono">last_tournament_at</span> = rechter CSV-Wert (oder NULL).
-            Zusätzlich: Normalisierung (trim/upper, Duplikate raus).
+            Berechnet die Anzahl und den letzten Eintrag der Teilnahmen aus den vorhandenen Turniermarkern.
+            Dabei werden doppelte Marker zusammengeführt.
           </div>
         </div>
 
@@ -341,8 +341,8 @@
             </label>
 
             <label class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" id="repairDryRun">
-              <span class="form-check-label">dry-run</span>
+              <input class="form-check-input" type="checkbox" id="repairDryRun" checked>
+              <span class="form-check-label">Nur Vorschau</span>
             </label>
           </div>
 
@@ -351,10 +351,11 @@
                   action="{{ url_for('tournaments.tournaments_repair_addresses') }}"
                   class="d-inline"
                   onsubmit="return confirmRepair(this, 'global');">
+              <input type="hidden" name="csrf_token" value="{{ maintenance_csrf_token() }}">
               <input type="hidden" name="only_active" value="1">
-              <input type="hidden" name="dry_run" value="0">
+              <input type="hidden" name="dry_run" value="1">
               <button class="btn btn-info">
-                Repair global
+                Alle Adressen
               </button>
             </form>
 
@@ -362,16 +363,17 @@
                   action="{{ url_for('tournaments.tournament_repair_addresses', tournament_id=t.id) }}"
                   class="d-inline"
                   onsubmit="return confirmRepair(this, 'tournament');">
+              <input type="hidden" name="csrf_token" value="{{ maintenance_csrf_token() }}">
               <input type="hidden" name="only_active" value="1">
-              <input type="hidden" name="dry_run" value="0">
-              <button class="btn btn-outline-info">
-                Repair nur dieses Turnier
+              <input type="hidden" name="dry_run" value="1">
+              <button class="btn btn-outline-info" {% if is_closed %}disabled title="Dieses Turnier ist abgeschlossen."{% endif %}>
+                Teilnehmer dieses Turniers
               </button>
             </form>
           </div>
 
           <div class="form-text text-end">
-            Hinweis: Optionen werden aus den Schaltern übernommen.
+            Zum Speichern das Häkchen bei „Nur Vorschau“ entfernen.
           </div>
         </div>
       </div>
@@ -399,11 +401,11 @@ function confirmClose() {
   return confirm(msg);
 }
 
+{% if dev_mode %}
 function confirmReopen() {
   const msg = {{ (
-    "Turnier wieder öffnen (DEV)?\n\n"
-    ~ "Marker " ~ marker_disp ~ " wird aus tournament_years entfernt.\n"
-    ~ "participation_count und last_tournament_at werden strikt aus tournament_years neu berechnet."
+    "Turnier „" ~ t.title ~ "“ wieder öffnen?\n\n"
+    ~ "Der Teilnahmemarker " ~ (t.marker or "") ~ " wird bei den angemeldeten Personen zurückgenommen."
   ) | tojson }};
   return confirm(msg);
 }
@@ -425,23 +427,13 @@ function confirmRepair(formEl, scope) {
   const flags = _readRepairFlags();
   _applyFlagsToForm(formEl, flags);
 
-  const scopeTxt = (scope === "tournament")
-    ? "NUR dieses Turnier (Teilnehmer-Adressen)"
-    : "GLOBAL (alle Adressen)";
-
-  let msg =
-    "Repair Adressen (DEV) ausführen?\n\n" +
-    "Scope: " + scopeTxt + "\n\n" +
-    "- participation_count := Anzahl Marker in tournament_years\n" +
-    "- last_tournament_at := rechter CSV-Wert aus tournament_years (oder leer)\n" +
-    "- tournament_years wird normalisiert (trim/upper, Duplikate raus)\n\n" +
-    "Optionen:\n" +
-    "- nur aktive: " + (flags.onlyActive ? "JA" : "NEIN") + "\n" +
-    "- dry-run (keine Änderungen speichern): " + (flags.dryRun ? "JA" : "NEIN") + "\n\n";
-
-  if (!flags.dryRun) msg += "Achtung: Änderungen werden in der DB gespeichert.\n";
-
-  return confirm(msg);
+  const group = scope === "tournament" ? "die Teilnehmer dieses Turniers" : "das gesamte Adressbuch";
+  const selection = flags.onlyActive ? "Es werden nur aktive Adressen berücksichtigt." : "Auch inaktive Adressen werden berücksichtigt.";
+  const question = flags.dryRun
+    ? "Vorschau für " + group + " anzeigen?"
+    : "Die Teilnahmehistorie für " + group + " jetzt neu berechnen und speichern?";
+  return confirm(question + "\n\n" + selection);
 }
+{% endif %}
 </script>
 {% endblock %}

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import closing
-from flask import flash, redirect, request, url_for
+from flask import abort, flash, redirect, request, url_for
 
 from ... import db
 from . import bp
@@ -21,6 +21,7 @@ def tournament_reopen(tournament_id: int):
     und Teilnahme-Marker/Counts in addresses zurückdrehen.
     """
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -28,6 +29,10 @@ def tournament_reopen(tournament_id: int):
 
         if not _is_closed(t):
             flash("Turnier ist bereits offen.", "warning")
+            return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        if request.form.get("expected_closed_at") != t["closed_at"]:
+            flash("Der Turnierabschluss hat sich geändert. Bitte die Turnierseite neu laden.", "warning")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         try:
@@ -53,17 +58,18 @@ def tournaments_repair_addresses():
       dry_run=1
     """
     only_active = (request.form.get("only_active") or "").strip() == "1"
-    dry_run = (request.form.get("dry_run") or "").strip() == "1"
+    dry_run = request.form.get("dry_run") != "0"
 
     with closing(db.connect()) as con, con:
         try:
+            con.execute("BEGIN IMMEDIATE")
             changed, scanned = _repair_addresses_from_tournament_years(con, only_active=only_active, tournament_id=None)
             if dry_run:
                 con.rollback()
-                flash(f"DRY-RUN: {changed}/{scanned} Adresse(n) würden geändert.", "warning")
+                flash(f"Vorschau für das Adressbuch. {changed} von {scanned} Adressen würden geändert.", "warning")
             else:
                 con.commit()
-                flash(f"Repair abgeschlossen: {changed}/{scanned} Adresse(n) geändert.", "ok")
+                flash(f"Teilnahmehistorie im Adressbuch gespeichert. {changed} von {scanned} Adressen geändert.", "ok")
         except Exception as e:
             con.rollback()
             flash(f"Repair fehlgeschlagen: {e}", "error")
@@ -80,22 +86,26 @@ def tournament_repair_addresses(tournament_id: int):
       dry_run=1
     """
     only_active = (request.form.get("only_active") or "").strip() == "1"
-    dry_run = (request.form.get("dry_run") or "").strip() == "1"
+    dry_run = request.form.get("dry_run") != "0"
 
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
+        if _is_closed(t):
+            abort(409, description="Dieses Turnier ist abgeschlossen.")
+
         try:
             changed, scanned = _repair_addresses_from_tournament_years(con, only_active=only_active, tournament_id=tournament_id)
             if dry_run:
                 con.rollback()
-                flash(f"DRY-RUN (Turnier): {changed}/{scanned} Adresse(n) würden geändert.", "warning")
+                flash(f"Vorschau für dieses Turnier. {changed} von {scanned} Adressen würden geändert.", "warning")
             else:
                 con.commit()
-                flash(f"Repair (Turnier) abgeschlossen: {changed}/{scanned} Adresse(n) geändert.", "ok")
+                flash(f"Teilnahmehistorie für dieses Turnier gespeichert. {changed} von {scanned} Adressen geändert.", "ok")
         except Exception as e:
             con.rollback()
             flash(f"Repair (Turnier) fehlgeschlagen: {e}", "error")

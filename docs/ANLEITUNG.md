@@ -164,4 +164,10 @@ Turnierübersicht
 - Gesamtwertung drucken
 - Letztes Backup erstellen
 
+### Abgeschlossenes Turnier korrigieren
+
+Im regulären Turnierbetrieb ist ein abgeschlossenes Turnier gegen Änderungen gesperrt. Für eine beabsichtigte Korrektur den lokalen Wartungsmodus wie in der Installationsanleitung starten. In der Turnieransicht **Turnier wieder öffnen** wählen und die Rückfrage bestätigen. Die erfassten Ergebnisse bleiben erhalten. Die Anwendung nimmt den Teilnahmemarker dieses Turniers bei den angemeldeten Personen zurück.
+
+Für die Reparatur der Teilnahmehistorie ist **Nur Vorschau** vorbelegt. Nach der Bestätigung zeigt die Anwendung die Anzahl der betroffenen Adressen. Zum Speichern das Häkchen entfernen, den gewünschten Adressumfang wählen und bestätigen. Die auf ein einzelnes Turnier begrenzte Reparatur steht bei offenen Turnieren zur Verfügung.
+
 **Viel Erfolg & Gut Blatt!** 🍀
