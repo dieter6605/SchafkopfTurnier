@@ -9,6 +9,7 @@ from typing import Any
 from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import db
+from ..services.spreadsheet_csv import spreadsheet_csv
 from ..services import addressbook_io
 
 bp = Blueprint("addresses", __name__)
@@ -99,22 +100,6 @@ def _csv_text_response(filename: str, text: str) -> Response:
     resp = Response(data, mimetype="text/csv; charset=utf-8")
     resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
-
-
-def _csv_escape(v: Any) -> str:
-    """
-    Excel-freundliches CSV (Semikolon) + korrektes Quoting:
-    - Quotes verdoppeln
-    - Feld in Quotes, wenn ; " oder newline vorkommt
-    """
-    s = "" if v is None else str(v)
-    s = s.replace("\r\n", "\n").replace("\r", "\n")
-    needs_quote = (";" in s) or ('"' in s) or ("\n" in s)
-    if '"' in s:
-        s = s.replace('"', '""')
-    if needs_quote:
-        s = f'"{s}"'
-    return s
 
 
 # -----------------------------------------------------------------------------
@@ -947,15 +932,10 @@ def addresses_export_filtered():
             """
             rows = con.execute(sql, tuple(params)).fetchall()
 
-    # CSV bauen
-    lines = [";".join(_csv_escape(c) for c in cols)]
-    for r in rows:
-        # sqlite Row: dict-like
-        lines.append(";".join(_csv_escape(r[c] if c in r.keys() else "") for c in cols))
-
+    text = spreadsheet_csv([cols, *rows])
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"addresses_filtered_{stamp}.csv"
-    return _csv_text_response(filename, "\n".join(lines) + "\n")
+    return _csv_text_response(filename, text)
 
 
 # -----------------------------------------------------------------------------
@@ -1012,25 +992,9 @@ def addresses_export_invites():
         "id", "nachname", "vorname", "wohnort", "plz", "ort",
         "strasse", "hausnummer", "email", "telefon", "status",
     ]
-    lines = [";".join(header)]
-    for r in rows:
-        vals = [
-            str(r["id"] or ""),
-            str(r["nachname"] or ""),
-            str(r["vorname"] or ""),
-            str(r["wohnort"] or ""),
-            str(r["plz"] or ""),
-            str(r["ort"] or ""),
-            str(r["strasse"] or ""),
-            str(r["hausnummer"] or ""),
-            str(r["email"] or ""),
-            str(r["telefon"] or ""),
-            str(r["status"] or ""),
-        ]
-        lines.append(";".join(v.replace("\n", " ").replace("\r", " ").strip() for v in vals))
-
+    text = spreadsheet_csv([header, *rows])
     filename = f"addresses_invites_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-    return _csv_text_response(filename, "\n".join(lines) + "\n")
+    return _csv_text_response(filename, text)
 
 
 # -----------------------------------------------------------------------------
@@ -1072,7 +1036,7 @@ def addresses_export_quality():
         )
 
     header = cols + ["issue_email", "issue_telefon", "issue_wohnort", "issue_participation"]
-    lines = [";".join(header)]
+    records = [header]
 
     for r in rows:
         email = str(r["email"] or "").strip()
@@ -1095,16 +1059,10 @@ def addresses_export_quality():
             if pc != len(markers):
                 issue_part = "1"
 
-        vals = []
-        for c in cols:
-            v = r[c] if c in r.keys() else ""
-            vals.append(str(v or "").replace("\n", " ").replace("\r", " ").strip())
-
-        vals.extend([issue_email, issue_telefon, issue_wohnort, issue_part])
-        lines.append(";".join(vals))
+        records.append([*r, issue_email, issue_telefon, issue_wohnort, issue_part])
 
     filename = f"addresses_quality_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-    return _csv_text_response(filename, "\n".join(lines) + "\n")
+    return _csv_text_response(filename, spreadsheet_csv(records))
 
 
 # -----------------------------------------------------------------------------

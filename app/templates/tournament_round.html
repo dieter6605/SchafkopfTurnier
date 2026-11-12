@@ -1,6 +1,7 @@
 <!-- app/templates/tournament_round.html -->
 {# app/templates/tournament_round.html #}
 {% extends "layout.html" %}
+{% from "_tablesheet_download.html" import tablesheet_download %}
 {% block content %}
 
 <style>
@@ -266,19 +267,10 @@
     </button>
 
     {% if current_drawn %}
-      <a class="btn btn-outline-secondary"
-         href="{{ url_for('tournaments.tournament_round_tablesheets_docx_merged',
-                          tournament_id=t.id,
-                          round_no=round_no) }}">
-        Tischblätter (DOCX)
-      </a>
-
-      <a class="btn btn-outline-primary"
-         href="{{ url_for('tournaments.tournament_round_tablesheets_docx_zip',
-                          tournament_id=t.id,
-                          round_no=round_no) }}">
-        Tischblätter (ZIP)
-      </a>
+      {{ tablesheet_download(
+          url_for('tournaments.tournament_round_tablesheets_docx_merged', tournament_id=t.id, round_no=round_no),
+          url_for('tournaments.tournament_round_tablesheets_docx_zip', tournament_id=t.id, round_no=round_no)
+      ) }}
 
       <a class="btn btn-outline-primary"
          href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">

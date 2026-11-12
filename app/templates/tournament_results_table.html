@@ -1,5 +1,6 @@
 <!-- app/templates/tournament_results_table.html -->
 {% extends "layout.html" %}
+{% from "_tablesheet_download.html" import tablesheet_download %}
 {% block content %}
 
 <style>
@@ -65,14 +66,8 @@
       Gesamtwertung
     </a>
 
-    {# ✅ NEU: Tischblatt (nur dieser Tisch) als DOCX #}
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_round_tablesheet_docx_single',
-                        tournament_id=t.id,
-                        round_no=round_no,
-                        table_no=table_no) }}">
-      Tischblatt (DOCX)
-    </a>
+    {{ tablesheet_download(url_for('tournaments.tournament_round_tablesheet_docx_single',
+                                      tournament_id=t.id, round_no=round_no, table_no=table_no)) }}
 
     {% if next_table %}
       <a class="btn btn-outline-secondary"

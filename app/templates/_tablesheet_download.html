@@ -1,0 +1,19 @@
+{% macro tablesheet_download(docx_url, zip_url=none) %}
+  <div class="d-flex flex-wrap align-items-start gap-2">
+    <a class="btn btn-outline-primary" href="{{ docx_url }}?ausgabe=helfer">
+      {{ 'Tischblätter' if zip_url else 'Tischblatt' }} für Helfer (DOCX)
+    </a>
+    {% if zip_url %}
+      <a class="btn btn-outline-primary" href="{{ zip_url }}?ausgabe=helfer">Tischblätter für Helfer (ZIP)</a>
+    {% endif %}
+    <details>
+      <summary class="btn btn-outline-secondary">Turnierleitung (mit E-Mail)</summary>
+      <div class="mt-2 d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="{{ docx_url }}?ausgabe=leitung">{{ 'Tischblätter' if zip_url else 'Tischblatt' }} (DOCX)</a>
+        {% if zip_url %}
+          <a class="btn btn-outline-secondary" href="{{ zip_url }}?ausgabe=leitung">Tischblätter (ZIP)</a>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+{% endmacro %}

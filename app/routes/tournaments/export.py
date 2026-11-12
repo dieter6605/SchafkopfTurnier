@@ -2,33 +2,21 @@
 from __future__ import annotations
 
 from contextlib import closing
-import csv
 import io
 import zipfile
 from datetime import datetime
 from typing import Any
 
-from flask import Response, flash, redirect, url_for
+from flask import Response, flash, redirect, send_file, url_for
 
 from ... import db
+from ...services.spreadsheet_csv import spreadsheet_csv
 from . import bp
 from .helpers import _scores_expected_count, _get_tournament
 
 
-def _csv_bytes(rows: list[list[Any]], *, delimiter: str = ";") -> bytes:
-    """
-    rows: Liste von Zeilen (je Zeile = Liste von Spalten)
-    Rückgabe: UTF-8 mit BOM (Excel-freundlich)
-    """
-    out = io.StringIO()
-    w = csv.writer(out, delimiter=delimiter, lineterminator="\n")
-    for r in rows:
-        w.writerow(r)
-    return out.getvalue().encode("utf-8-sig")
-
-
 def _zip_add_csv(z: zipfile.ZipFile, path_in_zip: str, rows: list[list[Any]]) -> None:
-    z.writestr(path_in_zip, _csv_bytes(rows))
+    z.writestr(path_in_zip, spreadsheet_csv(rows).encode("utf-8-sig"))
 
 
 def _zip_add_text(z: zipfile.ZipFile, path_in_zip: str, text: str) -> None:
@@ -43,10 +31,10 @@ def _safe_filename(s: str) -> str:
     s = (s or "").strip()
     for ch in ["\\", "/", ":", "*", "?", '"', "<", ">", "|"]:
         s = s.replace(ch, "_")
-    return s
+    return "".join(ch for ch in s if ch.isprintable())
 
 
-def _rank_places(rows: list[dict[str, Any]], *, key_fields: tuple[str, str]) -> dict[int, int]:
+def _rank_places(rows, *, key_fields: tuple[str, str]) -> dict[int, int]:
     """
     Platzierungen mit Ties:
       gleiche (points, soli) => gleicher Rang.
@@ -71,6 +59,132 @@ def _rank_places(rows: list[dict[str, Any]], *, key_fields: tuple[str, str]) -> 
     return places
 
 
+def _overall_standings(con, tournament_id):
+    return db.q(
+        con,
+        """
+        SELECT
+            tp.id AS tp_id,
+            tp.player_no,
+            a.nachname,
+            a.vorname,
+            a.wohnort,
+            COALESCE(SUM(sc.points), 0) AS points,
+            COALESCE(SUM(sc.soli), 0)   AS soli
+        FROM tournament_participants tp
+        JOIN addresses a ON a.id = tp.address_id
+        LEFT JOIN tournament_scores sc
+          ON sc.tournament_id = tp.tournament_id
+         AND sc.tp_id = tp.id
+        WHERE tp.tournament_id = ?
+        GROUP BY tp.id
+        ORDER BY
+            points DESC,
+            soli DESC,
+            a.nachname COLLATE NOCASE ASC,
+            a.vorname COLLATE NOCASE ASC,
+            tp.player_no ASC
+        """,
+        (tournament_id,),
+    )
+
+
+def _write_round_lists(z, con, tournament_id, round_nos):
+    # 4) Rundenwertung je Runde (mit Platzierung/Ties)
+    # -------------------------
+    for rn in round_nos:
+        score_rows = db.q(
+            con,
+            """
+            SELECT
+                a.nachname, a.vorname, a.wohnort,
+                tp.player_no,
+                sc.tp_id,
+                sc.points, sc.soli,
+                sc.table_no,
+                COALESCE(s.seat, '') AS seat
+            FROM tournament_scores sc
+            JOIN tournament_participants tp ON tp.id=sc.tp_id
+            JOIN addresses a ON a.id=tp.address_id
+            LEFT JOIN tournament_seats s
+              ON s.tournament_id=sc.tournament_id
+             AND s.round_no=sc.round_no
+             AND s.tp_id=sc.tp_id
+            WHERE sc.tournament_id=? AND sc.round_no=?
+            ORDER BY
+                sc.points DESC,
+                sc.soli DESC,
+                a.nachname COLLATE NOCASE ASC,
+                a.vorname COLLATE NOCASE ASC,
+                tp.player_no ASC
+            """,
+            (tournament_id, rn),
+        )
+
+        place_map = _rank_places(score_rows, key_fields=("points", "soli"))
+
+        out_rows: list[list[Any]] = []
+        out_rows.append(["platz", "nr", "nachname", "vorname", "wohnort", "tisch", "sitz", "punkte", "soli"])
+
+        for r in score_rows:
+            tp_id = int(r["tp_id"])
+            out_rows.append(
+                [
+                    int(place_map.get(tp_id, 0) or 0),
+                    int(r["player_no"]),
+                    r["nachname"],
+                    r["vorname"],
+                    r["wohnort"],
+                    int(r["table_no"]),
+                    r["seat"] or "",
+                    int(r["points"]),
+                    int(r["soli"]),
+                ]
+            )
+
+        _zip_add_csv(z, f"rundenwertung/R{rn:02d}.csv", out_rows)
+
+    # -------------------------
+    # 5) Sitz-/Spielplan je Runde
+    # -------------------------
+    for rn in round_nos:
+        seats = db.q(
+            con,
+            """
+            SELECT
+                s.round_no,
+                s.table_no,
+                s.seat,
+                tp.player_no,
+                a.nachname, a.vorname, a.wohnort
+            FROM tournament_seats s
+            JOIN tournament_participants tp ON tp.id=s.tp_id
+            JOIN addresses a ON a.id=tp.address_id
+            WHERE s.tournament_id=? AND s.round_no=?
+            ORDER BY
+                s.table_no ASC,
+                CASE s.seat WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
+                tp.player_no ASC
+            """,
+            (tournament_id, rn),
+        )
+        sp_rows: list[list[Any]] = []
+        sp_rows.append(["runde", "tisch", "sitz", "nr", "nachname", "vorname", "wohnort"])
+        for r in seats:
+            sp_rows.append(
+                [
+                    int(r["round_no"]),
+                    int(r["table_no"]),
+                    r["seat"],
+                    int(r["player_no"]),
+                    r["nachname"],
+                    r["vorname"],
+                    r["wohnort"],
+                ]
+            )
+        _zip_add_csv(z, f"sitzplan/R{rn:02d}.csv", sp_rows)
+
+
 @bp.get("/tournaments/<int:tournament_id>/export.csv")
 def tournament_export_csv(tournament_id: int):
     """
@@ -82,32 +196,7 @@ def tournament_export_csv(tournament_id: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        rows = db.q(
-            con,
-            """
-            SELECT
-                tp.player_no,
-                a.nachname,
-                a.vorname,
-                a.wohnort,
-                COALESCE(SUM(sc.points), 0) AS points,
-                COALESCE(SUM(sc.soli), 0)   AS soli
-            FROM tournament_participants tp
-            JOIN addresses a ON a.id = tp.address_id
-            LEFT JOIN tournament_scores sc
-              ON sc.tournament_id = tp.tournament_id
-             AND sc.tp_id = tp.id
-            WHERE tp.tournament_id = ?
-            GROUP BY tp.id
-            ORDER BY
-                points DESC,
-                soli DESC,
-                a.nachname COLLATE NOCASE ASC,
-                a.vorname COLLATE NOCASE ASC,
-                tp.player_no ASC
-            """,
-            (tournament_id,),
-        )
+        rows = _overall_standings(con, tournament_id)
 
     data_rows: list[list[Any]] = []
     data_rows.append(["turnier", "datum", "beginn", "nr", "nachname", "vorname", "wohnort", "punkte", "soli"])
@@ -126,7 +215,7 @@ def tournament_export_csv(tournament_id: int):
             ]
         )
 
-    data = _csv_bytes(data_rows)
+    data = spreadsheet_csv(data_rows).encode("utf-8-sig")
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"skt-export-{tournament_id}-{ts}.csv"
 
@@ -135,6 +224,36 @@ def tournament_export_csv(tournament_id: int):
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@bp.get("/tournaments/<int:tournament_id>/helfer.zip")
+def tournament_helper_zip(tournament_id: int):
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
+        if not _get_tournament(con, tournament_id):
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+        standings = _overall_standings(con, tournament_id)
+        places = _rank_places(standings, key_fields=("points", "soli"))
+        player_fields = ("nr", "nachname", "vorname", "wohnort")
+        ranking = [["platz", *player_fields, "punkte", "soli"]]
+        players = []
+        for row in standings:
+            player = [row["player_no"], row["nachname"], row["vorname"], row["wohnort"]]
+            players.append(player)
+            ranking.append([places[row["tp_id"]], *player, row["points"], row["soli"]])
+        signups = [list(player_fields), *sorted(players, key=lambda player: player[0])]
+        rounds = [r[0] for r in con.execute(
+            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no", (tournament_id,),
+        )]
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            _zip_add_csv(archive, "01_gesamtwertung.csv", ranking)
+            _zip_add_csv(archive, "02_startliste.csv", signups)
+            _write_round_lists(archive, con, tournament_id, rounds)
+    stream.seek(0)
+    return send_file(stream, mimetype="application/zip", as_attachment=True,
+                     download_name=f"Helfer-Turnier-{tournament_id}-{datetime.now():%Y%m%d-%H%M%S}.zip", max_age=0)
 
 
 @bp.get("/tournaments/<int:tournament_id>/export.zip")
@@ -152,6 +271,7 @@ def tournament_export_zip(tournament_id: int):
       - tische/Rxx_Tyy.csv
     """
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         t_row = _get_tournament(con, tournament_id)
         if not t_row:
             flash("Turnier nicht gefunden.", "error")
@@ -203,33 +323,7 @@ def tournament_export_zip(tournament_id: int):
         # -------------------------
         # 1) Gesamtwertung (Totals)
         # -------------------------
-        overall_q = db.q(
-            con,
-            """
-            SELECT
-                tp.id AS tp_id,
-                tp.player_no,
-                a.nachname,
-                a.vorname,
-                a.wohnort,
-                COALESCE(SUM(sc.points), 0) AS points,
-                COALESCE(SUM(sc.soli), 0)   AS soli
-            FROM tournament_participants tp
-            JOIN addresses a ON a.id = tp.address_id
-            LEFT JOIN tournament_scores sc
-              ON sc.tournament_id = tp.tournament_id
-             AND sc.tp_id = tp.id
-            WHERE tp.tournament_id = ?
-            GROUP BY tp.id
-            ORDER BY
-                points DESC,
-                soli DESC,
-                a.nachname COLLATE NOCASE ASC,
-                a.vorname COLLATE NOCASE ASC,
-                tp.player_no ASC
-            """,
-            (tournament_id,),
-        )
+        overall_q = _overall_standings(con, tournament_id)
 
         overall_rows: list[list[Any]] = []
         overall_rows.append(["turnier", "datum", "beginn", "nr", "nachname", "vorname", "wohnort", "punkte", "soli"])
@@ -249,15 +343,7 @@ def tournament_export_zip(tournament_id: int):
             )
 
         # Gesamt-Rang (Ties nach points/soli)
-        overall_for_rank: list[dict[str, Any]] = [
-            {
-                "tp_id": int(r["tp_id"]),
-                "points": int(r["points"]),
-                "soli": int(r["soli"]),
-            }
-            for r in overall_q
-        ]
-        overall_place_by_tp = _rank_places(overall_for_rank, key_fields=("points", "soli"))
+        overall_place_by_tp = _rank_places(overall_q, key_fields=("points", "soli"))
 
         overall_points_by_tp = {int(r["tp_id"]): int(r["points"]) for r in overall_q}
         overall_soli_by_tp = {int(r["tp_id"]): int(r["soli"]) for r in overall_q}
@@ -340,8 +426,7 @@ def tournament_export_zip(tournament_id: int):
             )
 
             # rank
-            to_rank = [{"tp_id": int(r["tp_id"]), "points": int(r["points"]), "soli": int(r["soli"])} for r in score_rows]
-            place_map = _rank_places(to_rank, key_fields=("points", "soli"))
+            place_map = _rank_places(score_rows, key_fields=("points", "soli"))
 
             rm: dict[int, dict[str, Any]] = {}
             for r in score_rows:
@@ -618,100 +703,7 @@ def tournament_export_zip(tournament_id: int):
             _zip_add_csv(z, "05_pivot_vorlage_scores.csv", pivot_rows)
 
             # -------------------------
-            # 4) Rundenwertung je Runde (mit Platzierung/Ties)
-            # -------------------------
-            for rn in round_nos:
-                score_rows = db.q(
-                    con,
-                    """
-                    SELECT
-                        a.nachname, a.vorname, a.wohnort,
-                        tp.player_no,
-                        sc.tp_id,
-                        sc.points, sc.soli,
-                        sc.table_no,
-                        COALESCE(s.seat, '') AS seat
-                    FROM tournament_scores sc
-                    JOIN tournament_participants tp ON tp.id=sc.tp_id
-                    JOIN addresses a ON a.id=tp.address_id
-                    LEFT JOIN tournament_seats s
-                      ON s.tournament_id=sc.tournament_id
-                     AND s.round_no=sc.round_no
-                     AND s.tp_id=sc.tp_id
-                    WHERE sc.tournament_id=? AND sc.round_no=?
-                    ORDER BY
-                        sc.points DESC,
-                        sc.soli DESC,
-                        a.nachname COLLATE NOCASE ASC,
-                        a.vorname COLLATE NOCASE ASC,
-                        tp.player_no ASC
-                    """,
-                    (tournament_id, rn),
-                )
-
-                to_rank = [{"tp_id": int(r["tp_id"]), "points": int(r["points"]), "soli": int(r["soli"])} for r in score_rows]
-                place_map = _rank_places(to_rank, key_fields=("points", "soli"))
-
-                out_rows: list[list[Any]] = []
-                out_rows.append(["platz", "nr", "nachname", "vorname", "wohnort", "tisch", "sitz", "punkte", "soli"])
-
-                for r in score_rows:
-                    tp_id = int(r["tp_id"])
-                    out_rows.append(
-                        [
-                            int(place_map.get(tp_id, 0) or 0),
-                            int(r["player_no"]),
-                            r["nachname"],
-                            r["vorname"],
-                            r["wohnort"],
-                            int(r["table_no"]),
-                            r["seat"] or "",
-                            int(r["points"]),
-                            int(r["soli"]),
-                        ]
-                    )
-
-                _zip_add_csv(z, f"rundenwertung/R{rn:02d}.csv", out_rows)
-
-            # -------------------------
-            # 5) Sitz-/Spielplan je Runde
-            # -------------------------
-            for rn in round_nos:
-                seats = db.q(
-                    con,
-                    """
-                    SELECT
-                        s.round_no,
-                        s.table_no,
-                        s.seat,
-                        tp.player_no,
-                        a.nachname, a.vorname, a.wohnort
-                    FROM tournament_seats s
-                    JOIN tournament_participants tp ON tp.id=s.tp_id
-                    JOIN addresses a ON a.id=tp.address_id
-                    WHERE s.tournament_id=? AND s.round_no=?
-                    ORDER BY
-                        s.table_no ASC,
-                        CASE s.seat WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END,
-                        tp.player_no ASC
-                    """,
-                    (tournament_id, rn),
-                )
-                sp_rows: list[list[Any]] = []
-                sp_rows.append(["runde", "tisch", "sitz", "nr", "nachname", "vorname", "wohnort"])
-                for r in seats:
-                    sp_rows.append(
-                        [
-                            int(r["round_no"]),
-                            int(r["table_no"]),
-                            r["seat"],
-                            int(r["player_no"]),
-                            r["nachname"],
-                            r["vorname"],
-                            r["wohnort"],
-                        ]
-                    )
-                _zip_add_csv(z, f"sitzplan/R{rn:02d}.csv", sp_rows)
+            _write_round_lists(z, con, tournament_id, round_nos)
 
             # -------------------------
             # 6) Einzel-Scores pro Tisch -> eine CSV pro Tisch
@@ -788,14 +780,10 @@ def tournament_export_zip(tournament_id: int):
 
                 _zip_add_csv(z, f"tische/R{rn:02d}_T{tn:02d}.csv", t_rows)
 
-        data = mem.getvalue()
+        mem.seek(0)
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     title_safe = _safe_filename(str(t.get("title") or "turnier"))
-    filename = f"skt-export-{tournament_id}-{title_safe}-{ts}.zip"
+    filename = f"Turnierleitung-{tournament_id}-{title_safe}-{ts}.zip"
 
-    return Response(
-        data,
-        mimetype="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return send_file(mem, mimetype="application/zip", as_attachment=True, download_name=filename, max_age=0)

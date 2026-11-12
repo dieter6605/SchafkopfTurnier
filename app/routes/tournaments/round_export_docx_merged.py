@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import io
 import zipfile
 
-from flask import flash, redirect, send_file, url_for
+from flask import abort, flash, redirect, request, send_file, url_for
 
 from ... import db
 from . import bp
@@ -21,7 +21,7 @@ class SeatInfo:
     seat: str            # "A" | "B" | "C" | "D"
     player_no: int       # Teilnehmernummer
     display_name: str    # Anzeigename
-    email: str | None    # E-Mail (kann fehlen)
+    email: str | None    # None blendet die E-Mail-Zeile für Helfer vollständig aus.
 
 
 @dataclass(frozen=True)
@@ -33,10 +33,20 @@ class TableInfo:
 # -----------------------------------------------------------------------------
 # Helpers: fetch table data
 # -----------------------------------------------------------------------------
-def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInfo]:
+def _sheet_audience() -> str:
+    choices = request.args.getlist("ausgabe")
+    if not choices:
+        return "helfer"
+    if len(choices) != 1 or choices[0] not in ("helfer", "leitung"):
+        abort(400, description="Unbekannte Tischblattausgabe.")
+    return choices[0]
+
+
+def _fetch_round_tables(con, tournament_id: int, round_no: int, audience: str) -> list[TableInfo]:
+    email_column = "COALESCE(a.email, '')" if audience == "leitung" else "NULL"
     rows = db.q(
         con,
-        """
+        f"""
         SELECT
           s.table_no,
           s.seat,
@@ -44,7 +54,7 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
           a.nachname,
           a.vorname,
           a.wohnort,
-          a.email
+          {email_column} AS email
         FROM tournament_seats s
         JOIN tournament_participants tp ON tp.id = s.tp_id
         JOIN addresses a ON a.id = tp.address_id
@@ -71,7 +81,7 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
             seat=seat,
             player_no=int(r["player_no"] or 0),
             display_name=_display_name(r),
-            email=(str(r["email"]).strip() if r["email"] else None),
+            email=r["email"].strip() if r["email"] is not None else None,
         )
         by_table.setdefault(tno, {})
         by_table[tno][seat] = si
@@ -85,8 +95,8 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
     return out
 
 
-def _fetch_single_table(con, tournament_id: int, round_no: int, table_no: int) -> TableInfo | None:
-    tables = _fetch_round_tables(con, tournament_id, round_no)
+def _fetch_single_table(con, tournament_id: int, round_no: int, table_no: int, audience: str) -> TableInfo | None:
+    tables = _fetch_round_tables(con, tournament_id, round_no, audience)
     for t in tables:
         if int(t.table_no) == int(table_no):
             return t
@@ -565,7 +575,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 player_no=int(s.player_no),
                 name=str(s.display_name or ""),
                 email=str(s.email or ""),
-                include_email=include_email,
+                include_email=include_email and s.email is not None,
             )
 
     def _fill_carry_in_row(tbl, *, row_index: int) -> None:
@@ -752,13 +762,15 @@ def tournament_round_tablesheets_docx_merged(tournament_id: int, round_no: int):
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
+    audience = _sheet_audience()
+    prefix = "Helfer" if audience == "helfer" else "Turnierleitung"
     with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        tables = _fetch_round_tables(con, tournament_id, round_no)
+        tables = _fetch_round_tables(con, tournament_id, round_no, audience)
         if not tables:
             flash(f"Keine vollständigen 4er-Tische für Runde {round_no} gefunden (Auslosung fehlt?).", "error")
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
@@ -767,7 +779,7 @@ def tournament_round_tablesheets_docx_merged(tournament_id: int, round_no: int):
 
     payload = _build_merged_docx(tournament_title=title, round_no=int(round_no), tables=tables)
 
-    fn = f"{_safe_filename(title)}_R{int(round_no):02d}_Tische.docx"
+    fn = f"{prefix}_{_safe_filename(title)}_R{int(round_no):02d}_Tische.docx"
     return send_file(
         io.BytesIO(payload),
         as_attachment=True,
@@ -789,13 +801,15 @@ def tournament_round_tablesheet_docx_single(tournament_id: int, round_no: int, t
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
+    audience = _sheet_audience()
+    prefix = "Helfer" if audience == "helfer" else "Turnierleitung"
     with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        table = _fetch_single_table(con, tournament_id, round_no, table_no)
+        table = _fetch_single_table(con, tournament_id, round_no, table_no, audience)
         if not table:
             flash(f"Tisch {table_no} in Runde {round_no} nicht gefunden (oder nicht vollständig).", "error")
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
@@ -803,7 +817,7 @@ def tournament_round_tablesheet_docx_single(tournament_id: int, round_no: int, t
         title = str(t["title"] or "").strip() or "Turnier"
 
     payload = _build_single_docx(tournament_title=title, round_no=int(round_no), table=table)
-    fn = f"{_safe_filename(title)}_R{int(round_no):02d}_T{int(table_no):02d}.docx"
+    fn = f"{prefix}_{_safe_filename(title)}_R{int(round_no):02d}_T{int(table_no):02d}.docx"
     return send_file(
         io.BytesIO(payload),
         as_attachment=True,
@@ -825,20 +839,22 @@ def tournament_round_tablesheets_docx_zip(tournament_id: int, round_no: int):
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
+    audience = _sheet_audience()
+    prefix = "Helfer" if audience == "helfer" else "Turnierleitung"
     with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        tables = _fetch_round_tables(con, tournament_id, round_no)
+        tables = _fetch_round_tables(con, tournament_id, round_no, audience)
         if not tables:
             flash(f"Keine vollständigen 4er-Tische für Runde {round_no} gefunden (Auslosung fehlt?).", "error")
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
         title = str(t["title"] or "").strip() or "Turnier"
 
-    safe = _safe_filename(title)
+    safe = f"{prefix}_{_safe_filename(title)}"
     zip_name = f"{safe}_R{int(round_no):02d}_Tischblaetter.zip"
 
     zbuf = io.BytesIO()

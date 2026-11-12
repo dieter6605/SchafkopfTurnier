@@ -41,7 +41,7 @@
       Export Treffer (CSV)
     </a>
 
-    <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
+    <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export_filtered', view='all') }}">Alle Adressen für Tabellen (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrImport" href="{{ url_for('addresses.addresses_import') }}">Import (CSV)</a>
     <a class="btn btn-outline-secondary" id="btnAddrStats" href="{{ url_for('addresses.addresses_stats') }}">Statistik</a>
     <a class="btn btn-outline-primary" id="btnAddrNew" href="{{ url_for('addresses.address_new', next=request.full_path) }}">Neue Adresse</a>

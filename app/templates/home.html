@@ -141,7 +141,7 @@
 
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_import') }}">CSV-Import</a>
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_export') }}">CSV-Export</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('addresses.addresses_export_filtered', view='all') }}">Adressen für Tabellen (CSV)</a>
           <form method="post" action="{{ url_for('home.backup') }}">
             {{ csrf_field() }}
             <button class="btn btn-sm btn-outline-primary" {% if not backup_dir %}disabled{% endif %}>

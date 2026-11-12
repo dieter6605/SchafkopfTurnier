@@ -24,7 +24,7 @@ Beim ersten Start mit einer älteren Datenbank prüft die Anwendung die Sitzplä
 - Bei einer Turnieranmeldung oder einer früheren Teilnahme ist „Löschen“ gesperrt. „Deaktivieren“ setzt eine aktive Adresse auf inaktiv und erhält ihre Teilnahmehistorie.
 - Zum CSV-Import eine UTF-8-Datei mit Semikolon und den Spalten `nachname`, `vorname` und `wohnort` auswählen und „Datei prüfen“ anklicken. Die Vorschau zählt gültige und fehlerhafte Zeilen. Sie nennt die Zeile, wenn ein Eintrag korrigiert werden muss.
 - „Standardadressbuch ersetzen“ übernimmt die geprüfte Datei. Eine reine Kopfzeile oder eine Datei mit fehlerhaften Zeilen wird abgewiesen. Bei vorhandenen Turnieranmeldungen im Standardadressbuch steht die Vorschau zur Verfügung, das Ersetzen ist gesperrt.
-- Bei früheren Teilnahmen ohne aktuelle Anmeldung den vollständigen Adress-Export als Vorlage verwenden. Die Personen müssen unter ihrer bisherigen ID enthalten sein. Weggelassene Teilnahmespalten werden für diese Personen aus dem bestehenden Adressbuch übernommen.
+- Bei früheren Teilnahmen ohne aktuelle Anmeldung auf der Importseite „Adressbuch für Wiederimport (CSV)“ als Vorlage verwenden. Die Personen müssen unter ihrer bisherigen ID enthalten sein. Weggelassene Teilnahmespalten werden für diese Personen aus dem bestehenden Adressbuch übernommen.
 
 ## 2. Turnier öffnen
 1.	Menü „Turniere“
@@ -98,6 +98,12 @@ Anzeige
 - „Runde anzeigen“ zeigt Sitzplan (Tische & Plätze)
 
 ## 7. Sitzpläne drucken / aushängen
+
+- In der Turnierübersicht lädt „Helfer / Aushang (ZIP)“ Startliste, Gesamtwertung sowie Sitzpläne und Wertungen der einzelnen Runden herunter. Zur Spielerkennung dienen Startnummer, Vorname, Nachname und Wohnort.
+- „Turnierleitung mit Kontaktdaten (ZIP)“ enthält zusätzlich die vollständigen Anmeldedaten und Auswertungen für die interne Verwaltung.
+- „Tischblatt für Helfer“ und „Tischblätter für Helfer“ drucken Namen, Startnummer und Wohnort. Für ein Einzelblatt, ein Sammeldokument oder ein Tischblatt-ZIP mit E-Mail auf der ersten Seite „Turnierleitung (mit E-Mail)“ öffnen.
+- In Tabellen-CSV erhalten Textfelder mit Formelanfang das sichtbare Präfix `Text: `. Negative Punkte bleiben Zahlen. Für den unveränderten Austausch von Adressdaten die CSV „Adressbuch für Wiederimport“ auf der Importseite verwenden.
+
 - Runde anzeigen
 - Browser → Drucken
 - Druckkopf mit Logo erscheint automatisch

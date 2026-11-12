@@ -92,11 +92,14 @@
       Teilnehmer erfassen
     </a>
 
+    <a class="btn btn-outline-primary" href="{{ url_for('tournaments.tournament_helper_zip', tournament_id=t.id) }}">
+      Helfer / Aushang (ZIP)
+    </a>
     <a class="btn btn-outline-primary" id="btnExport"
        href="{{ url_for('tournaments.tournament_export_zip', tournament_id=t.id) }}"
-       data-confirm="ZIP-Export für „{{ t.title or '' }}“ erstellen?"
+       data-confirm="Vollständigen Export mit Kontaktdaten für „{{ t.title or '' }}“ erstellen?"
        onclick="return window.confirm(this.dataset.confirm)">
-      Export (ZIP)
+      Turnierleitung mit Kontaktdaten (ZIP)
     </a>
   </div>
 </div>
