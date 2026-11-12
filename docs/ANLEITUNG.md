@@ -109,6 +109,10 @@ Anzeige
 - Druckkopf mit Logo erscheint automatisch
 - Für Aushang geeignet
 
+**Dateien auf dem Turnierrechner ablegen**
+
+Wer einen Download im Projektordner aufbewahrt, kann dafür den Unterordner `exports/` anlegen. Git ignoriert seinen Inhalt auch nach dem Umbenennen der Dateien. Ein Software-ZIP für die Weitergabe enthält nur Programmdateien, Vereinsgrafiken und Anleitungen. Der vollständige Projektordner kann zusätzlich Adressen, Sicherungen, Exporte und ältere Git-Versionen enthalten.
+
 8. Ergebnisse eingeben
 
 Vorgehen

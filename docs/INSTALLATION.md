@@ -21,15 +21,7 @@ python3 --version
 
 ## 1. Projekt vorbereiten
 
-Repository klonen oder entpacken
-
-```bash
-cd <Zielverzeichnis>
-git clone <REPOSITORY-URL>
-cd SchafkopfTurnier
-```
-
-Alternativ: ZIP entpacken und in das Projektverzeichnis wechseln.
+Das Software-ZIP entpacken und im Terminal in den entpackten Ordner `SchafkopfTurnier` wechseln. Dort liegen `requirements.txt` und `run_waitress.py`.
 
 ## 2. Virtuelle Umgebung erstellen
 

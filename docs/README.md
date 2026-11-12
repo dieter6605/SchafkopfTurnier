@@ -36,53 +36,15 @@ Kein Cloud-Dienst, keine externen Abhängigkeiten – **alle Daten bleiben lokal
 
 # Installation
 
-## 1. Projekt herunterladen / entpacken
+Das Software-ZIP in einen eigenen Ordner entpacken. Die Einrichtung der Python-Umgebung und der Druckbibliotheken ist in der [Installationsanleitung](INSTALLATION.md) beschrieben. Beim ersten Start legt die Anwendung im Ordner `data/` eine leere Datenbank an.
+
+Nach der Einrichtung im Projektordner die virtuelle Umgebung aktivieren und die Turnierverwaltung starten.
 
 ```bash
-git clone <repository-url>
-cd SchafkopfTurnier
+python run_waitress.py
 ```
 
-oder ZIP-Datei entpacken und ins Verzeichnis wechseln.
-
-## 2. Virtuelle Umgebung (empfohlen)
-
-**macOS / Linux**
-
-```bash
-cd /Users/dieter/GIT/SchafkopfTurnier
-source .venv/bin/activate
-
-python3 -c "import flask, weasyprint; import sys; print(sys.executable)"
-python3 run.py
-```
-
-**Windows (PowerShell)**
-
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
-## 3. Abhängigkeiten installieren
-
-```bash
-pip install -r requirements.txt
-```
-
-# Start der Anwendung
-
-```bash
-python run.py
-```
-
-Danach im Browser öffnen:
-
-```text
-http://127.0.0.1:8000
-```
-
-Näheres in der Installationsanleitung.
+Im Browser `http://127.0.0.1:8000` öffnen.
 
 # Projektstruktur (Auszug)
 

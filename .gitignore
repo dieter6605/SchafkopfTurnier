@@ -28,3 +28,25 @@ data/
 
 # Lokaler Sitzungsschlüssel
 .skt-session/
+
+# Lokale Downloads und Spielerdaten
+/exports/
+addresses-export-*.csv
+addresses_filtered_*.csv
+addresses_invites_*.csv
+addresses_quality_*.csv
+addresses_stats_*.csv
+skt-export-*.csv
+skt-export-*.zip
+Helfer-Turnier-*.zip
+Turnierleitung-*.zip
+Helfer_*_R*_T*.docx
+Turnierleitung_*_R*_T*.docx
+Helfer_*_R*_Tischblaetter.zip
+Turnierleitung_*_R*_Tischblaetter.zip
+spielerkarte-T*-P*.pdf
+
+# SQLite-Begleitdateien
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
