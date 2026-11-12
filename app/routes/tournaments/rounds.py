@@ -3,17 +3,20 @@ from __future__ import annotations
 
 import random
 
-from flask import flash, redirect, render_template, url_for
+from flask import flash, redirect, render_template, request, url_for
 
 from ... import db
 from . import bp
 from .draw import (
+    DRAW_MODE_RANDOM,
+    DRAW_MODE_SEEDING,
+    _fisher_yates_shuffle,
     _history_pairs,
     _improve_tables,
     _seed_for_tournament_round,
-    _fisher_yates_shuffle,
+    _tables_by_seeding,
 )
-from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso
+from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso, _overall_standings_tp_ids
 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/draw")
@@ -36,6 +39,15 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         if round_no <= 0:
             flash("Ungültige Rundennummer.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        # --- gewünschtes Verfahren ---
+        draw_mode = (request.form.get("draw_mode") or DRAW_MODE_RANDOM).strip().lower()
+        if draw_mode not in (DRAW_MODE_RANDOM, DRAW_MODE_SEEDING):
+            draw_mode = DRAW_MODE_RANDOM
+
+        if draw_mode == DRAW_MODE_SEEDING and int(round_no) < 2:
+            flash("Setzliste ist erst ab Runde 2 möglich.", "error")
+            return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
         rounds = db.q(
             con,
@@ -116,7 +128,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         if attempt < 1:
             attempt = 1
 
-        # ✅ Seed jetzt abhängig von Attempt (damit Neu-Auslosung neue Ergebnisse erzeugt)
+        # ✅ Seed jetzt abhängig von Attempt
         seed = _seed_for_tournament_round(tournament_id, round_no, attempt)
         rng = random.Random(seed)
 
@@ -131,17 +143,26 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             (tournament_id, round_no, int(seed), int(attempt)),
         )
 
-        # ✅ Auslosung (deterministisch je T+R+Attempt)
-        tables = _improve_tables(
-            tps,
-            tp_ids,
-            hist_pairs,
-            tournament_id=tournament_id,
-            round_no=round_no,
-            attempt=attempt,
-        )
+        # ✅ Auslosung wählen
+        if draw_mode == DRAW_MODE_SEEDING:
+            tp_ids_sorted = _overall_standings_tp_ids(con, tournament_id, upto_round=int(round_no) - 1)
 
-        # ✅ Sitzverteilung am Tisch ebenfalls deterministisch (Fisher-Yates mit demselben RNG)
+            # Safety: falls irgendwas fehlt, fallback auf player_no Reihenfolge
+            if not tp_ids_sorted or len(tp_ids_sorted) != len(tp_ids):
+                tp_ids_sorted = tp_ids[:]
+
+            tables = _tables_by_seeding(tp_ids_sorted, 4)
+        else:
+            tables = _improve_tables(
+                tps,
+                tp_ids,
+                hist_pairs,
+                tournament_id=tournament_id,
+                round_no=round_no,
+                attempt=attempt,
+            )
+
+        # ✅ Sitzverteilung am Tisch deterministisch
         seats = ["A", "B", "C", "D"]
         for table_no, ids in enumerate(tables, start=1):
             ids2 = ids[:]
@@ -157,7 +178,8 @@ def tournament_round_draw(tournament_id: int, round_no: int):
 
         con.commit()
 
-    flash(f"Runde {round_no} ausgelost ({n//4} Tische).", "ok")
+    mode_label = "Setzliste" if draw_mode == DRAW_MODE_SEEDING else "Zufall"
+    flash(f"Runde {round_no} ausgelost ({n//4} Tische) · {mode_label}.", "ok")
     return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
 
@@ -220,7 +242,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
 
-        # ✅ NEU: draw_seed / draw_attempt der Runde (für Anzeige/JS)
         tr = db.one(
             con,
             "SELECT draw_seed, draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
@@ -229,7 +250,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
         draw_seed = int(tr["draw_seed"]) if (tr and tr["draw_seed"] is not None) else None
         draw_attempt = int(tr["draw_attempt"]) if (tr and tr["draw_attempt"] is not None) else 0
 
-        # ✅ NEU: Welche Tische sind "fertig" (>= 4 Scores in tournament_scores)?
         done_rows = db.q(
             con,
             """
@@ -289,7 +309,6 @@ def tournament_round_view(tournament_id: int, round_no: int):
         next_round_no=next_round_no,
         done_tables=done_tables,
         now=_now_local_iso(),
-        # ✅ NEU: damit Template/JS nie Undefined bekommt
         draw_seed=draw_seed,
         draw_attempt=draw_attempt,
     )

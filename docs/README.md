@@ -50,8 +50,11 @@ oder ZIP-Datei entpacken und ins Verzeichnis wechseln.
 **macOS / Linux**
 
 ```bash
-python3 -m venv .venv
+cd /Users/dieter/GIT/SchafkopfTurnier
 source .venv/bin/activate
+
+python3 -c "import flask, weasyprint; import sys; print(sys.executable)"
+python3 run.py
 ```
 
 **Windows (PowerShell)**

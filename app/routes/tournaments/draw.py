@@ -6,6 +6,9 @@ import random
 
 from ... import db
 
+DRAW_MODE_RANDOM = "random"
+DRAW_MODE_SEEDING = "seeding"
+
 
 def _pair(a: int, b: int) -> tuple[int, int]:
     return (a, b) if a < b else (b, a)
@@ -18,16 +21,20 @@ def _seed_for_tournament_round(tournament_id: int, round_no: int, attempt: int =
     - unabhängig von Python-Hash-Randomization
     - attempt=1: "erste Auslosung", attempt=2..: Neu-Auslosungen
 
-    WICHTIG: Der Seed muss in SQLite INTEGER passen (signed 64-bit).
-             Daher wird er auf 63-bit positive Range begrenzt.
+    WICHTIG:
+    SQLite INTEGER ist signed 64-bit (max 2^63-1). Daher erzwingen wir einen
+    positiven 63-bit Seed, um Overflow zu vermeiden.
     """
     a = max(1, int(attempt))
     s = f"SKT|DRAW|T{int(tournament_id)}|R{int(round_no)}|A{a}"
     h = hashlib.sha256(s.encode("utf-8")).digest()
 
-    # 64-bit aus Hash lesen (unsigned) und dann auf 0..(2^63-2) begrenzen
-    raw = int.from_bytes(h[:8], "big", signed=False)
-    return raw % ((1 << 63) - 1)
+    # 64-bit aus Hash, dann auf 63-bit positiv begrenzen (SQLite safe)
+    u64 = int.from_bytes(h[:8], "big", signed=False)
+    seed63 = u64 & 0x7FFF_FFFF_FFFF_FFFF  # <= 2^63-1
+    if seed63 <= 0:
+        seed63 = 1
+    return int(seed63)
 
 
 def _fisher_yates_shuffle(items: list[int], rng: random.Random) -> None:
@@ -95,6 +102,16 @@ def _score_plan(tps: list[dict[str, int]], tables: list[list[int]], hist_pairs: 
 
 def _random_tables(tp_ids: list[int], table_size: int = 4) -> list[list[int]]:
     return [tp_ids[i : i + table_size] for i in range(0, len(tp_ids), table_size)]
+
+
+def _tables_by_seeding(tp_ids_sorted: list[int], table_size: int = 4) -> list[list[int]]:
+    """
+    Setzlisten-Verfahren:
+    - tp_ids_sorted ist bereits nach Gesamtwertung sortiert (best -> schlechter)
+    - Tische werden der Reihe nach gefüllt: beste 4 an Tisch 1, nächste 4 an Tisch 2, ...
+    - Sitzplätze A–D werden später separat (deterministisch) zufällig verteilt
+    """
+    return [tp_ids_sorted[i : i + table_size] for i in range(0, len(tp_ids_sorted), table_size)]
 
 
 def _improve_tables(

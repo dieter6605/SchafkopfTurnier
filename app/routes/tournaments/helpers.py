@@ -99,6 +99,7 @@ def _tournament_counts(con, tournament_id: int) -> dict[str, int]:
     n = int(c["c"] or 0) if c else 0
     return {"participants": n, "tables": n // 4, "rest": n % 4}
 
+
 def _missing_scores_count(con, tournament_id: int) -> int:
     """
     Zählt fehlende Ergebnisse:
@@ -569,3 +570,46 @@ def _repair_addresses_from_tournament_years(
             changed += 1
 
     return changed, scanned
+
+
+# =============================================================================
+# ✅ Ranking helper: tp_ids nach Gesamtwertung (für Setzliste / Spielerkarte)
+# =============================================================================
+
+def _overall_standings_tp_ids(con, tournament_id: int, *, upto_round: int) -> list[int]:
+    """
+    Liefert tp_id-Liste sortiert nach Gesamtwertung (bis einschließlich `upto_round`).
+
+    Sortierung:
+    - SUM(points) DESC
+    - SUM(soli)   DESC
+    - Name + player_no als Tie-Breaker
+    """
+    rows = db.q(
+        con,
+        """
+        SELECT
+            tp.id AS tp_id,
+            COALESCE(SUM(sc.points), 0) AS points,
+            COALESCE(SUM(sc.soli), 0)   AS soli,
+            a.nachname, a.vorname, a.wohnort,
+            tp.player_no
+        FROM tournament_participants tp
+        JOIN addresses a ON a.id = tp.address_id
+        LEFT JOIN tournament_scores sc
+          ON sc.tournament_id = tp.tournament_id
+         AND sc.tp_id = tp.id
+         AND sc.round_no <= ?
+        WHERE tp.tournament_id = ?
+        GROUP BY tp.id, a.nachname, a.vorname, a.wohnort, tp.player_no
+        ORDER BY
+            points DESC,
+            soli   DESC,
+            a.nachname COLLATE NOCASE,
+            a.vorname  COLLATE NOCASE,
+            a.wohnort  COLLATE NOCASE,
+            tp.player_no
+        """,
+        (int(upto_round), int(tournament_id)),
+    )
+    return [int(r["tp_id"]) for r in rows]

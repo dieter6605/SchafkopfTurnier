@@ -60,6 +60,21 @@
     font-weight: 700;
   }
 
+  /* Draw-Mode Select kompakt */
+  .sk-drawmode {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .sk-drawmode label {
+    margin: 0;
+    font-size: .85rem;
+    color: rgba(0,0,0,.55);
+  }
+  .sk-drawmode .form-select {
+    width: auto;
+  }
+
   @media print {
     .no-break { break-inside: avoid; page-break-inside: avoid; }
 
@@ -130,7 +145,12 @@
 
     .sk-print-muted { color: #000; font-weight: 400; }
     .sk-print-pno { font-weight: 900; color: #000; }
+
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
   }
+
+  .print-only { display: none; }
 </style>
 
 {# --- Turnier geschlossen? (robust für sqlite Row + dict) --- #}
@@ -144,12 +164,16 @@
 {% set _last_rn = (last_round_no|default(0))|int %}
 {% set allow_draw_next = (current_drawn and (_rn == _last_rn)) %}
 
-{# --- ✅ NEU: draw_seed / draw_attempt robust aus Context --- #}
+{# --- ✅ draw_seed / draw_attempt robust aus Context --- #}
 {% set _draw_seed = (draw_seed if draw_seed is defined else None) %}
 {% set _draw_attempt = (draw_attempt if draw_attempt is defined else 0) %}
 {% set _draw_attempt_int = (_draw_attempt|default(0))|int %}
 {% set _draw_seed_str = ((_draw_seed|string)|trim) if _draw_seed is not none else '' %}
 {% set _has_drawmeta = (current_drawn and (_draw_attempt_int > 0 or (_draw_seed_str|length > 0))) %}
+
+{# --- ✅ Draw-Mode: UI-Auswahl (Setzliste erst ab Runde 2) --- #}
+{% set _can_seeding = ((_rn|int) >= 2) %}
+{% set _default_draw_mode = 'random' %}
 
 {% if is_closed %}
   <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -169,7 +193,7 @@
       Sitzplätze: A–D · Tische: fortlaufend
     </div>
 
-    {# ✅ NEU: Meta-Anzeige für Auslosung # / Seed #}
+    {# ✅ Meta-Anzeige für Auslosung # / Seed #}
     {% if _has_drawmeta %}
       <div class="sk-drawmeta">
         <span class="badge text-bg-secondary">Auslosung #{{ _draw_attempt_int }}</span>
@@ -178,6 +202,17 @@
         {% endif %}
       </div>
     {% endif %}
+
+    {# ✅ Auswahl Verfahren #}
+    <div class="sk-drawmode mt-2">
+      <label for="drawModeSelect">Auslosung:</label>
+      <select id="drawModeSelect" class="form-select form-select-sm" {% if is_closed %}disabled{% endif %}>
+        <option value="random" selected>Zufall (optimiert)</option>
+        {% if _can_seeding %}
+          <option value="seeding">Setzliste nach Gesamtwertung</option>
+        {% endif %}
+      </select>
+    </div>
 
     <div class="sk-kbd mt-1">
       Tastatur:
@@ -265,6 +300,7 @@
           {% if not is_closed %}
           onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
           {% endif %}>
+      <input type="hidden" name="draw_mode" id="drawModeHiddenDraw" value="{{ _default_draw_mode }}">
       <button class="btn btn-warning"
               id="btnRedraw"
               type="submit"
@@ -327,6 +363,7 @@
             {% if not is_closed %}
             onsubmit="return confirm({{ ('Runde ' ~ (round_no + 1) ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
             {% endif %}>
+        <input type="hidden" name="draw_mode" id="drawModeHiddenDrawNext" value="{{ _default_draw_mode }}">
         <button class="btn btn-outline-warning" id="btnDrawNext" type="submit"
                 {% if is_closed %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no + 1 }} auslosen
@@ -504,11 +541,13 @@
 
     <div class="d-flex gap-2 flex-wrap">
       <form method="post"
+            id="formDraw2"
             action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
             class="d-inline"
             {% if not is_closed %}
             onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
             {% endif %}>
+        <input type="hidden" name="draw_mode" id="drawModeHiddenDraw2" value="{{ _default_draw_mode }}">
         <button class="btn btn-warning" type="submit"
                 {% if is_closed %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no }} auslosen
@@ -537,9 +576,29 @@
   window.__SKT_ALLOW_DRAW_NEXT__ = {{ ((allow_draw_next|default(false)) and (not (is_closed|default(false))))|tojson }};
   window.__SKT_TOURNAMENT_CLOSED__ = {{ (is_closed|default(false))|tojson }};
 
-  // ✅ NEU: Draw-Metadaten (immer definierter Wert: Zahl oder leerer String)
+  // ✅ Draw-Metadaten (immer definierter Wert: Zahl oder leerer String)
   window.__SKT_DRAW_ATTEMPT__ = {{ (_draw_attempt_int|default(0))|tojson }};
   window.__SKT_DRAW_SEED__ = {{ (_draw_seed_str|default(''))|tojson }};
+
+  // ✅ Draw-Mode Auswahl in alle POST-Forms spiegeln
+  (function () {
+    const sel = document.getElementById("drawModeSelect");
+    if (!sel) return;
+
+    const targets = [
+      document.getElementById("drawModeHiddenDraw"),
+      document.getElementById("drawModeHiddenDrawNext"),
+      document.getElementById("drawModeHiddenDraw2"),
+    ].filter(Boolean);
+
+    const sync = () => {
+      const v = sel.value || "random";
+      targets.forEach(el => { el.value = v; });
+    };
+
+    sel.addEventListener("change", sync);
+    sync();
+  })();
 </script>
 <script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 {% endblock %}

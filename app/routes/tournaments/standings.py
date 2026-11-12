@@ -14,7 +14,7 @@ def tournament_standings_overall(tournament_id: int):
     Gesamtwertung über alle Runden:
     - Sum(points) je Spieler
     - Sum(soli) je Spieler
-    - zusätzlich: Anzeige der Punkte/Soli je Runde (Phase 1, nur UI)
+    - zusätzlich: Anzeige der Punkte je Runde
     """
     with db.connect() as con:
         t = _get_tournament(con, tournament_id)
@@ -22,7 +22,11 @@ def tournament_standings_overall(tournament_id: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        pc_row = db.one(con, "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
+        pc_row = db.one(
+            con,
+            "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?",
+            (tournament_id,),
+        )
         participants_count = int(pc_row["c"] or 0) if pc_row else 0
 
         rounds = db.q(
@@ -67,14 +71,9 @@ def tournament_standings_overall(tournament_id: int):
 
         per_round = db.q(
             con,
-            """
-            SELECT tp_id, round_no, points, soli
-            FROM tournament_scores
-            WHERE tournament_id=?
-            """,
+            "SELECT tp_id, round_no, points, soli FROM tournament_scores WHERE tournament_id=?",
             (tournament_id,),
         )
-
         rounds_by_tp: dict[int, dict[int, dict]] = {}
         for r in per_round:
             tp_id = int(r["tp_id"])
@@ -85,7 +84,6 @@ def tournament_standings_overall(tournament_id: int):
         last_key = None
         place = 0
         idx = 0
-
         for r in rows:
             idx += 1
             key = (int(r["points"]), int(r["soli"]))
@@ -93,8 +91,10 @@ def tournament_standings_overall(tournament_id: int):
                 place = idx
                 last_key = key
 
+            tp_id = int(r["tp_id"])
             out.append(
                 {
+                    "tp_id": tp_id,  # ✅ wichtig für Spielerkarte-Link
                     "place": place,
                     "player_no": int(r["player_no"]),
                     "nachname": r["nachname"],
@@ -102,7 +102,7 @@ def tournament_standings_overall(tournament_id: int):
                     "wohnort": r["wohnort"],
                     "points": int(r["points"]),
                     "soli": int(r["soli"]),
-                    "rounds": rounds_by_tp.get(int(r["tp_id"]), {}),
+                    "rounds": rounds_by_tp.get(tp_id, {}),
                 }
             )
 

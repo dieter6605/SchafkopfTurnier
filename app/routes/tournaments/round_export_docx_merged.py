@@ -196,7 +196,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
         if not cell.paragraphs:
             cell.add_paragraph()
         p = cell.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         try:
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(0)
@@ -499,13 +499,13 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 pass
 
     def _apply_table_layout(tbl, *, page_no: int) -> None:
-        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+        tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
         tbl.style = "Table Grid"
 
         for row in tbl.rows:
             for ci, cell in enumerate(row.cells):
                 cell.width = col_widths[ci]
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
         _set_table_cell_margins(tbl, top_tw=30, bottom_tw=30, left_tw=45, right_tw=45)
         _set_table_borders(tbl, outer_pt=2.0, inner_pt=1.0)

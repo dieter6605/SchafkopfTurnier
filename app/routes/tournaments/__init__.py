@@ -14,3 +14,4 @@ from . import standings  # noqa: E402,F401
 from . import export  # noqa: E402,F401
 from . import admin  # noqa: E402,F401  ✅ neu: reopen / dev actions
 from . import round_export_docx_merged  # noqa: E402,F401
+from . import player  # noqa: E402,F401  ✅ neu: Spielerkarte

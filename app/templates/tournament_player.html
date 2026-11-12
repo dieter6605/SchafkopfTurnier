@@ -1,0 +1,348 @@
+{# app/templates/tournament_player.html #}
+{% extends "layout.html" %}
+{% block content %}
+
+<style>
+  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+  .sk-card {
+    border: 1px solid rgba(0,0,0,.06);
+    border-radius: 14px;
+    box-shadow: 0 1px 10px rgba(0,0,0,.04);
+  }
+
+  .sk-headline { font-weight: 900; letter-spacing: .2px; }
+
+  .sk-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .28rem .6rem;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,.10);
+    background: rgba(0,0,0,.03);
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .sk-stat {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: .25rem .9rem;
+    font-size: .95rem;
+  }
+  .sk-stat .k { color: rgba(0,0,0,.55); }
+  .sk-stat .v { font-weight: 900; }
+
+  .sk-spark-wrap {
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 12px;
+    padding: .55rem .65rem;
+    background: rgba(0,0,0,.02);
+  }
+
+  .sk-spark-title {
+    font-size: .82rem;
+    color: rgba(0,0,0,.55);
+    font-weight: 800;
+    margin-bottom: .25rem;
+  }
+
+  .sk-spark svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .sk-spark-line {
+    fill: none;
+    stroke: rgba(13,110,253,.95);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .sk-spark-line2 {
+    fill: none;
+    stroke: rgba(25,135,84,.95);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .sk-timeline {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .5rem;
+  }
+
+  .sk-rndbox {
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 12px;
+    padding: .55rem .6rem;
+    background: #fff;
+  }
+
+  .sk-rndtop {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .5rem;
+    margin-bottom: .25rem;
+  }
+
+  .sk-rndtop .r { font-weight: 900; }
+  .sk-rndtop .t { font-size: .85rem; color: rgba(0,0,0,.55); }
+
+  .sk-rndpts {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: 900;
+  }
+
+  .sk-muted { color: rgba(0,0,0,.55); }
+
+  .sk-qrcode {
+    width: 86px;
+    height: 86px;
+    border: 1px solid rgba(0,0,0,.12);
+    border-radius: 10px;
+    padding: 6px;
+    background: #fff;
+  }
+
+  .sk-brandline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .sk-logos {
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    min-width: 0;
+  }
+
+  .sk-logos img {
+    height: 40px;
+    width: auto;
+    display: block;
+  }
+
+  .sk-titleblock {
+    min-width: 0;
+  }
+
+  .sk-titleblock .t1 { font-weight: 900; font-size: 1.25rem; line-height: 1.1; }
+  .sk-titleblock .t2 { font-size: .92rem; color: rgba(0,0,0,.55); }
+
+  .sk-actions { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; }
+
+  /* -------- Print / PDF: 1 Seite erzwingen -------- */
+  @media print {
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+  }
+  .print-only { display: none; }
+
+  @page {
+    size: A4;
+    margin: 10mm 10mm 10mm 10mm;
+  }
+
+  /* WeasyPrint + Browser: keine Folgeseite erzwingen */
+  .sk-page {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Druck-Font etwas kompakter */
+  @media print {
+    body { font-size: 10.8pt; }
+    .sk-logos img { height: 36px; }
+    .sk-qrcode { width: 92px; height: 92px; }
+  }
+</style>
+
+<div class="sk-page">
+
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 no-print">
+    <div>
+      <h3 class="sk-headline mb-0">Spielerkarte</h3>
+      <div class="text-muted small">
+        {{ t.title }} · {{ t.event_date }} · {{ t.start_time }}
+        {% if now %}· Stand: <span class="sk-mono">{{ now }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="sk-actions">
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
+        Gesamtwertung
+      </a>
+
+      {% if prev_tp_id %}
+        <a class="btn btn-outline-secondary"
+           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=prev_tp_id) }}">
+          ← Vorheriger
+        </a>
+      {% endif %}
+      {% if next_tp_id %}
+        <a class="btn btn-outline-secondary"
+           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=next_tp_id) }}">
+          Nächster →
+        </a>
+      {% endif %}
+
+      <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Drucken</button>
+
+      {% if pdf_url %}
+        <a class="btn btn-outline-primary" href="{{ pdf_url }}">PDF</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# --- Druckkopf --- #}
+  <div class="card sk-card mb-3">
+    <div class="card-body">
+      <div class="sk-brandline">
+        <div class="sk-logos">
+          <img src="{{ club_logo }}" alt="Vereinslogo">
+          <img src="{{ tourney_logo }}" alt="Turnierlogo">
+          <div class="sk-titleblock">
+            <div class="t1">
+              #{{ p.player_no }} · {{ p.nachname }}, {{ p.vorname }}
+              {% if medal %}<span aria-label="Medaille">{{ medal }}</span>{% endif %}
+            </div>
+            <div class="t2">
+              {{ p.wohnort }} · {{ t.title }} · {{ t.event_date }}
+            </div>
+          </div>
+        </div>
+
+        <div class="text-end">
+          <img class="sk-qrcode" src="{{ qr_url }}" alt="QR-Code zur Spielerkarte">
+          <div class="small sk-muted mt-1 sk-mono">Scan → Spielerkarte</div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 flex-wrap mt-2">
+        <span class="sk-chip">
+          Platz:
+          <span class="sk-mono">{{ place if place is not none else "–" }}</span>
+        </span>
+        <span class="sk-chip">
+          Punkte:
+          <span class="sk-mono">{{ sum_points }}</span>
+        </span>
+        <span class="sk-chip">
+          Soli:
+          <span class="sk-mono">{{ sum_soli }}</span>
+        </span>
+        <span class="sk-chip">
+          gespielt:
+          <span class="sk-mono">{{ played }}/{{ rounds_total }}</span>
+        </span>
+
+        {% if best %}
+          <span class="sk-chip" title="Beste Runde">
+            Beste Runde: <span class="sk-mono">R{{ best.round_no }} · {{ best.points }}</span>
+          </span>
+        {% endif %}
+        {% if worst %}
+          <span class="sk-chip" title="Schlechteste Runde">
+            Schlechteste Runde: <span class="sk-mono">R{{ worst.round_no }} · {{ worst.points }}</span>
+          </span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-6">
+      <div class="card sk-card h-100">
+        <div class="card-body">
+          <div class="fw-semibold mb-2">Verlauf</div>
+
+          <div class="sk-spark-wrap mb-2">
+            <div class="sk-spark-title">Punkte je Runde</div>
+            <div class="sk-spark">
+              {% if spark and spark.has_pts and spark.points_pts %}
+                <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Punkteverlauf">
+                  <polyline class="sk-spark-line" points="{{ spark.points_pts }}"></polyline>
+                </svg>
+              {% else %}
+                <div class="small sk-muted">Noch nicht genug Werte für Verlauf (mind. 2 Ergebnisse).</div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="sk-spark-wrap">
+            <div class="sk-spark-title">Kumuliert</div>
+            <div class="sk-spark">
+              {% if spark and spark.has_cum and spark.points_cum %}
+                <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kumulierte Punkte">
+                  <polyline class="sk-spark-line2" points="{{ spark.points_cum }}"></polyline>
+                </svg>
+              {% else %}
+                <div class="small sk-muted">Noch nicht genug Werte für Verlauf.</div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="small sk-muted mt-2">
+            Hinweis: Linie verbindet fehlende Runden ohne Ergebnis.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card sk-card h-100">
+        <div class="card-body">
+          <div class="fw-semibold mb-2">Rundenübersicht</div>
+
+          <div class="sk-timeline">
+            {% for r in timeline %}
+              <div class="sk-rndbox">
+                <div class="sk-rndtop">
+                  <div class="r">R{{ r.round_no }}</div>
+                  <div class="t">
+                    {% if r.table_no %}
+                      T{{ r.table_no }}{% if r.seat %}/{{ r.seat }}{% endif %}
+                    {% else %}
+                      –
+                    {% endif %}
+                  </div>
+                </div>
+
+                {% if r.has_score %}
+                  <div class="sk-rndpts">
+                    <div class="sk-mono">{{ r.points }}</div>
+                    <div class="small sk-muted sk-mono">S {{ r.soli or 0 }}</div>
+                  </div>
+                {% else %}
+                  <div class="small sk-muted">kein Ergebnis</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+
+          <div class="small sk-muted mt-2">
+            Layout ist für eine Seite optimiert (A4).
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Druck-Fußzeile (optional kompakt) #}
+  <div class="small sk-muted mt-3">
+    URL: <span class="sk-mono">{{ player_url }}</span>
+  </div>
+
+</div>
+
+{% endblock %}
