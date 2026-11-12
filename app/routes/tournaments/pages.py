@@ -322,10 +322,10 @@ def tournaments_diagnostics(tournament_id: int | None = None):
 @bp.post("/tournaments/<int:tournament_id>/delete")
 def tournament_delete(tournament_id: int):
     """
-    Löscht das Turnier. Alle abhängigen Datensätze (participants/rounds/seats/scores)
-    werden via ON DELETE CASCADE automatisch entfernt.
+    Löscht das Turnier mit Anmeldungen, Runden, Ergebnissen und Teilnehmerprotokoll.
     """
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")

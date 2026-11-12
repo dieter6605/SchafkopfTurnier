@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 _DB_PATH: Optional[Path] = None
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # -----------------------------------------------------------------------------
@@ -661,6 +661,20 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
             # Leere Kennzeichen zählten in der Einladungsliste bereits als ausgeschaltet.
             con.execute("UPDATE addresses SET invite=0 WHERE invite IS NULL")
             _set_schema_version(con, 5)
+
+        if sv < 6:
+            con.execute("""DELETE FROM audit_log WHERE NOT EXISTS (
+                SELECT 1 FROM tournaments WHERE tournaments.id = audit_log.tournament_id
+            )""")
+            _set_schema_version(con, 6)
+
+        con.execute("""
+            CREATE TRIGGER IF NOT EXISTS delete_tournament_audit
+            AFTER DELETE ON tournaments
+            BEGIN
+                DELETE FROM audit_log WHERE tournament_id = OLD.id;
+            END
+        """)
 
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")

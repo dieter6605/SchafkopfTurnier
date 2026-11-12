@@ -1,12 +1,15 @@
+import csv
 import sqlite3
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Barrier
+from zipfile import ZipFile
 
-from lxml import html
+from lxml import etree, html
 
 from app import db
 from app.web import create_app
@@ -59,6 +62,53 @@ class ParticipantIntegrityTests(unittest.TestCase):
             "addresses", "tournament_participants", "tournament_rounds",
             "tournament_seats", "tournament_scores", "audit_log", "tournaments",
         )]
+
+    def test_reprints_and_standings_use_corrected_address_after_close(self):
+        self.draw()
+        self.client.post(self.table, data=self.form())
+        self.client.post(self.tournament + "/close")
+        self.assertEqual(self.query("SELECT closed_at IS NOT NULL FROM tournaments"), [(1,)])
+        scores = self.query("SELECT * FROM tournament_scores ORDER BY id")
+        edit = "/addresses/1/edit"
+        fields = dict(html.fromstring(self.client.get(edit).get_data(as_text=True)).forms[0].fields)
+        fields.update(nachname="Kurz", vorname="Mia", wohnort="Au")
+        self.assertEqual(self.client.post(edit, data=fields).status_code, 302)
+        standing = html.fromstring(self.client.get(self.tournament + "/standings").get_data(as_text=True))
+        self.assertIn("Kurz", standing.text_content())
+        self.assertNotIn("Anna", standing.text_content())
+        export = self.client.get(self.tournament + "/export.csv").data.decode("utf-8-sig")
+        person, = (row for row in csv.DictReader(StringIO(export), delimiter=";") if row["nr"] == "1")
+        self.assertEqual((person["nachname"], person["vorname"], person["wohnort"]), ("Kurz", "Mia", "Au"))
+        docx = self.client.get(self.tournament + "/rounds/1/tablesheets-docx/1")
+        self.assertEqual(docx.status_code, 200)
+        with ZipFile(BytesIO(docx.data)) as archive:
+            xml = etree.fromstring(archive.read("word/document.xml"))
+        labels = xml.xpath("//w:t/text()", namespaces={"w": xml.nsmap["w"]})
+        self.assertIn("Kurz, Mia · Au", labels)
+        self.assertNotIn("Probe, Anna · Testort", labels)
+        self.assertEqual(self.query("SELECT * FROM tournament_scores ORDER BY id"), scores)
+
+    def test_delete_removes_only_its_own_log_and_preserves_closed_tournament(self):
+        self.client.post("/tournaments/new", data={
+            "title": "Zweites", "event_date": "2026-11-13", "start_time": "19:00",
+        })
+        self.client.post("/tournaments/2/participants/quickadd", data={
+            "nachname": "Zwei", "vorname": "Ada", "wohnort": "Ort",
+        })
+        self.draw()
+        self.client.post(self.table, data=self.form())
+        self.client.post(self.tournament + "/close")
+        self.assertEqual(self.query("SELECT closed_at IS NOT NULL FROM tournaments WHERE id=1"), [(1,)])
+        before = self.snapshot()
+        self.client.post(self.tournament + "/delete")
+        self.assertEqual(self.snapshot(), before)
+        keep = self.query("SELECT * FROM audit_log WHERE tournament_id=1 ORDER BY id")
+        self.assertEqual(len(keep), 4)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM audit_log WHERE tournament_id=2"), [(1,)])
+        self.client.post("/tournaments/2/delete")
+        self.assertEqual(self.query("SELECT id FROM tournaments"), [(1,)])
+        self.assertEqual(self.query("SELECT * FROM audit_log ORDER BY id"), keep)
+        self.assertEqual(self.query("SELECT * FROM addresses ORDER BY id"), before[0])
 
     def test_unused_signup_and_exchange_before_scoring(self):
         self.draw()

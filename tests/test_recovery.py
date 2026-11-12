@@ -87,6 +87,22 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT title FROM tournaments").fetchone()[0], "Aktuell")
         self.assertEqual(before, legacy.read_bytes())
 
+    def test_restore_removes_only_logs_for_missing_tournaments(self):
+        legacy = db.backup_db(self.backups)
+        with closing(sqlite3.connect(legacy)) as con, con:
+            con.execute("DROP TRIGGER delete_tournament_audit")
+            con.execute("UPDATE meta SET v='5' WHERE k='schema_version'")
+            con.execute("INSERT INTO tournaments(id,title,event_date,start_time) VALUES(1,'Probe','2026-11-12','18:00')")
+            con.executemany("INSERT INTO audit_log(tournament_id, action) VALUES(?,'add')", [(1,), (12,), (12,)])
+        db.restore_db(legacy)
+        db.init_db(self.live)
+        with closing(db.connect()) as con, con:
+            self.assertEqual(list(map(tuple, con.execute("SELECT id,tournament_id FROM audit_log"))), [(1, 1)])
+            con.execute("DELETE FROM tournaments WHERE id=1")
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0], 0)
+        with closing(sqlite3.connect(legacy)) as original:
+            self.assertEqual(original.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0], 3)
+
     def test_invalid_backups_preserve_active_database(self):
         invalid = self.directory / "fremd.sqlite3"
         with closing(sqlite3.connect(invalid)) as con:

@@ -16,6 +16,7 @@ Kurzanleitung für den Turniertag
 
 **Adressen pflegen**
 
+- Tischblätter, Wertungen und Turnierexporte verwenden Namen und Wohnort aus dem aktuellen Adressbuch. Eine Korrektur gilt auch für Nachdrucke abgeschlossener Turniere.
 - Bei neuen Adressen ist „Einladung aktiv“ voreingestellt, auch bei der Schnellerfassung im Turnier. Im Adressbuch lässt sich das Kennzeichen ändern.
 - In der CSV-Spalte `invite` bedeutet `1` „an“. `0` und ein leeres Feld bedeuten „aus“. Fehlt die ganze Spalte, behalten bekannte Adress-IDs ihr Kennzeichen. Zeilen ohne bekannte ID erhalten „an“.
 - Bei einer Turnieranmeldung oder einer früheren Teilnahme ist „Löschen“ gesperrt. „Deaktivieren“ setzt eine aktive Adresse auf inaktiv und erhält ihre Teilnahmehistorie.
@@ -33,6 +34,8 @@ Kurzanleitung für den Turniertag
     - Anzahl Tische
 
 Beim Anlegen und Bearbeiten ist der Marker optional. Für den Abschluss braucht jedes Turnier einen eigenen Marker aus dem Veranstaltungsdatum im Format JJMMTT und vier weiteren Buchstaben oder Ziffern. Für den 12. November 2026 ist etwa `261112ABCD` gültig. Bei einem belegten Marker zeigt das Formular Nummer und Namen des zugehörigen Turniers. Die übrigen Eingaben bleiben zur Korrektur im Formular.
+
+Beim Löschen eines offenen Turniers werden seine Anmeldungen, Runden, Ergebnisse und das Teilnehmerprotokoll gemeinsam entfernt. Die Adressen bleiben im Adressbuch.
 
 ## 3. Teilnehmer erfassen
 

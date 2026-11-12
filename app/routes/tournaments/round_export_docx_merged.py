@@ -10,7 +10,7 @@ from flask import flash, redirect, send_file, url_for
 
 from ... import db
 from . import bp
-from .helpers import _get_tournament
+from .helpers import _display_name, _get_tournament
 
 
 # -----------------------------------------------------------------------------
@@ -41,7 +41,6 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
           s.table_no,
           s.seat,
           tp.player_no,
-          tp.display_name,
           a.nachname,
           a.vorname,
           a.wohnort,
@@ -68,19 +67,10 @@ def _fetch_round_tables(con, tournament_id: int, round_no: int) -> list[TableInf
         tno = int(r["table_no"])
         seat = str(r["seat"] or "").strip().upper()
 
-        disp = (r["display_name"] or "").strip()
-        if not disp:
-            nn = (r["nachname"] or "").strip()
-            vn = (r["vorname"] or "").strip()
-            wo = (r["wohnort"] or "").strip()
-            disp = f"{nn}, {vn}"
-            if wo:
-                disp += f" · {wo}"
-
         si = SeatInfo(
             seat=seat,
             player_no=int(r["player_no"] or 0),
-            display_name=disp,
+            display_name=_display_name(r),
             email=(str(r["email"]).strip() if r["email"] else None),
         )
         by_table.setdefault(tno, {})

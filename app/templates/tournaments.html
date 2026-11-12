@@ -122,7 +122,7 @@
                           id="delForm{{ t.id }}"
                           action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
                           class="d-inline"
-                          data-confirm="Turnier „{{ t.title or '' }}“ wirklich löschen?&#10;&#10;Alle Teilnehmer dieses Turniers werden ebenfalls gelöscht."
+                          data-confirm="Turnier „{{ t.title or '' }}“ wirklich löschen?&#10;&#10;Anmeldungen, Runden, Ergebnisse und Teilnehmerprotokoll dieses Turniers werden gelöscht."
                           onsubmit="return window.confirm(this.dataset.confirm)">
                       {{ csrf_field() }}
                       <button class="btn btn-sm btn-outline-danger" type="submit">
