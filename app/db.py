@@ -1,13 +1,16 @@
 # app/db.py
 from __future__ import annotations
 
-import shutil
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Optional
+from uuid import uuid4
 
 _DB_PATH: Optional[Path] = None
+SCHEMA_VERSION = 4
 
 
 # -----------------------------------------------------------------------------
@@ -163,11 +166,8 @@ def _migrate_years_to_markers_once(con: sqlite3.Connection) -> None:
                 if _is_old_year_token(p):
                     m = _year_to_marker(int(p))
                 else:
-                    # wenn schon Marker (oder irgendwas anderes): nur Marker behalten, Rest ignorieren
-                    if _is_marker_token(p):
-                        m = p
-                    else:
-                        continue
+                    # Unklare historische Einträge beim Wiederherstellen erhalten.
+                    m = p
 
                 if m not in seen:
                     seen.add(m)
@@ -227,207 +227,211 @@ def _migrate_tournament_tables_v2(con: sqlite3.Connection) -> None:
     if not all(_has_table(con, t) for t in needed):
         return
 
-    con.execute("PRAGMA foreign_keys=OFF;")
-    con.execute("BEGIN;")
+    # Auch gelöschte IDs bleiben nach dem Tabellenumbau verbraucht.
+    sequences = dict(con.execute("SELECT name, seq FROM sqlite_sequence"))
 
-    try:
-        # --- tournament_participants ---
-        con.execute("ALTER TABLE tournament_participants RENAME TO tournament_participants_old;")
+    # --- tournament_participants ---
+    con.execute("ALTER TABLE tournament_participants RENAME TO tournament_participants_old;")
+    con.execute(
+        """
+        CREATE TABLE tournament_participants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            player_no INTEGER NOT NULL,
+            address_id INTEGER NOT NULL,
+            display_name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+            UNIQUE(tournament_id, player_no),
+            UNIQUE(tournament_id, address_id),
+
+            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+            FOREIGN KEY(address_id) REFERENCES addresses(id) ON DELETE RESTRICT
+        );
+        """
+    )
+    if _has_column(con, "tournament_participants_old", "updated_at"):
         con.execute(
             """
-            CREATE TABLE tournament_participants (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                player_no INTEGER NOT NULL,
-                address_id INTEGER NOT NULL,
-                display_name TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, player_no),
-                UNIQUE(tournament_id, address_id),
-
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-                FOREIGN KEY(address_id) REFERENCES addresses(id) ON DELETE RESTRICT
-            );
+            INSERT INTO tournament_participants(id,tournament_id,player_no,address_id,display_name,created_at,updated_at)
+            SELECT id,tournament_id,player_no,address_id,display_name,created_at,updated_at
+            FROM tournament_participants_old;
             """
         )
-        if _has_column(con, "tournament_participants_old", "updated_at"):
-            con.execute(
-                """
-                INSERT INTO tournament_participants(id,tournament_id,player_no,address_id,display_name,created_at,updated_at)
-                SELECT id,tournament_id,player_no,address_id,display_name,created_at,updated_at
-                FROM tournament_participants_old;
-                """
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO tournament_participants(id,tournament_id,player_no,address_id,display_name,created_at,updated_at)
-                SELECT id,tournament_id,player_no,address_id,display_name,created_at,datetime('now')
-                FROM tournament_participants_old;
-                """
-            )
-        con.execute("DROP TABLE tournament_participants_old;")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_tp_tournament ON tournament_participants(tournament_id);")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_tp_address   ON tournament_participants(address_id);")
-
-        # --- tournament_rounds ---
-        con.execute("ALTER TABLE tournament_rounds RENAME TO tournament_rounds_old;")
+    else:
         con.execute(
             """
-            CREATE TABLE tournament_rounds (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                round_no INTEGER NOT NULL,
-
-                -- ✅ NEU: deterministische Auslosungsmetadaten
-                draw_seed INTEGER,
-                draw_attempt INTEGER NOT NULL DEFAULT 0,
-
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, round_no),
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
-            );
+            INSERT INTO tournament_participants(id,tournament_id,player_no,address_id,display_name,created_at,updated_at)
+            SELECT id,tournament_id,player_no,address_id,display_name,created_at,datetime('now')
+            FROM tournament_participants_old;
             """
         )
+    con.execute("DROP TABLE tournament_participants_old;")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_tp_tournament ON tournament_participants(tournament_id);")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_tp_address   ON tournament_participants(address_id);")
 
-        has_seed = _has_column(con, "tournament_rounds_old", "draw_seed")
-        has_attempt = _has_column(con, "tournament_rounds_old", "draw_attempt")
+    # --- tournament_rounds ---
+    con.execute("ALTER TABLE tournament_rounds RENAME TO tournament_rounds_old;")
+    con.execute(
+        """
+        CREATE TABLE tournament_rounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            round_no INTEGER NOT NULL,
 
-        if has_seed and has_attempt:
-            con.execute(
-                """
-                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
-                SELECT id,tournament_id,round_no,draw_seed,COALESCE(draw_attempt,0),created_at
-                FROM tournament_rounds_old;
-                """
-            )
-        elif has_seed and (not has_attempt):
-            con.execute(
-                """
-                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
-                SELECT id,tournament_id,round_no,draw_seed,0,created_at
-                FROM tournament_rounds_old;
-                """
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
-                SELECT id,tournament_id,round_no,NULL,0,created_at
-                FROM tournament_rounds_old;
-                """
-            )
+            -- ✅ NEU: deterministische Auslosungsmetadaten
+            draw_seed INTEGER,
+            draw_attempt INTEGER NOT NULL DEFAULT 0,
 
-        con.execute("DROP TABLE tournament_rounds_old;")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);")
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
 
-        # --- tournament_seats ---
-        con.execute("ALTER TABLE tournament_seats RENAME TO tournament_seats_old;")
+            UNIQUE(tournament_id, round_no),
+            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE
+        );
+        """
+    )
+
+    has_seed = _has_column(con, "tournament_rounds_old", "draw_seed")
+    has_attempt = _has_column(con, "tournament_rounds_old", "draw_attempt")
+
+    if has_seed and has_attempt:
         con.execute(
             """
-            CREATE TABLE tournament_seats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                round_no INTEGER NOT NULL,
-                table_no INTEGER NOT NULL,
-                seat TEXT NOT NULL,
-                tp_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, round_no, table_no, seat),
-                UNIQUE(tournament_id, round_no, tp_id),
-
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-            );
+            INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+            SELECT id,tournament_id,round_no,draw_seed,COALESCE(draw_attempt,0),created_at
+            FROM tournament_rounds_old;
             """
         )
+    elif has_seed and (not has_attempt):
         con.execute(
             """
-            INSERT INTO tournament_seats(id,tournament_id,round_no,table_no,seat,tp_id,created_at)
-            SELECT id,tournament_id,round_no,table_no,seat,tp_id,created_at
-            FROM tournament_seats_old;
+            INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+            SELECT id,tournament_id,round_no,draw_seed,0,created_at
+            FROM tournament_rounds_old;
             """
         )
-        con.execute("DROP TABLE tournament_seats_old;")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_ts_round ON tournament_seats(tournament_id, round_no);")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_ts_tp    ON tournament_seats(tp_id);")
-
-        # --- tournament_scores ---
-        con.execute("ALTER TABLE tournament_scores RENAME TO tournament_scores_old;")
+    else:
         con.execute(
             """
-            CREATE TABLE tournament_scores (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tournament_id INTEGER NOT NULL,
-                round_no INTEGER NOT NULL,
-                table_no INTEGER NOT NULL,
-                tp_id INTEGER NOT NULL,
-
-                points INTEGER NOT NULL DEFAULT 0,
-                soli   INTEGER NOT NULL DEFAULT 0,
-
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-
-                UNIQUE(tournament_id, round_no, tp_id),
-
-                FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
-                FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
-            );
+            INSERT INTO tournament_rounds(id,tournament_id,round_no,draw_seed,draw_attempt,created_at)
+            SELECT id,tournament_id,round_no,NULL,0,created_at
+            FROM tournament_rounds_old;
             """
         )
-        if _has_column(con, "tournament_scores_old", "updated_at"):
-            con.execute(
-                """
-                INSERT INTO tournament_scores(id,tournament_id,round_no,table_no,tp_id,points,soli,created_at,updated_at)
-                SELECT id,tournament_id,round_no,table_no,tp_id,points,COALESCE(soli,0),created_at,updated_at
-                FROM tournament_scores_old;
-                """
-            )
-        else:
-            con.execute(
-                """
-                INSERT INTO tournament_scores(id,tournament_id,round_no,table_no,tp_id,points,soli,created_at,updated_at)
-                SELECT id,tournament_id,round_no,table_no,tp_id,points,COALESCE(soli,0),created_at,datetime('now')
-                FROM tournament_scores_old;
-                """
-            )
-        con.execute("DROP TABLE tournament_scores_old;")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_sc_round ON tournament_scores(tournament_id, round_no, table_no);")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_sc_tp    ON tournament_scores(tp_id);")
 
-        con.execute("COMMIT;")
-    except Exception:
-        con.execute("ROLLBACK;")
-        raise
-    finally:
-        con.execute("PRAGMA foreign_keys=ON;")
+    con.execute("DROP TABLE tournament_rounds_old;")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_tr_tournament ON tournament_rounds(tournament_id);")
+
+    # --- tournament_seats ---
+    con.execute("ALTER TABLE tournament_seats RENAME TO tournament_seats_old;")
+    con.execute(
+        """
+        CREATE TABLE tournament_seats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            round_no INTEGER NOT NULL,
+            table_no INTEGER NOT NULL,
+            seat TEXT NOT NULL,
+            tp_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+            UNIQUE(tournament_id, round_no, table_no, seat),
+            UNIQUE(tournament_id, round_no, tp_id),
+
+            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+            FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
+        );
+        """
+    )
+    con.execute(
+        """
+        INSERT INTO tournament_seats(id,tournament_id,round_no,table_no,seat,tp_id,created_at)
+        SELECT id,tournament_id,round_no,table_no,seat,tp_id,created_at
+        FROM tournament_seats_old;
+        """
+    )
+    con.execute("DROP TABLE tournament_seats_old;")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_ts_round ON tournament_seats(tournament_id, round_no);")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_ts_tp    ON tournament_seats(tp_id);")
+
+    # --- tournament_scores ---
+    con.execute("ALTER TABLE tournament_scores RENAME TO tournament_scores_old;")
+    con.execute(
+        """
+        CREATE TABLE tournament_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tournament_id INTEGER NOT NULL,
+            round_no INTEGER NOT NULL,
+            table_no INTEGER NOT NULL,
+            tp_id INTEGER NOT NULL,
+
+            points INTEGER NOT NULL DEFAULT 0,
+            soli   INTEGER NOT NULL DEFAULT 0,
+
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+            UNIQUE(tournament_id, round_no, tp_id),
+
+            FOREIGN KEY(tournament_id) REFERENCES tournaments(id) ON DELETE CASCADE,
+            FOREIGN KEY(tp_id) REFERENCES tournament_participants(id) ON DELETE CASCADE
+        );
+        """
+    )
+    if _has_column(con, "tournament_scores_old", "updated_at"):
+        con.execute(
+            """
+            INSERT INTO tournament_scores(id,tournament_id,round_no,table_no,tp_id,points,soli,created_at,updated_at)
+            SELECT id,tournament_id,round_no,table_no,tp_id,points,COALESCE(soli,0),created_at,updated_at
+            FROM tournament_scores_old;
+            """
+        )
+    else:
+        con.execute(
+            """
+            INSERT INTO tournament_scores(id,tournament_id,round_no,table_no,tp_id,points,soli,created_at,updated_at)
+            SELECT id,tournament_id,round_no,table_no,tp_id,points,COALESCE(soli,0),created_at,datetime('now')
+            FROM tournament_scores_old;
+            """
+        )
+    con.execute("DROP TABLE tournament_scores_old;")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_sc_round ON tournament_scores(tournament_id, round_no, table_no);")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_sc_tp    ON tournament_scores(tp_id);")
+
+
+    for table in needed:
+        if table in sequences:
+            con.execute(
+                "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = ?",
+                (sequences[table], table),
+            )
 
 
 # -----------------------------------------------------------------------------
 # Init / Migration
 # -----------------------------------------------------------------------------
 def init_db(db_path: Path) -> None:
-    """
-    Minimales, erweiterbares Basisschema:
-    - meta (schema_version)
-    - addressbooks, wohnorte, addresses
-    - tournaments, tournament_participants
-    - tournament_rounds, tournament_seats (Auslosung Sitzplan pro Runde)
-    - tournament_scores (Ergebnisse)
-    """
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(db_path)) as con:
+        _initialize_schema(con)
     set_db_path(db_path)
 
-    with connect() as con:
+
+def _initialize_schema(con: sqlite3.Connection) -> None:
+    """Basisschema und Migrationen gemeinsam übernehmen oder zurückrollen."""
+    con.row_factory = sqlite3.Row
+    with con:
         # ---------------------------------------------------------------------
         # Basisschema (NEU-Installationen)
         # ---------------------------------------------------------------------
         con.executescript(
             """
+            -- Für den Tabellenumbau müssen diese Optionen VOR der Transaktion gelten.
+            PRAGMA foreign_keys=OFF;
+            PRAGMA legacy_alter_table=ON;
+            BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS meta (
                 k TEXT PRIMARY KEY,
                 v TEXT NOT NULL
@@ -596,6 +600,10 @@ def init_db(db_path: Path) -> None:
         # Migrationen (Bestands-DBs)
         # ---------------------------------------------------------------------
 
+        sv = _get_schema_version(con)
+        if sv > SCHEMA_VERSION:
+            raise ValueError(f"Diese Datenbank benötigt eine neuere App (Schema {sv}).")
+
         # 0) tournaments.closed_at (Altbestand)
         _ensure_column(con, "tournaments", "closed_at", "TEXT")
 
@@ -616,7 +624,6 @@ def init_db(db_path: Path) -> None:
         _migrate_years_to_markers_once(con)
 
         # 5) Schema-Versionierte Migration (Tournament-Tabellen "hart" absichern)
-        sv = _get_schema_version(con)
         if sv < 2:
             _migrate_tournament_tables_v2(con)
             _set_schema_version(con, 2)
@@ -631,6 +638,26 @@ def init_db(db_path: Path) -> None:
                 con.execute("UPDATE tournament_rounds SET draw_attempt=0 WHERE draw_attempt IS NULL;")
             _set_schema_version(con, 3)
 
+        if sv < 4:
+            con.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    tournament_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    tp_id INTEGER, tp_id_2 INTEGER,
+                    address_id_old INTEGER, address_id_new INTEGER,
+                    address_id_old_2 INTEGER, address_id_new_2 INTEGER,
+                    note TEXT
+                )
+                """
+            )
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_tournament_id_created_at "
+                        "ON audit_log(tournament_id, created_at DESC)")
+            con.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)")
+            _set_schema_version(con, 4)
+
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
         if not ab:
@@ -640,48 +667,90 @@ def init_db(db_path: Path) -> None:
             else:
                 con.execute("UPDATE addressbooks SET is_default=1 WHERE id=?", (int(any_ab["id"]),))
 
-        con.commit()
+        if sv < SCHEMA_VERSION and con.execute("PRAGMA foreign_key_check").fetchone():
+            raise ValueError("Migration abgebrochen: Ungültige Datenbankverweise.")
 
 
 # -----------------------------------------------------------------------------
 # Backup / Restore
 # -----------------------------------------------------------------------------
+def _snapshot_name(prefix: str, suffix: str = ".sqlite3") -> str:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"{prefix}{stamp}-{uuid4().hex}{suffix}"
+
+
+def _save_snapshot(source: sqlite3.Connection, target: Path) -> None:
+    # Erst ein fertiges Backup unter dem sichtbaren Namen veröffentlichen.
+    with TemporaryDirectory(dir=target.parent) as tmp:
+        stage = Path(tmp) / "snapshot.sqlite3"
+        with closing(sqlite3.connect(stage)) as out:
+            source.backup(out)
+        stage.replace(target)
+
+
 def backup_db(backup_dir: Path) -> Path:
-    """
-    Erstellt ein timestamped Backup der SQLite-Datei (copy).
-    """
     if _DB_PATH is None:
         raise RuntimeError("DB path not set.")
     backup_dir = Path(backup_dir)
     backup_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    target = backup_dir / f"skt-backup-{ts}.sqlite3"
-    shutil.copy2(_DB_PATH, target)
+    target = backup_dir / _snapshot_name("skt-backup-")
+    with closing(sqlite3.connect(_DB_PATH.resolve().as_uri() + "?mode=ro", uri=True)) as source:
+        _save_snapshot(source, target)
     return target
 
 
-def restore_db(backup_file: Path) -> None:
-    """
-    Stellt ein Backup wieder her, indem es die aktuelle DB-Datei ersetzt.
+def _prepare_restore(con: sqlite3.Connection) -> None:
+    # Auch die ältesten Sicherungen enthalten diese Stammtabellen.
+    base = ("meta", "addressbooks", "addresses", "wohnorte", "tournaments", "tournament_participants")
+    if not all(_has_table(con, table) for table in base):
+        raise ValueError("Die Datei enthält keine vollständige SchafkopfTurnier-Datenbank.")
+    con.row_factory = sqlite3.Row
+    round_tables = ("tournament_rounds", "tournament_seats", "tournament_scores")
+    present = [_has_table(con, table) for table in round_tables]
+    if (_get_schema_version(con) >= 2 or any(present)) and not all(present):
+        raise ValueError("Die Rundendaten der Sicherung sind unvollständig.")
+    if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+        raise ValueError("Die Sicherung ist beschädigt.")
+    _initialize_schema(con)
 
-    Hinweis:
-    - Es darf dabei keine offene Verbindung auf die DB-Datei bestehen.
-    - Danach ggf. die App neu starten/neu laden.
-    """
+    # Mit dem tatsächlichen Installationsschema vergleichen, auch bei aktuellen Backups.
+    with closing(sqlite3.connect(":memory:")) as reference:
+        _initialize_schema(reference)
+        tables = reference.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+        for (table,) in tables:
+            expected = {r["name"] for r in reference.execute("SELECT name FROM pragma_table_info(?)", (table,))}
+            actual = {r["name"] for r in con.execute("SELECT name FROM pragma_table_info(?)", (table,))}
+            if not expected.issubset(actual):
+                raise ValueError(f"Unvollständige Sicherung: In {table} fehlen benötigte Spalten.")
+    if con.execute("PRAGMA foreign_key_check").fetchone():
+        raise ValueError("Die Sicherung enthält ungültige Datenbankverweise.")
+
+
+def restore_db(backup_file: Path) -> None:
     if _DB_PATH is None:
         raise RuntimeError("DB path not set.")
-
     backup_file = Path(backup_file)
-    if not backup_file.exists() or not backup_file.is_file():
+    if not backup_file.is_file():
         raise FileNotFoundError(str(backup_file))
 
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    live_path = _DB_PATH
+    live_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=live_path.parent) as tmp:
+        with closing(sqlite3.connect(Path(tmp) / "restore.sqlite3")) as stage:
+            with closing(sqlite3.connect(backup_file.resolve().as_uri() + "?mode=ro", uri=True)) as source:
+                source.backup(stage)
+            _prepare_restore(stage)
 
-    # Safety copy der aktuellen DB
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    safety = _DB_PATH.with_name(f"{_DB_PATH.stem}.before-restore-{ts}{_DB_PATH.suffix}")
-    if _DB_PATH.exists():
-        shutil.copy2(_DB_PATH, safety)
-
-    # Restore
-    shutil.copy2(backup_file, _DB_PATH)
+            with closing(sqlite3.connect(live_path)) as live:
+                # SQLite hält diese Sperre bis zum Schließen. Zwischen Sicherung
+                # und Aktivierung kann kein zweiter Schreiber Daten verändern.
+                live.execute("PRAGMA locking_mode=EXCLUSIVE")
+                live.execute("BEGIN EXCLUSIVE")
+                live.commit()
+                safety = live_path.with_name(_snapshot_name(
+                    f"{live_path.stem}.before-restore-", live_path.suffix
+                ))
+                _save_snapshot(live, safety)
+                stage.backup(live)

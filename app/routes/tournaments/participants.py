@@ -1,6 +1,8 @@
 # app/routes/tournaments/participants.py
 from __future__ import annotations
 
+from contextlib import closing
+
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 
 from ... import db
@@ -51,6 +53,19 @@ def _is_address_swap_blocked_status(status: str | None) -> bool:
     #     return True
 
     return False
+
+
+def _participant_usage(con, tournament_id):
+    """Sitz- und Ergebnisverweise, die an der Anmeldung hängen."""
+    seats = db.q(con, """
+        SELECT DISTINCT s.tp_id FROM tournament_seats s
+        JOIN tournament_participants tp ON tp.id=s.tp_id WHERE tp.tournament_id=?
+    """, (tournament_id,))
+    scores = db.q(con, """
+        SELECT DISTINCT sc.tp_id FROM tournament_scores sc
+        JOIN tournament_participants tp ON tp.id=sc.tp_id WHERE tp.tournament_id=?
+    """, (tournament_id,))
+    return {row["tp_id"] for row in seats}, {row["tp_id"] for row in scores}
 
 
 def _audit_log(
@@ -109,7 +124,8 @@ def tournament_participants(tournament_id: int):
 
     gaps: list[int] = _pop_session_gaps(tournament_id) if show_gaps else []
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -138,6 +154,8 @@ def tournament_participants(tournament_id: int):
             (tournament_id,),
         )
 
+        seated_ids, scored_ids = _participant_usage(con, tournament_id)
+
         audit = db.q(
             con,
             """
@@ -157,6 +175,8 @@ def tournament_participants(tournament_id: int):
         q=qtxt,
         hits=hits,
         participants=participants,
+        seated_ids=seated_ids,
+        scored_ids=scored_ids,
         cap_ok=cap_ok,
         show_gaps=show_gaps,
         gaps=gaps,
@@ -176,7 +196,8 @@ def tournament_participants_swap_search(tournament_id: int):
     if limit > 50:
         limit = 50
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             return jsonify({"ok": False, "error": "Turnier nicht gefunden."}), 404
@@ -195,6 +216,7 @@ def tournament_participants_swap_search(tournament_id: int):
         )
         by_aid = {int(r["address_id"]): {"tp_id": int(r["id"]), "player_no": int(r["player_no"] or 0)} for r in rows}
 
+        _, scored_ids = _participant_usage(con, tournament_id)
         out = []
         for h in hits:
             aid = int(h["id"])
@@ -204,6 +226,8 @@ def tournament_participants_swap_search(tournament_id: int):
                 continue
 
             info = by_aid.get(aid)
+            if info and info["tp_id"] in scored_ids:
+                continue
             out.append(
                 {
                     "id": aid,
@@ -229,7 +253,8 @@ def tournament_participants_swap_search(tournament_id: int):
 def tournament_participant_add(tournament_id: int, address_id: int):
     q = (request.args.get("q") or request.form.get("q") or "").strip()
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -306,7 +331,8 @@ def tournament_participant_quickadd(tournament_id: int):
     plz = (f.get("plz") or "").strip() or None
     ort = (f.get("ort") or "").strip() or None
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -385,7 +411,8 @@ def tournament_participant_quickadd(tournament_id: int):
 
 @bp.post("/tournaments/<int:tournament_id>/close")
 def tournament_close_participations(tournament_id: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -459,19 +486,10 @@ def tournament_close_participations(tournament_id: int):
             (marker, marker, marker, marker, marker, tournament_id),
         )
 
-        try:
-            con.execute(
-                """
-                UPDATE tournaments
-                SET closed_at = COALESCE(closed_at, datetime('now')),
-                    updated_at = datetime('now')
-                WHERE id = ?
-                """,
-                (tournament_id,),
-            )
-        except Exception:
-            pass
-
+        con.execute(
+            "UPDATE tournaments SET closed_at=datetime('now'), updated_at=datetime('now') WHERE id=?",
+            (tournament_id,),
+        )
         con.commit()
 
     flash(f"Turnier abgeschlossen: Marker {marker} gepflegt ({affected} Teilnehmer).", "ok")
@@ -483,7 +501,8 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
     renumber = _to_int(request.form.get("renumber"), 0)
     q = (request.form.get("q") or request.args.get("q") or "").strip()
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -505,6 +524,14 @@ def tournament_participant_remove(tournament_id: int, tp_id: int):
         )
         if not row:
             flash("Teilnehmer nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
+        if request.form.get("expected_address_id", str(row["address_id"])) != str(row["address_id"]):
+            flash("Die Person wurde inzwischen getauscht. Bitte die Teilnehmerliste erneut prüfen.", "warning")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+        seated, scored = _participant_usage(con, tournament_id)
+        if tp_id in seated or tp_id in scored:
+            flash("Entfernen gesperrt. Diese Anmeldung hat bereits einen Sitzplatz oder ein Ergebnis.", "warning")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
         removed_no = int(row["player_no"] or 0)
@@ -539,7 +566,8 @@ def tournament_participants_renumber_from(tournament_id: int):
         flash("Renummerieren: Startnummer fehlt/ungültig.", "error")
         return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -566,7 +594,8 @@ def tournament_participants_check_numbers(tournament_id: int):
     renumber = _to_int(request.form.get("renumber"), 0)
     q = (request.args.get("q") or request.form.get("q") or "").strip()
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -607,7 +636,8 @@ def tournament_participant_swap(tournament_id: int):
         flash("Swap: Teilnehmer oder Zieladresse fehlt.", "error")
         return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -664,6 +694,16 @@ def tournament_participant_swap(tournament_id: int):
             (tournament_id, new_address_id),
         )
 
+        expected_address = request.form.get("expected_address_id", str(old_address_id))
+        other_id = str(other["id"] if other else 0)
+        if expected_address != str(old_address_id) or request.form.get("expected_other_tp", other_id) != other_id:
+            flash("Die Personenzuordnung hat sich geändert. Bitte den Tausch erneut prüfen.", "warning")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+        _, scored = _participant_usage(con, tournament_id)
+        if tp_id in scored or (other and other["id"] in scored):
+            flash("Tausch gesperrt. Für eine der beiden Personen ist bereits ein Ergebnis gespeichert.", "warning")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+
         # ----------------------------
         # ✅ TAUSCH (Swap innerhalb Turnier)
         # SQLite UNIQUE-safe via temp address_id
@@ -675,7 +715,7 @@ def tournament_participant_swap(tournament_id: int):
 
             # Displaynames sauber bauen
             a_old = db.one(con, "SELECT * FROM addresses WHERE id=?", (old_address_id,))
-            old_display = _display_name(a_old) if a_old else str(tp.get("display_name") or "")
+            old_display = _display_name(a_old) if a_old else str(tp["display_name"] or "")
             new_display = _display_name(a_new)
 
             # 1) finde eine existierende Adresse, die NICHT Teilnehmer ist (FK ok) und nicht gesperrt
@@ -734,8 +774,6 @@ def tournament_participant_swap(tournament_id: int):
             try:
                 # 3) Swap in 3 Schritten über tmp_id (keine UNIQUE-Kollision möglich)
                 #    Wichtig: innerhalb einer Transaktion
-                con.execute("BEGIN IMMEDIATE")
-
                 # tp -> tmp
                 con.execute(
                     """

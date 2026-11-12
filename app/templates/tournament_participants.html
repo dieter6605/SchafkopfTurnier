@@ -354,6 +354,8 @@
 
             {% set can_edit = (not is_closed) and (not addr_locked) %}
 
+            {% set has_score = p.id in scored_ids %}
+            {% set has_seat = p.id in seated_ids %}
             <tr id="tp{{ p.id }}" class="{% if can_edit %}sk-part{% endif %}" data-delete-form-id="rmForm{{ p.id }}">
               <td class="sk-mono">
                 {% if can_edit %}
@@ -406,24 +408,30 @@
                           data-player-no="{{ p.player_no }}"
                           data-current-address-id="{{ p.address_id }}"
                           data-current-label="{{ p.nachname }}, {{ p.vorname }} · {{ p.wohnort }}"
-                          title="Ersetzt oder tauscht Teilnehmer (Nummer bleibt gleich)">
+                          {% if has_score %}disabled{% endif %}
+                          title="{{ 'Bereits gewertet' if has_score else 'Ersetzt oder tauscht Teilnehmer (Nummer bleibt gleich)' }}">
                     Swap…
                   </button>
 
                   <form method="post"
                         id="rmForm{{ p.id }}"
-                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}">
+                        action="{{ url_for('tournaments.tournament_participant_remove', tournament_id=t.id, tp_id=p.id) }}"
+                        data-confirm="Teilnehmer Nr. {{ p.player_no }} entfernen? Die Nummer bleibt frei."
+                        onsubmit="return window.confirm(this.dataset.confirm)">
                     <input type="hidden" name="q" value="{{ q or '' }}">
-                    <button class="btn btn-sm btn-outline-danger"
-                            onclick="return confirm({{
-                              ('Teilnehmer Nr ' ~ p.player_no ~ ' entfernen?\n\nHinweis: Die Nummer bleibt als Lücke frei.')|tojson
-                            }});"
-                            title="Entfernt, Nummer bleibt frei (keine automatische Renummerierung)">
+                    <input type="hidden" name="expected_address_id" value="{{ p.address_id }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit"
+                            {% if has_seat or has_score %}disabled{% endif %}>
                       Entfernen
                     </button>
                   </form>
 
                 </div>
+                {% if has_score %}
+                  <small>Ergebnis gespeichert · Entfernen und Tausch gesperrt</small>
+                {% elif has_seat %}
+                  <small>Sitzplatz ausgelost · Entfernen gesperrt</small>
+                {% endif %}
               </td>
               {% endif %}
             </tr>
@@ -631,6 +639,8 @@
               action="{{ url_for('tournaments.tournament_participant_swap', tournament_id=t.id) }}">
           <input type="hidden" name="q" value="{{ q or '' }}">
           <input type="hidden" name="tp_id" id="sktSwapTpId" value="">
+          <input type="hidden" name="expected_address_id" id="sktExpectedAddress">
+          <input type="hidden" name="expected_other_tp" id="sktExpectedOther">
           <input type="hidden" name="new_address_id" id="sktSwapNewAddressId" value="">
           <input type="hidden" name="next" id="sktSwapNext" value="">
         </form>
@@ -651,10 +661,10 @@
 
 {% block scripts %}
 <script>
-  window.__SKT_TOURNAMENT_CLOSED__ = {{ 1 if is_closed else 0 }};
+  window.__SKT_TOURNAMENT_CLOSED__ = {{ skt_tournament_closed|tojson }};
 </script>
 
-{% if not is_closed %}
+{% if not skt_tournament_closed %}
 <script>
 (function () {
   function qs(sel, root=document){ return root.querySelector(sel); }
@@ -726,27 +736,19 @@
         btn.type = "button";
         btn.className = "list-group-item list-group-item-action sk-swap-item";
         btn.dataset.addressId = aid;
+        btn.dataset.otherTp = String(it.tp_id || 0);
         btn.dataset.addressLabel = label;
         btn.dataset.inTournament = inTour ? "1" : "0";
         btn.dataset.playerNo = pno || "";
         btn.disabled = isSame;
 
-        btn.innerHTML = `
-          <div class="d-flex justify-content-between align-items-start gap-2">
-            <div>
-              <div>${label} <span class="text-muted small sk-mono">#${aid}</span></div>
-              ${
-                inTour
-                  ? `<div class="small text-muted">bereits Teilnehmer ${pno ? `(Nr ${pno})` : ""}</div>`
-                  : `<div class="small text-muted">nur Adressbuch</div>`
-              }
-              ${isSame ? `<div class="small text-danger">ist bereits die aktuelle Person</div>` : ``}
-            </div>
-            <div>
-              ${inTour ? `<span class="badge text-bg-success">im Turnier</span>` : `<span class="badge text-bg-secondary">Adressbuch</span>`}
-            </div>
-          </div>
-        `;
+        const name = document.createElement("strong");
+        name.textContent = label;
+        const info = document.createElement("div");
+        info.className = "small text-muted";
+        const status = inTour ? ("Teilnehmer Nr. " + pno) : "nur Adressbuch";
+        info.textContent = "#" + aid + " · " + status + (isSame ? " · aktuelle Person" : "");
+        btn.append(name, info);
         listEl.appendChild(btn);
       });
     }
@@ -796,6 +798,7 @@
       tgt.classList.add("sk-swap-picked");
 
       if (newIdEl) newIdEl.value = aid;
+      qs("#sktExpectedOther").value = tgt.dataset.otherTp;
       if (pickedLabelEl) pickedLabelEl.textContent = label;
 
       if (pickedModeEl) {
@@ -826,7 +829,7 @@
         const actionText = inTour ? ("TAUSCHEN" + (otherPno ? (" (mit Nr " + otherPno + ")") : "")) : "ERSETZEN";
 
         const ok = confirm(
-          actionText + "?\n\nTeilnehmer Nr " + (pno || "?") + "\nNeu: " + (picked || ("#" + newId))
+          actionText + "? Die Zuordnung gilt für alle bereits ausgelosten Sitzpläne.\n\nTeilnehmer Nr " + (pno || "?") + "\nNeu: " + (picked || ("#" + newId))
         );
         if (!ok) return;
 
@@ -858,6 +861,7 @@
         const curAddrId = btn.dataset.currentAddressId || "";
 
         if (tpIdEl) tpIdEl.value = tpId;
+        qs("#sktExpectedAddress").value = curAddrId;
         if (pnoEl) pnoEl.textContent = pno || "—";
         if (curEl) curEl.textContent = current || "—";
         if (nextEl) nextEl.value = (location.pathname + location.search + "#tp" + tpId);

@@ -217,14 +217,16 @@
     <div class="sk-kbd mt-1">
       Tastatur:
       <span class="fw-semibold">T</span> = Turnier ·
-      <span class="fw-semibold">R</span> = Runde auslosen/neu auslosen ·
-      <span class="fw-semibold">Shift+R</span> =
-      {% if current_drawn and allow_draw_next %}
-        nächste Runde auslosen
-      {% else %}
-        diese Runde auslosen
+      {% if not is_closed %}
+        {% if not has_results %}
+          <span class="fw-semibold">R</span> = diese Runde auslosen ·
+        {% endif %}
+        {% if next_round_no %}
+          <span class="fw-semibold">Umschalt+R</span> = Runde {{ next_round_no }} öffnen ·
+        {% elif allow_draw_next %}
+          <span class="fw-semibold">Umschalt+R</span> = Runde {{ round_no + 1 }} auslosen ·
+        {% endif %}
       {% endif %}
-      ·
       <span class="fw-semibold">P</span>/<span class="fw-semibold">N</span> = Vor/Zurück ·
       <span class="fw-semibold">←/→</span> = Vor/Zurück ·
       <span class="fw-semibold">Esc</span> = Turnier ·
@@ -232,6 +234,9 @@
       <br>
       Workflow:
       <span class="fw-semibold">→</span>/<span class="fw-semibold">N</span> nutzt „Vorbereiten“, wenn „Nächste“ nicht existiert
+      {% if has_results and not is_closed %}
+        <br>Der Sitzplan dieser Runde ist gesperrt, weil bereits Ergebnisse gespeichert sind.
+      {% endif %}
       {% if current_drawn and (not allow_draw_next) %}
         <br>
         Hinweis: „Nächste Runde auslosen“ nur aus der <span class="fw-semibold">letzten</span> ausgelosten Runde heraus möglich.
@@ -287,25 +292,18 @@
       Gesamtwertung
     </a>
 
-    {# ✅ Tooltiptext robust + aussagekräftig #}
-    {% set _redraw_title = (
-      "Neu auslosen erhöht die Auslosungsnummer (Attempt) und erzeugt einen neuen Seed.\n"
-      "Damit entsteht eine andere, aber weiterhin deterministische Auslosung."
-    ) %}
-
     <form method="post"
           id="formDraw"
           action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
           class="d-inline"
-          {% if not is_closed %}
-          onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
-          {% endif %}>
+          data-confirm="{% if current_drawn %}Sitzplan für Runde {{ round_no }} neu auslosen?{% else %}Runde {{ round_no }} auslosen?{% endif %}"
+          onsubmit="return window.confirm(this.dataset.confirm)">
+      <input type="hidden" name="expected_round_id" value="{{ round_id }}">
       <input type="hidden" name="draw_mode" id="drawModeHiddenDraw" value="{{ _default_draw_mode }}">
       <button class="btn btn-warning"
               id="btnRedraw"
               type="submit"
-              title="{{ _redraw_title }}"
-              {% if is_closed %}disabled aria-disabled="true"{% endif %}>
+              {% if is_closed or has_results %}disabled aria-disabled="true"{% endif %}>
         {% if current_drawn %}
           Runde {{ round_no }} neu auslosen
           {% if _draw_attempt_int > 0 %}
@@ -360,9 +358,9 @@
             id="formDrawNext"
             action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=(round_no + 1)) }}"
             class="d-inline"
-            {% if not is_closed %}
-            onsubmit="return confirm({{ ('Runde ' ~ (round_no + 1) ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
-            {% endif %}>
+            data-confirm="Runde {{ round_no + 1 }} auslosen?"
+            onsubmit="return window.confirm(this.dataset.confirm)">
+        <input type="hidden" name="expected_round_id" value="0">
         <input type="hidden" name="draw_mode" id="drawModeHiddenDrawNext" value="{{ _default_draw_mode }}">
         <button class="btn btn-outline-warning" id="btnDrawNext" type="submit"
                 {% if is_closed %}disabled aria-disabled="true"{% endif %}>
@@ -372,7 +370,7 @@
     {% elif current_drawn %}
       <button class="btn btn-outline-warning disabled"
               id="btnDrawNext"
-              type="button"
+              type="button" disabled
               aria-disabled="true"
               tabindex="-1"
               title="Nur aus der letzten ausgelosten Runde heraus möglich.">
@@ -531,7 +529,6 @@
       <div class="fw-semibold">Für Runde {{ round_no }} ist noch keine Auslosung vorhanden.</div>
       <div class="small text-muted mt-1">
         Tipp: <span class="fw-semibold">R</span> = auslosen ·
-        <span class="fw-semibold">Shift+R</span> = auslosen ·
         <span class="fw-semibold">N</span>/<span class="fw-semibold">→</span> = Runde {{ round_no + 1 }} vorbereiten
         {% if is_closed %}
           <br><span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Auslosen/Ändern gesperrt.
@@ -544,12 +541,12 @@
             id="formDraw2"
             action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=round_no) }}"
             class="d-inline"
-            {% if not is_closed %}
-            onsubmit="return confirm({{ ('Runde ' ~ round_no ~ ' auslosen?\n\nHinweis: Eine bestehende Auslosung dieser Runde wird überschrieben.')|tojson }});"
-            {% endif %}>
+            data-confirm="Runde {{ round_no }} auslosen?"
+            onsubmit="return window.confirm(this.dataset.confirm)">
+        <input type="hidden" name="expected_round_id" value="{{ round_id }}">
         <input type="hidden" name="draw_mode" id="drawModeHiddenDraw2" value="{{ _default_draw_mode }}">
         <button class="btn btn-warning" type="submit"
-                {% if is_closed %}disabled aria-disabled="true"{% endif %}>
+                {% if is_closed or has_results %}disabled aria-disabled="true"{% endif %}>
           Runde {{ round_no }} auslosen
         </button>
       </form>
@@ -572,13 +569,8 @@
 
 {% block scripts %}
 <script>
-  // Robust: nie Undefined in JSON serialisieren
-  window.__SKT_ALLOW_DRAW_NEXT__ = {{ ((allow_draw_next|default(false)) and (not (is_closed|default(false))))|tojson }};
-  window.__SKT_TOURNAMENT_CLOSED__ = {{ (is_closed|default(false))|tojson }};
-
-  // ✅ Draw-Metadaten (immer definierter Wert: Zahl oder leerer String)
-  window.__SKT_DRAW_ATTEMPT__ = {{ (_draw_attempt_int|default(0))|tojson }};
-  window.__SKT_DRAW_SEED__ = {{ (_draw_seed_str|default(''))|tojson }};
+  window.__SKT_DRAW_ATTEMPT__ = {{ draw_attempt|tojson }};
+  window.__SKT_DRAW_SEED__ = {{ (draw_seed|string if draw_seed is not none else '')|tojson }};
 
   // ✅ Draw-Mode Auswahl in alle POST-Forms spiegeln
   (function () {

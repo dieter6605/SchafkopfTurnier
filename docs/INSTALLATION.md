@@ -78,12 +78,14 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Typische Inhalte von requirements.txt:
+Die Spielerkarte verwendet WeasyPrint mit den nativen Pango-Bibliotheken für PDF und `qrcode[pil]` für das QR-Bild. Vor dem Turniertag lässt sich die Druckumgebung in der aktivierten Python-Umgebung prüfen:
 
-```text
-Flask>=3.0,<4.0
-markdown
+```bash
+python -m weasyprint --info
+python -m pip check
 ```
+
+Für den laufenden PDF-Export werden das lokale Stylesheet, die Vereinslogos und ein eingebettetes QR-Bild verwendet.
 
 ## 5. Lokalen Webserver starten
 

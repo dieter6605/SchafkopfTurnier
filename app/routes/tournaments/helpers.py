@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from itertools import groupby
+from operator import itemgetter
 from typing import Any
 
 from flask import flash, redirect, request, session, url_for
@@ -100,72 +102,63 @@ def _tournament_counts(con, tournament_id: int) -> dict[str, int]:
     return {"participants": n, "tables": n // 4, "rest": n % 4}
 
 
-def _missing_scores_count(con, tournament_id: int) -> int:
-    """
-    Zählt fehlende Ergebnisse:
-    Für jeden ausgelosten Sitz (tournament_seats) muss ein Score in tournament_scores existieren.
-    """
-    r = db.one(
-        con,
-        """
-        SELECT COUNT(*) AS c
-        FROM tournament_seats ts
-        LEFT JOIN tournament_scores sc
-          ON sc.tournament_id = ts.tournament_id
-         AND sc.round_no      = ts.round_no
-         AND sc.tp_id         = ts.tp_id
-        WHERE ts.tournament_id = ?
-          AND sc.id IS NULL
-        """,
-        (int(tournament_id),),
-    )
-    return int((r["c"] if r else 0) or 0)
-
-
 def _scores_expected_count(con, tournament_id: int) -> int:
-    """
-    Erwartete Anzahl Scores = Anzahl ausgeloster Sitzplätze.
-    """
-    r = db.one(
-        con,
-        "SELECT COUNT(*) AS c FROM tournament_seats WHERE tournament_id=?",
-        (int(tournament_id),),
-    )
-    return int((r["c"] if r else 0) or 0)
-
-
-def _scores_actual_count(con, tournament_id: int) -> int:
-    """
-    Tatsächlich vorhandene Scores.
-    """
-    r = db.one(
-        con,
-        "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?",
-        (int(tournament_id),),
-    )
-    return int((r["c"] if r else 0) or 0)
+    return con.execute(
+        "SELECT COUNT(*) FROM tournament_seats WHERE tournament_id=?", (tournament_id,),
+    ).fetchone()[0]
 
 
 def _guard_close_requires_complete_scores(con, tournament_id: int) -> str | None:
-    """
-    Rückgabe:
-      - None  => OK, darf schließen
-      - str   => Fehlermeldung, darf NICHT schließen
-    """
-    expected = _scores_expected_count(con, tournament_id)
-    actual = _scores_actual_count(con, tournament_id)
-    missing = _missing_scores_count(con, tournament_id)
+    """Prüft die tatsächlich ausgelosten Tische und die dazugehörigen Wertungen."""
+    orphan_seat = db.one(con, """
+        SELECT s.round_no, s.table_no FROM tournament_seats s
+        LEFT JOIN tournament_rounds r ON r.tournament_id=s.tournament_id AND r.round_no=s.round_no
+        WHERE s.tournament_id=? AND r.id IS NULL LIMIT 1
+    """, (tournament_id,))
+    if orphan_seat:
+        return f"Runde {orphan_seat['round_no']}, Tisch {orphan_seat['table_no']}: Der Sitzplan gehört zu keiner ausgelosten Runde."
 
-    # Wenn gar keine Runden/Sitze existieren, soll auch nicht geschlossen werden.
-    if expected <= 0:
-        return "Turnier kann nicht abgeschlossen werden: Es wurden noch keine Runden ausgelost."
+    extra_score = db.one(con, """
+        SELECT sc.round_no, sc.table_no FROM tournament_scores sc
+        LEFT JOIN tournament_seats s ON s.tournament_id=sc.tournament_id AND s.round_no=sc.round_no
+                                    AND s.table_no=sc.table_no AND s.tp_id=sc.tp_id
+        WHERE sc.tournament_id=? AND s.id IS NULL LIMIT 1
+    """, (tournament_id,))
+    if extra_score:
+        return f"Runde {extra_score['round_no']}, Tisch {extra_score['table_no']}: Ein Ergebnis hat keinen passenden Sitzplatz."
 
-    if missing > 0 or actual < expected:
-        return (
-            "Turnier kann nicht abgeschlossen werden: "
-            f"Es fehlen noch Ergebnisse ({actual}/{expected} erfasst, {missing} fehlen)."
-        )
-
+    rows = db.q(con, """
+        SELECT r.round_no, s.table_no, s.seat, tp.id AS participant_id, sc.id AS score_id, sc.points, sc.soli
+        FROM tournament_rounds r
+        LEFT JOIN tournament_seats s ON s.tournament_id=r.tournament_id AND s.round_no=r.round_no
+        LEFT JOIN tournament_participants tp ON tp.id=s.tp_id AND tp.tournament_id=r.tournament_id
+        LEFT JOIN tournament_scores sc ON sc.tournament_id=s.tournament_id AND sc.round_no=s.round_no
+                                      AND sc.table_no=s.table_no AND sc.tp_id=s.tp_id
+        WHERE r.tournament_id=?
+        ORDER BY r.round_no, s.table_no, s.seat
+    """, (tournament_id,))
+    if not rows:
+        return "Es wurde noch keine Runde ausgelost."
+    for (round_no, table_no), group in groupby(rows, key=itemgetter("round_no", "table_no")):
+        if table_no is None:
+            return f"Runde {round_no}: Der Sitzplan fehlt."
+        seats = list(group)
+        label = f"Runde {round_no}, Tisch {table_no}"
+        if len(seats) != 4 or {r["seat"] for r in seats} != {"A", "B", "C", "D"}:
+            return f"{label}: Die vier Sitzplätze A bis D sind unvollständig oder fehlerhaft."
+        players = {r["participant_id"] for r in seats}
+        if len(players) != 4 or None in players:
+            return f"{label}: Vier verschiedene Teilnehmer dieses Turniers müssen am Tisch sitzen."
+        scored = sum(r["score_id"] is not None for r in seats)
+        if scored != 4:
+            return f"{label}: {scored} von 4 Ergebnissen erfasst."
+        if any(not isinstance(r["soli"], int) or r["soli"] < 0 for r in seats):
+            return f"{label}: Soli müssen nichtnegative ganze Zahlen sein."
+        if any(not isinstance(r["points"], int) for r in seats):
+            return f"{label}: Die Punkte müssen ganze Zahlen sein."
+        total = sum(r["points"] for r in seats)
+        if total != 0:
+            return f"{label}: Die Punktesumme beträgt {total} und muss 0 sein."
     return None
 
 

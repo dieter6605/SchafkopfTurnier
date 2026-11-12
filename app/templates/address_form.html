@@ -6,7 +6,7 @@
     <h3 class="mb-0">{% if mode=='new' %}Neue Adresse{% else %}Adresse bearbeiten{% endif %}</h3>
     {% if mode!='new' %}
       <div class="text-muted small">
-        ID #{{ a.id }}{% if used %} · war schon Turnierteilnehmer (Löschen gesperrt){% endif %}
+        ID #{{ a.id }}{% if used %} · Turnieranmeldung oder Teilnahmehistorie vorhanden · Löschen gesperrt{% endif %}
       </div>
     {% endif %}
   </div>

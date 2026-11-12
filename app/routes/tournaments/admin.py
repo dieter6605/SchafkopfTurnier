@@ -1,6 +1,7 @@
 # app/routes/tournaments/admin.py
 from __future__ import annotations
 
+from contextlib import closing
 from flask import flash, redirect, request, url_for
 
 from ... import db
@@ -19,7 +20,7 @@ def tournament_reopen(tournament_id: int):
     DEV-Route: Turnier wieder öffnen (closed_at löschen)
     und Teilnahme-Marker/Counts in addresses zurückdrehen.
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -54,7 +55,7 @@ def tournaments_repair_addresses():
     only_active = (request.form.get("only_active") or "").strip() == "1"
     dry_run = (request.form.get("dry_run") or "").strip() == "1"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         try:
             changed, scanned = _repair_addresses_from_tournament_years(con, only_active=only_active, tournament_id=None)
             if dry_run:
@@ -81,7 +82,7 @@ def tournament_repair_addresses(tournament_id: int):
     only_active = (request.form.get("only_active") or "").strip() == "1"
     dry_run = (request.form.get("dry_run") or "").strip() == "1"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")

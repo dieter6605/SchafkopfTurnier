@@ -1,15 +1,20 @@
 # app/routes/tournaments/pages.py
 from __future__ import annotations
 
+from contextlib import closing
+
 from flask import Response, flash, redirect, render_template, request, url_for
 
 from ... import db
 from . import bp
 from .helpers import (
     _get_tournament,
+    _guard_close_requires_complete_scores,
+    _validate_marker_for_event_date,
     _guard_closed_redirect,
     _now_local_iso,
     _read_tournament_form,
+    _scores_expected_count,
     _tournament_counts,
     _validate_tournament_form,
 )
@@ -17,7 +22,8 @@ from .helpers import (
 
 @bp.get("/tournaments")
 def tournaments_list():
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         rows = db.q(
             con,
             """
@@ -33,31 +39,11 @@ def tournaments_list():
               -- Scores (alle Einträge)
               (SELECT COUNT(*) FROM tournament_scores sc WHERE sc.tournament_id=t.id) AS scores_count,
 
-              -- expected_scores = participants * rounds
-              (
-                (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id)
-                *
-                (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
-              ) AS expected_scores,
+              (SELECT COUNT(*) FROM tournament_seats s WHERE s.tournament_id=t.id) AS expected_scores,
 
               -- Status-Felder als 0/1
               CASE WHEN COALESCE(TRIM(t.marker),'') <> '' THEN 1 ELSE 0 END AS marker_ok,
               CASE WHEN COALESCE(TRIM(t.closed_at),'') <> '' THEN 1 ELSE 0 END AS is_closed,
-
-              -- scores_complete: nur wahr, wenn es überhaupt Runden gibt und expected == scores
-              CASE
-                WHEN (
-                  (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
-                ) <= 0 THEN 0
-                WHEN (
-                  (SELECT COUNT(*) FROM tournament_scores sc WHERE sc.tournament_id=t.id)
-                ) = (
-                  (SELECT COUNT(*) FROM tournament_participants tp WHERE tp.tournament_id=t.id)
-                  *
-                  (SELECT COUNT(*) FROM tournament_rounds tr WHERE tr.tournament_id=t.id)
-                )
-                THEN 1 ELSE 0
-              END AS scores_complete,
 
               -- "zuletzt geändert" (für Liste)
               COALESCE(t.updated_at, t.created_at) AS last_update
@@ -66,7 +52,15 @@ def tournaments_list():
             ORDER BY t.event_date DESC, t.start_time DESC, t.id DESC
             """,
         )
-    return render_template("tournaments.html", tournaments=rows, now=_now_local_iso())
+        tournaments = []
+        for row in rows:
+            tournament = dict(row)
+            tournament["scores_complete"] = (
+                row["expected_scores"] > 0 and row["scores_count"] == row["expected_scores"]
+                and _guard_close_requires_complete_scores(con, row["id"]) is None
+            )
+            tournaments.append(tournament)
+    return render_template("tournaments.html", tournaments=tournaments, now=_now_local_iso())
 
 
 @bp.get("/tournaments/new")
@@ -98,7 +92,7 @@ def tournament_create():
         flash(err, "error")
         return redirect(url_for("tournaments.tournament_new"))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         con.execute(
             """
             INSERT INTO tournaments(
@@ -131,7 +125,8 @@ def tournament_create():
 
 @bp.get("/tournaments/<int:tournament_id>")
 def tournament_detail(tournament_id: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -153,46 +148,29 @@ def tournament_detail(tournament_id: int):
         fk_issues = db.q(con, "PRAGMA foreign_key_check;")
         fk_issues_count = len(fk_issues)
 
-        participants_count = int(
-            (db.one(con, "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?", (tournament_id,)) or {"c": 0})[
-                "c"
-            ]
-            or 0
-        )
-        rounds_count = int(
-            (db.one(con, "SELECT COUNT(*) AS c FROM tournament_rounds WHERE tournament_id=?", (tournament_id,)) or {"c": 0})[
-                "c"
-            ]
-            or 0
-        )
-        scores_count = int(
-            (db.one(con, "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?", (tournament_id,)) or {"c": 0})["c"]
-            or 0
-        )
-        expected_scores = participants_count * rounds_count
-
-        divisible_by_4 = (participants_count > 0) and (participants_count % 4 == 0)
-        marker_ok = bool((t["marker"] or "").strip())
+        scores_count = con.execute(
+            "SELECT COUNT(*) FROM tournament_scores WHERE tournament_id=?", (tournament_id,),
+        ).fetchone()[0]
+        expected_scores = _scores_expected_count(con, tournament_id)
+        score_issue = _guard_close_requires_complete_scores(con, tournament_id)
+        marker_issue = _validate_marker_for_event_date(t["marker"] or "", t["event_date"] or "")
 
         safe = {
             "fk_on": fk_on,
             "integrity": integrity,
             "fk_issues_count": fk_issues_count,
-            "participants": participants_count,
-            "rounds": rounds_count,
             "scores": scores_count,
             "expected_scores": expected_scores,
-            "divisible_by_4": divisible_by_4,
-            "marker_ok": marker_ok,
-            "scores_complete": (expected_scores == scores_count) if rounds_count > 0 else False,
+            "marker_ok": marker_issue is None,
+            "marker_issue": marker_issue,
+            "score_issue": score_issue,
         }
         safe["ready"] = (
             safe["fk_on"] == 1
             and safe["integrity"].lower() == "ok"
             and safe["fk_issues_count"] == 0
-            and safe["rounds"] > 0
-            and safe["divisible_by_4"]
-            and safe["scores_complete"]
+            and safe["marker_ok"]
+            and score_issue is None
         )
 
     return render_template(
@@ -209,7 +187,7 @@ def tournament_detail(tournament_id: int):
 
 @bp.get("/tournaments/<int:tournament_id>/edit")
 def tournament_edit(tournament_id: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -240,7 +218,7 @@ def tournament_update(tournament_id: int):
         flash(err, "error")
         return redirect(url_for("tournaments.tournament_edit", tournament_id=tournament_id))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -292,7 +270,7 @@ def tournament_update(tournament_id: int):
 @bp.get("/tournaments/diagnostics")
 @bp.get("/tournaments/<int:tournament_id>/diagnostics")
 def tournaments_diagnostics(tournament_id: int | None = None):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         fk_on = int(con.execute("PRAGMA foreign_keys;").fetchone()[0] or 0)
         integrity = str(con.execute("PRAGMA integrity_check;").fetchone()[0] or "")
 
@@ -385,7 +363,7 @@ def tournament_delete(tournament_id: int):
     Löscht das Turnier. Alle abhängigen Datensätze (participants/rounds/seats/scores)
     werden via ON DELETE CASCADE automatisch entfernt.
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")

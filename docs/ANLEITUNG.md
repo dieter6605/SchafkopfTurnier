@@ -14,6 +14,13 @@ Kurzanleitung für den Turniertag
 - Startseite → „DB-Backup jetzt erstellen“
 - Meldung „Backup erstellt“ abwarten
 
+**Adressen pflegen**
+
+- Bei einer Turnieranmeldung oder einer früheren Teilnahme ist „Löschen“ gesperrt. „Deaktivieren“ setzt eine aktive Adresse auf inaktiv und erhält ihre Teilnahmehistorie.
+- Zum CSV-Import eine UTF-8-Datei mit Semikolon und den Spalten `nachname`, `vorname` und `wohnort` auswählen und „Datei prüfen“ anklicken. Die Vorschau zählt gültige und fehlerhafte Zeilen. Sie nennt die Zeile, wenn ein Eintrag korrigiert werden muss.
+- „Standardadressbuch ersetzen“ übernimmt die geprüfte Datei. Eine reine Kopfzeile oder eine Datei mit fehlerhaften Zeilen wird abgewiesen. Bei vorhandenen Turnieranmeldungen im Standardadressbuch steht die Vorschau zur Verfügung, das Ersetzen ist gesperrt.
+- Bei früheren Teilnahmen ohne aktuelle Anmeldung den vollständigen Adress-Export als Vorlage verwenden. Die Personen müssen unter ihrer bisherigen ID enthalten sein. Weggelassene Teilnahmespalten werden für diese Personen aus dem bestehenden Adressbuch übernommen.
+
 ## 2. Turnier öffnen
 1.	Menü „Turniere“
 2.	Gewünschtes Turnier anklicken
@@ -55,13 +62,14 @@ Beim Entfernen eines Teilnehmers bleibt standardmäßig eine Nummernlücke beste
 ## 5. Teilnehmer entfernen oder tauschen
 
 Teilnehmer entfernen
-- Teilnehmer anklicken
+- Entfernen ist möglich, solange für die Anmeldung kein Sitzplatz und kein Ergebnis vorliegt.
 - Button „Entfernen“
 - Nummer bleibt frei (keine automatische Renummerierung)
 
 Teilnehmer ersetzen (Swap)
-- „Swap Address-ID“ verwenden
-- Teilnehmernummer bleibt gleich
+- „Swap…“ öffnen und die Zielperson wählen. Bei einem Tausch behalten die Startnummern ihre Sitzplätze. Der neue Name gilt für alle bisherigen Sitzpläne dieser Anmeldung.
+- Sobald eine der beteiligten Anmeldungen ein Ergebnis hat, ist der Tausch gesperrt.
+- Vor dem Abschluss zeigt die Turnierübersicht den ersten Tisch mit fehlenden oder fehlerhaften Angaben. Jeder Tisch braucht die Sitze A bis D, vier passende Ergebnisse, eine Punktesumme von null und gültige Soli (ganze Zahlen ab null).
 
 ## 6. Runde auslosen
 
@@ -69,11 +77,12 @@ Im Turnier:
 
 Runde 1
 - „Runde 1 auslosen“
-- Bestehende Auslosung wird überschrieben (Bestätigung erforderlich)
+- Solange die Runde keine Ergebnisse enthält, kann die Turnierleitung einen neuen Sitzplan bestätigen. Mit dem ersten gespeicherten Ergebnis wird der Sitzplan gesperrt.
 
 Weitere Runden
 - „Nächste Runde vorbereiten“
 - „Runde X auslosen“
+- Im Sitzplan öffnet Umschalt+R eine vorhandene Folgerunde. Aus der letzten ausgelosten Runde heraus fragt die Anwendung, ob sie die nächste Runde auslosen soll.
 
 Anzeige
 - „Runde anzeigen“ zeigt Sitzplan (Tische & Plätze)
@@ -97,6 +106,8 @@ Plausibilitätsprüfung
 - Summe der Punkte muss 0 ergeben
 - Sonst Fehlermeldung
 
+Ist ein Tisch in zwei Fenstern geöffnet, prüft die Anwendung beim Speichern die Punkte und Soli aller vier Spieler. Hat sich der Tisch inzwischen geändert, zeigt sie die gespeicherten Werte und daneben die Eingabe aus dem älteren Fenster. Die Turnierleitung kann beide mit dem Tischblatt vergleichen und eine Korrektur im aktuellen Formular speichern.
+
 ## 9. Wertungen anzeigen & drucken
 
 Rundenwertung
@@ -117,6 +128,10 @@ Druckausgabe
 Platz | Name | Punkte (Soli)
 ```
 
+**Spielerkarte als PDF**
+
+In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Der QR-Code und der anklickbare Link auf der Karte führen zur Spieleransicht unter der Adresse, mit der die Turnierverwaltung geöffnet wurde. Bei `127.0.0.1` oder `localhost` lässt sich die Ansicht auf dem Turnier-Mac öffnen, solange die Anwendung läuft. Ein Handy kann den Code lesen. Für den Aufruf auf dem Handy ist eine vom Handy erreichbare Adresse erforderlich.
+
 ## 10. Tastatur-Shortcuts (wichtig!)
 
 Allgemein
@@ -134,7 +149,7 @@ Turnierübersicht
 - 1 → Runde 1 anzeigen
 - N → nächste Runde vorbereiten
 - R → Runde auslosen
-- Shift + R → nächste Runde direkt auslosen
+- Umschalt + R → Auslosung der nächsten Runde bestätigen
 
 ## 11. Typische Hinweise aus der Praxis
 

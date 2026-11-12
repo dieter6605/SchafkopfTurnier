@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+from contextlib import closing
 
 from flask import flash, redirect, render_template, request, url_for
 
@@ -21,7 +22,9 @@ from .helpers import _get_tournament, _guard_closed_redirect, _now_local_iso, _o
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/draw")
 def tournament_round_draw(tournament_id: int, round_no: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        # Die Ergebnisprüfung und der Wechsel des Sitzplans müssen zusammen erfolgen.
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -39,6 +42,24 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         if round_no <= 0:
             flash("Ungültige Rundennummer.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+        round_url = url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no)
+        prev = db.one(
+            con,
+            "SELECT id, draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
+            (tournament_id, round_no),
+        )
+        expected_id = request.form.get("expected_round_id")
+        if expected_id is not None and expected_id != str(prev["id"] if prev else 0):
+            flash(f"Die Auslosung für Runde {round_no} hat sich inzwischen geändert. Der aktuelle Sitzplan wird angezeigt.", "info")
+            return redirect(round_url)
+        has_results = db.one(
+            con, "SELECT 1 FROM tournament_scores WHERE tournament_id=? AND round_no=? LIMIT 1",
+            (tournament_id, round_no),
+        )
+        if has_results:
+            flash(f"Für Runde {round_no} sind bereits Ergebnisse gespeichert. Der Sitzplan ist gesperrt.", "warning")
+            return redirect(round_url)
 
         # --- gewünschtes Verfahren ---
         draw_mode = (request.form.get("draw_mode") or DRAW_MODE_RANDOM).strip().lower()
@@ -117,12 +138,6 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         tp_ids = [tp["id"] for tp in tps]
         hist_pairs = _history_pairs(con, tournament_id, round_no)
 
-        # ✅ Attempt bestimmen, BEVOR wir löschen (damit "Neu auslosen" hochzählt)
-        prev = db.one(
-            con,
-            "SELECT draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
-            (tournament_id, round_no),
-        )
         prev_attempt = int(prev["draw_attempt"]) if (prev and prev["draw_attempt"] is not None) else 0
         attempt = prev_attempt + 1 if prev_attempt >= 0 else 1
         if attempt < 1:
@@ -132,8 +147,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         seed = _seed_for_tournament_round(tournament_id, round_no, attempt)
         rng = random.Random(seed)
 
-        # Alte Daten dieser Runde entfernen
-        con.execute("DELETE FROM tournament_scores WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
+        # Ein bestehender Sitzplan ohne Ergebnisse darf neu ausgelost werden.
         con.execute("DELETE FROM tournament_seats  WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
         con.execute("DELETE FROM tournament_rounds WHERE tournament_id=? AND round_no=?", (tournament_id, round_no))
 
@@ -185,7 +199,9 @@ def tournament_round_draw(tournament_id: int, round_no: int):
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>")
 def tournament_round_view(tournament_id: int, round_no: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        # Sitzplan, Ergebnisse und Formular-ID müssen denselben Stand zeigen.
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -244,7 +260,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
 
         tr = db.one(
             con,
-            "SELECT draw_seed, draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
+            "SELECT id, draw_seed, draw_attempt FROM tournament_rounds WHERE tournament_id=? AND round_no=?",
             (tournament_id, round_no),
         )
         draw_seed = int(tr["draw_seed"]) if (tr and tr["draw_seed"] is not None) else None
@@ -308,6 +324,8 @@ def tournament_round_view(tournament_id: int, round_no: int):
         prev_round_no=prev_round_no,
         next_round_no=next_round_no,
         done_tables=done_tables,
+        has_results=bool(done_rows),
+        round_id=tr["id"] if tr else 0,
         now=_now_local_iso(),
         draw_seed=draw_seed,
         draw_attempt=draw_attempt,

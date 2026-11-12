@@ -1,6 +1,7 @@
 # app/routes/tournaments/round_export_docx_merged.py
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass
 import io
 import zipfile
@@ -761,7 +762,7 @@ def tournament_round_tablesheets_docx_merged(tournament_id: int, round_no: int):
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -798,7 +799,7 @@ def tournament_round_tablesheet_docx_single(tournament_id: int, round_no: int, t
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -834,7 +835,7 @@ def tournament_round_tablesheets_docx_zip(tournament_id: int, round_no: int):
         flash("DOCX-Export nicht verfügbar: Paket 'python-docx' ist nicht installiert.", "error")
         return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")

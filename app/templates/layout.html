@@ -1,3 +1,6 @@
+{% macro static_asset(filename) -%}
+  {{ filename if pdf_mode|default(false) else url_for('static', filename=filename) }}
+{%- endmacro %}
 <!-- app/templates/layout.html -->
 <!doctype html>
 <html lang="de">
@@ -6,9 +9,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SchafkopfTurnier</title>
 
-  <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='branding/favicon.ico') }}" sizes="32x32">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='branding/apple-touch-icon.png') }}">
+  <link href="{{ static_asset('vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+  <link rel="icon" type="image/png" href="{{ static_asset('branding/favicon.ico') }}" sizes="32x32">
+  <link rel="apple-touch-icon" href="{{ static_asset('branding/apple-touch-icon.png') }}">
 
   <style>
     /* Globales Logo: Bildschirm (Navbar) */
@@ -110,7 +113,6 @@
   <!-- ========================================================= -->
   <script>
     window.__SKT_TOURNAMENT_CLOSED__ = {{ (skt_tournament_closed|default(false))|tojson }};
-    window.__SKT_ALLOW_DRAW_NEXT__ = false;
   </script>
 </head>
 
@@ -199,7 +201,7 @@
   <!-- Druckkopf mit Logo (erscheint nur beim Drucken) -->
   <div class="sk-print-header print-only">
     {% if print_logo %}
-      <img src="{{ url_for('static', filename=print_logo) }}" alt="Logo">
+      <img src="{{ static_asset(print_logo) }}" alt="Logo">
     {% endif %}
     <div class="title">SchafkopfTurnier</div>
   </div>
@@ -226,13 +228,13 @@
 </div>
 
 <!-- Bootstrap JS (für Dropdown etc.) -->
-<script defer src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+<script defer src="{{ static_asset('vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
 
 <!-- Gemeinsame JS-Logik: Wohnort-Autocomplete -->
-<script defer src="{{ url_for('static', filename='js/wohnort_autocomplete.js') }}"></script>
+<script defer src="{{ static_asset('js/wohnort_autocomplete.js') }}"></script>
 
 <!-- ✅ Globales UX (Fetch-409 -> Toast etc.) -->
-<script defer src="{{ url_for('static', filename='js/skt_ux.js') }}"></script>
+<script defer src="{{ static_asset('js/skt_ux.js') }}"></script>
 
 <!-- ✅ Seiten-spezifische Skripte (wichtig, um Key-Handler-Kollisionen zu vermeiden) -->
 {% block scripts %}{% endblock %}

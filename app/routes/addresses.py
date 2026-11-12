@@ -1,10 +1,12 @@
 # app/routes/addresses.py
 from __future__ import annotations
 
+import sqlite3
+from contextlib import closing
 from datetime import datetime
 from typing import Any
 
-from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .. import db
 from ..services import addressbook_io
@@ -14,7 +16,7 @@ bp = Blueprint("addresses", __name__)
 # -----------------------------------------------------------------------------
 # Konfiguration / Konstanten
 # -----------------------------------------------------------------------------
-ALLOWED_STATUS = {"aktiv", "inaktiv", "verzogen", "verstorben", "gesperrt"}
+ALLOWED_STATUS = addressbook_io.ALLOWED_STATUS
 
 
 # -----------------------------------------------------------------------------
@@ -40,11 +42,6 @@ def _to_int_none(v: Any) -> int | None:
 def _norm_status(raw: Any) -> str:
     s = (str(raw or "").strip() or "aktiv").lower()
     return s if s in ALLOWED_STATUS else "aktiv"
-
-
-def _is_used_in_any_tournament(con, address_id: int) -> bool:
-    r = db.one(con, "SELECT 1 FROM tournament_participants WHERE address_id=? LIMIT 1", (address_id,))
-    return bool(r)
 
 
 def _default_ab_id(con) -> int:
@@ -285,7 +282,7 @@ def addresses_list():
     if (request.args.get("show_inactive") or "") == "0" and (request.args.get("status") is None):
         status_filter = "aktiv"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         # Spalten prüfen (damit Filter robust sind)
@@ -489,7 +486,7 @@ def address_invite_toggle(address_id: int):
 
     wants_json = "application/json" in (request.headers.get("Accept") or "")
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         if not _has_column(con, "addresses", "invite"):
             msg = "Spalte 'invite' existiert nicht in addresses."
             if wants_json:
@@ -526,7 +523,7 @@ def address_invite_toggle(address_id: int):
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/stats")
 def addresses_stats():
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_invite = _has_column(con, "addresses", "invite")
@@ -803,7 +800,7 @@ def addresses_stats():
 # -----------------------------------------------------------------------------
 @bp.get("/addresses/export")
 def addresses_export():
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
         text, filename = addressbook_io.export_addresses_csv(con=con, addressbook_id=default_ab_id)
     return _csv_text_response(filename, text)
@@ -842,7 +839,7 @@ def addresses_export_filtered():
     if (request.args.get("show_inactive") or "") == "0" and (request.args.get("status") is None):
         status_filter = "aktiv"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_invite = _has_column(con, "addresses", "invite")
@@ -980,7 +977,7 @@ def addresses_export_invites():
     invite_filter = (request.args.get("invite") or "an").strip().lower()
     emails_only = (request.args.get("emails_only") or "").strip() == "1"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_invite = _has_column(con, "addresses", "invite")
@@ -1048,7 +1045,7 @@ def addresses_export_quality():
     - fehlende wohnort/plz/ort
     - optional: inkonsistente Teilnahme (participation_count vs tournament_years-marker count)
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_pc = _has_column(con, "addresses", "participation_count")
@@ -1118,7 +1115,7 @@ def addresses_stats_export():
     """
     Exportiert die Statistik als CSV (Key/Value + Tabellenblöcke).
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_invite = _has_column(con, "addresses", "invite")
@@ -1244,40 +1241,61 @@ def addresses_stats_export():
 
 @bp.get("/addresses/import")
 def addresses_import():
-    return render_template("address_import.html")
+    with closing(db.connect()) as con:
+        _, existing, registered = addressbook_io.book_status(con)
+    return render_template("address_import.html", existing=existing, registered=registered)
 
 
 @bp.post("/addresses/import")
 def addresses_import_post():
-    file = request.files.get("file")
-    if not file:
-        flash("Bitte eine CSV-Datei auswählen.", "error")
+    step = request.form.get("step", "preview")
+    as_json = request.accept_mimetypes.best == "application/json"
+
+    def reject(message):
+        if as_json:
+            return jsonify(error=message), 400
+        flash(message, "error")
         return redirect(url_for("addresses.addresses_import"))
 
-    raw = file.read()
+    upload = request.files.get("file")
+    if not upload:
+        return reject("Bitte eine CSV-Datei auswählen.")
     try:
-        text = raw.decode("utf-8-sig")
-    except Exception:
-        flash("CSV konnte nicht als UTF-8 gelesen werden.", "error")
-        return redirect(url_for("addresses.addresses_import"))
+        csv_text = upload.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return reject("Die Datei konnte nicht als UTF-8 gelesen werden.")
 
-    with db.connect() as con:
-        try:
-            new_ab_id, inserted, skipped = addressbook_io.import_addresses_replace_default_from_csv_text(
-                con=con,
-                csv_text=text,
+    if step == "preview":
+        with closing(db.connect()) as con, con:
+            con.execute("BEGIN")
+            preview = addressbook_io.preview_addresses(con, csv_text)
+        if preview.ready:
+            session["address_import_preview"] = preview.token
+        else:
+            session.pop("address_import_preview", None)
+        summary = {
+            "valid": len(preview.rows), "invalid": preview.invalid,
+            "errors": preview.errors[:10], "error_count": len(preview.errors),
+            "token": preview.token,
+        }
+        if as_json:
+            return jsonify(existing=preview.existing, registered=preview.registered, **summary)
+        return render_template("address_import.html", existing=preview.existing,
+                               registered=preview.registered, preview=summary)
+    token = request.form.get("preview_token")
+    if step != "apply" or not token or session.get("address_import_preview") != token:
+        return reject("Bitte die CSV-Datei zuerst prüfen.")
+    try:
+        with closing(db.connect()) as con, con:
+            _, inserted, _ = addressbook_io.import_addresses_replace_default_from_csv_text(
+                con=con, csv_text=csv_text, expected_token=token,
             )
-        except ValueError as e:
-            flash(str(e), "error")
-            return redirect(url_for("addresses.addresses_import"))
-
-        con.commit()
-
-    flash(
-        f"Import abgeschlossen: {inserted} Adressen importiert, {skipped} Zeilen übersprungen. "
-        f"(Adressbuch #{new_ab_id} ist jetzt Standard.)",
-        "ok",
-    )
+    except ValueError as error:
+        return reject(str(error))
+    except sqlite3.Error:
+        return reject("Die Datenbank konnte den Import nicht speichern. Bitte die Datei erneut prüfen.")
+    session.pop("address_import_preview", None)
+    flash(f"Import abgeschlossen. Das Standardadressbuch enthält jetzt {inserted} Adressen.", "ok")
     return redirect(url_for("addresses.addresses_list"))
 
 
@@ -1337,7 +1355,7 @@ def address_create():
     last_tournament_at = (f.get("last_tournament_at") or "").strip() or None
     tournament_years = (f.get("tournament_years") or "").strip() or None
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         default_ab_id = _default_ab_id(con)
 
         has_invite = _has_column(con, "addresses", "invite")
@@ -1395,13 +1413,13 @@ def address_create():
 def address_edit(address_id: int):
     nxt = (request.args.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         a = db.one(con, "SELECT * FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
             return redirect(nxt)
 
-        used = _is_used_in_any_tournament(con, address_id)
+        used = addressbook_io.address_is_protected(con, address_id)
 
     return render_template("address_form.html", a=a, mode="edit", used=used, next=nxt)
 
@@ -1426,7 +1444,7 @@ def address_update(address_id: int):
     last_tournament_at = (f.get("last_tournament_at") or "").strip() or None
     tournament_years = (f.get("tournament_years") or "").strip() or None
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
@@ -1504,7 +1522,7 @@ def address_update(address_id: int):
 def address_deactivate(address_id: int):
     nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         a = db.one(con, "SELECT id, status FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
@@ -1528,7 +1546,7 @@ def address_deactivate(address_id: int):
 def address_reactivate(address_id: int):
     nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
@@ -1551,14 +1569,15 @@ def address_reactivate(address_id: int):
 def address_delete(address_id: int):
     nxt = (request.form.get("next") or "").strip() or (request.referrer or url_for("addresses.addresses_list"))
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         a = db.one(con, "SELECT id FROM addresses WHERE id=?", (address_id,))
         if not a:
             flash("Adresse nicht gefunden.", "error")
             return redirect(nxt)
 
-        if _is_used_in_any_tournament(con, address_id):
-            flash("Löschen nicht möglich: Adresse war bereits in einem Turnier. Bitte Status verwenden.", "error")
+        if addressbook_io.address_is_protected(con, address_id):
+            flash("Diese Adresse hat eine Turnieranmeldung oder Teilnahmehistorie. Sie kann deaktiviert werden.", "error")
             return redirect(nxt)
 
         con.execute("DELETE FROM addresses WHERE id=?", (address_id,))

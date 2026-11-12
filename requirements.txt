@@ -2,3 +2,5 @@ Flask>=3.0,<4.0
 markdown
 waitress
 python-docx
+weasyprint
+qrcode[pil]

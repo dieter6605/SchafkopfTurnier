@@ -1,6 +1,9 @@
 # app/routes/tournaments/results.py
 from __future__ import annotations
 
+import hashlib
+import json
+from contextlib import closing
 from typing import Any
 
 from flask import flash, redirect, render_template, request, url_for
@@ -24,7 +27,7 @@ def _to_int(v: Any, *, default: int | None = None) -> int | None:
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results")
 def tournament_round_results_overview(tournament_id: int, round_no: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -88,7 +91,7 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/standings")
 def tournament_round_results_standings(tournament_id: int, round_no: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -182,71 +185,67 @@ def tournament_round_results_standings(tournament_id: int, round_no: int):
     )
 
 
+def _table_players(con, tournament_id, round_no, table_no):
+    return db.q(con, """
+        SELECT s.seat, s.tp_id, s.table_no, tr.id AS round_id, tp.address_id, tp.player_no,
+               a.nachname, a.vorname, a.wohnort, sc.id AS score_id, sc.table_no AS score_table,
+               sc.points, sc.soli
+        FROM tournament_seats s
+        LEFT JOIN tournament_rounds tr ON tr.tournament_id=s.tournament_id AND tr.round_no=s.round_no
+        JOIN tournament_participants tp ON tp.id=s.tp_id
+        JOIN addresses a ON a.id=tp.address_id
+        LEFT JOIN tournament_scores sc
+          ON sc.tournament_id=s.tournament_id AND sc.round_no=s.round_no AND sc.tp_id=s.tp_id
+        WHERE s.tournament_id=? AND s.round_no=? AND s.table_no=?
+        ORDER BY s.seat, s.tp_id
+    """, (tournament_id, round_no, table_no))
+
+
+def _score_state(players):
+    # Der Zeitstempel hat nur Sekundengenauigkeit. Verglichen werden die vier
+    # angezeigten Zuordnungen und Werte, einschließlich bislang leerer Plätze.
+    fields = ("round_id", "table_no", "seat", "tp_id", "address_id", "score_id", "score_table", "points", "soli")
+    state = [[player[field] for field in fields] for player in players]
+    return hashlib.sha256(json.dumps(state, separators=(",", ":")).encode()).hexdigest()
+
+
+def _next_table(con, tournament_id, round_no, table_no):
+    return con.execute("""
+        SELECT MIN(table_no) FROM tournament_seats
+        WHERE tournament_id=? AND round_no=? AND table_no>?
+    """, (tournament_id, round_no, table_no)).fetchone()[0]
+
+
+def _table_form(t, round_no, table_no, players, next_table, conflict_message=None):
+    return render_template(
+        "tournament_results_table.html", t=t, round_no=round_no, table_no=table_no,
+        players=players, round_id=players[0]["round_id"] or 0, next_table=next_table,
+        score_state=_score_state(players), conflict_message=conflict_message, now=_now_local_iso(),
+    )
+
+
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
 def tournament_round_results_table(tournament_id: int, round_no: int, table_no: int):
-    with db.connect() as con:
+    with closing(db.connect()) as con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
-
-        rows = db.q(
-            con,
-            """
-            SELECT s.seat, s.tp_id, s.table_no,
-                   tp.player_no,
-                   a.nachname, a.vorname, a.wohnort,
-                   sc.points, sc.soli
-            FROM tournament_seats s
-            JOIN tournament_participants tp ON tp.id=s.tp_id
-            JOIN addresses a ON a.id=tp.address_id
-            LEFT JOIN tournament_scores sc
-              ON sc.tournament_id=s.tournament_id
-             AND sc.round_no=s.round_no
-             AND sc.tp_id=s.tp_id
-            WHERE s.tournament_id=? AND s.round_no=? AND s.table_no=?
-            ORDER BY CASE s.seat WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END
-            """,
-            (tournament_id, round_no, table_no),
-        )
-
-        if len(rows) != 4:
+        players = _table_players(con, tournament_id, round_no, table_no)
+        if len(players) != 4:
             flash("Tisch nicht gefunden oder unvollständig (nicht genau 4 Spieler).", "error")
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
-
-        tables = db.q(
-            con,
-            """
-            SELECT DISTINCT table_no
-            FROM tournament_seats
-            WHERE tournament_id=? AND round_no=?
-            ORDER BY table_no ASC
-            """,
-            (tournament_id, round_no),
-        )
-        table_nos = [int(r["table_no"]) for r in tables]
-        try:
-            idx = table_nos.index(int(table_no))
-            next_table = table_nos[idx + 1] if idx + 1 < len(table_nos) else None
-        except Exception:
-            next_table = None
-
-    return render_template(
-        "tournament_results_table.html",
-        t=t,
-        round_no=round_no,
-        table_no=table_no,
-        players=rows,
-        next_table=next_table,
-        now=_now_local_iso(),
-    )
+        next_table = _next_table(con, tournament_id, round_no, table_no)
+    return _table_form(t, round_no, table_no, players, next_table)
 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
 def tournament_round_results_table_post(tournament_id: int, round_no: int, table_no: int):
     f = request.form
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -261,23 +260,36 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         if resp:
             return resp
 
-        seats = db.q(
-            con,
-            """
-            SELECT s.seat, s.tp_id,
-                   tp.player_no,
-                   a.nachname, a.vorname, a.wohnort
-            FROM tournament_seats s
-            JOIN tournament_participants tp ON tp.id=s.tp_id
-            JOIN addresses a ON a.id=tp.address_id
-            WHERE s.tournament_id=? AND s.round_no=? AND s.table_no=?
-            ORDER BY CASE s.seat WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 ELSE 4 END
-            """,
-            (tournament_id, round_no, table_no),
-        )
+        seats = _table_players(con, tournament_id, round_no, table_no)
         if len(seats) != 4:
             flash("Tisch nicht gefunden oder unvollständig.", "error")
             return redirect(url_for("tournaments.tournament_round_results_overview", tournament_id=tournament_id, round_no=round_no))
+
+        expected_id = f.get("expected_round_id")
+        if expected_id is not None and expected_id != str(seats[0]["round_id"] or 0):
+            flash("Der Sitzplan hat sich seit dem Öffnen geändert. Bitte den Tisch erneut prüfen.", "warning")
+            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
+                                    round_no=round_no, table_no=table_no))
+
+        if expected_id is not None and any(
+            f.get(f"address_{seat['tp_id']}") != str(seat["address_id"]) for seat in seats
+        ):
+            flash("Die Teilnehmerzuordnung muss erneut geprüft werden. Bitte den aktuellen Tisch kontrollieren.", "warning")
+            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
+                                    round_no=round_no, table_no=table_no))
+
+        expected_state = f.get("expected_score_state")
+        conflict = None
+        if expected_state is None:
+            # Alte Eingabemasken dürfen einen leeren Tisch erstmals erfassen.
+            if any(player["score_id"] is not None for player in seats):
+                conflict = "Dieses Formular enthält keinen Vergleichsstand."
+        elif expected_state != _score_state(seats):
+            conflict = "Dieser Tisch wurde inzwischen geändert."
+        if conflict:
+            next_table = _next_table(con, tournament_id, round_no, table_no)
+            con.rollback()
+            return _table_form(t, round_no, table_no, seats, next_table, conflict), 409
 
         points_map: dict[int, int] = {}
         soli_map: dict[int, int] = {}
@@ -286,8 +298,8 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
             tp_id = int(r["tp_id"])
 
             p = _to_int(f.get(f"points_{tp_id}"), default=None)
-            if p is None:
-                flash("Bitte für alle 4 Spieler Punkte eingeben.", "error")
+            if p is None or not -(2**63) <= p < 2**63:
+                flash("Bitte für alle 4 Spieler gültige ganze Punkte eingeben.", "error")
                 return redirect(
                     url_for(
                         "tournaments.tournament_round_results_table",
@@ -297,9 +309,12 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
                     )
                 )
 
-            s = _to_int(f.get(f"soli_{tp_id}"), default=0)
-            if s is None:
-                s = 0
+            raw_soli = (f.get(f"soli_{tp_id}") or "").strip() or "0"
+            s = _to_int(raw_soli)
+            if not raw_soli.isascii() or not raw_soli.isdecimal() or s is None or s >= 2**63:
+                flash(f"Bitte für Nr. {r['player_no']} eine gültige Anzahl Soli ab 0 eingeben.", "error")
+                return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
+                                        round_no=round_no, table_no=table_no))
 
             points_map[tp_id] = int(p)
             soli_map[tp_id] = int(s)
@@ -334,24 +349,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
 
         go_next = (f.get("go_next") or "") == "1"
         if go_next:
-            tables = db.q(
-                con,
-                """
-                SELECT DISTINCT table_no
-                FROM tournament_seats
-                WHERE tournament_id=? AND round_no=?
-                ORDER BY table_no ASC
-                """,
-                (tournament_id, round_no),
-            )
-            table_nos = [int(r["table_no"]) for r in tables]
-            next_table = None
-            try:
-                idx = table_nos.index(int(table_no))
-                next_table = table_nos[idx + 1] if idx + 1 < len(table_nos) else None
-            except Exception:
-                next_table = None
-
+            next_table = _next_table(con, tournament_id, round_no, table_no)
             if next_table is not None:
                 flash(f"Tisch {table_no} gespeichert. Weiter zu Tisch {next_table}.", "ok")
                 return redirect(

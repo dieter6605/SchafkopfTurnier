@@ -54,21 +54,6 @@
     height: auto;
   }
 
-  .sk-spark-line {
-    fill: none;
-    stroke: rgba(13,110,253,.95);
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .sk-spark-line2 {
-    fill: none;
-    stroke: rgba(25,135,84,.95);
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
   .sk-timeline {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -209,8 +194,8 @@
     <div class="card-body">
       <div class="sk-brandline">
         <div class="sk-logos">
-          <img src="{{ club_logo }}" alt="Vereinslogo">
-          <img src="{{ tourney_logo }}" alt="Turnierlogo">
+          <img src="{{ static_asset('branding/logo.png') }}" alt="Vereinslogo">
+          <img src="{{ static_asset('branding/turnierlogo.png') }}" alt="Turnierlogo">
           <div class="sk-titleblock">
             <div class="t1">
               #{{ p.player_no }} · {{ p.nachname }}, {{ p.vorname }}
@@ -271,7 +256,7 @@
             <div class="sk-spark">
               {% if spark and spark.has_pts and spark.points_pts %}
                 <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Punkteverlauf">
-                  <polyline class="sk-spark-line" points="{{ spark.points_pts }}"></polyline>
+                  <polyline fill="none" stroke="#0d6efd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ spark.points_pts }}"></polyline>
                 </svg>
               {% else %}
                 <div class="small sk-muted">Noch nicht genug Werte für Verlauf (mind. 2 Ergebnisse).</div>
@@ -284,7 +269,7 @@
             <div class="sk-spark">
               {% if spark and spark.has_cum and spark.points_cum %}
                 <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kumulierte Punkte">
-                  <polyline class="sk-spark-line2" points="{{ spark.points_cum }}"></polyline>
+                  <polyline fill="none" stroke="#198754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ spark.points_cum }}"></polyline>
                 </svg>
               {% else %}
                 <div class="small sk-muted">Noch nicht genug Werte für Verlauf.</div>
@@ -340,7 +325,7 @@
 
   {# Druck-Fußzeile (optional kompakt) #}
   <div class="small sk-muted mt-3">
-    URL: <span class="sk-mono">{{ player_url }}</span>
+    <a class="sk-mono" href="{{ player_url }}">{{ player_url }}</a>
   </div>
 
 </div>

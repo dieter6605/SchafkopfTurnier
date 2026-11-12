@@ -56,29 +56,9 @@
     return clickIfEnabled("btnPrepareNext");
   }
 
-  function allowDrawNext() {
-    try {
-      return (window.__SKT_ALLOW_DRAW_NEXT__ === 1 ||
-              window.__SKT_ALLOW_DRAW_NEXT__ === true);
-    } catch (e) {
-      return false;
-    }
-  }
-
   function init() {
-    // Wenn auf einer Seite ohne Round-Controls: nicht global lauschen
-    const hasAny =
-      document.getElementById("btnBackTournament") ||
-      document.getElementById("btnPrevRound") ||
-      document.getElementById("btnNextRound") ||
-      document.getElementById("btnPrepareNext") ||
-      document.getElementById("btnRedraw") ||
-      document.getElementById("btnDrawNext") ||
-      document.getElementById("btnLastRound");
-
-    if (!hasAny) return;
-
-    dbg("init()", { closed: isClosed(), allowDrawNext: allowDrawNext() });
+    const roundPage = !!document.getElementById("btnBackTournament");
+    if (!roundPage && !document.getElementById("btnDrawNext")) return;
 
     document.addEventListener("keydown", function (ev) {
       if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
@@ -86,13 +66,13 @@
 
       const key = String(ev.key || "");
       const k = key.toLowerCase();
+      if (!roundPage && !(k === "r" && ev.shiftKey)) return;
 
       dbg("keydown", {
         key,
         shift: !!ev.shiftKey,
         typing: isTypingContext(),
-        closed: isClosed(),
-        allowDrawNext: allowDrawNext()
+        closed: isClosed()
       });
 
       // ESC = zurück zum Turnier
@@ -135,14 +115,13 @@
 
       // R / Shift+R nur wenn NICHT geschlossen
       if (k === "r") {
-        if (isClosed()) return; // Turnier abgeschlossen -> keine Aktion
+        if (isClosed() || ev.repeat) return;
 
         ev.preventDefault();
 
         if (ev.shiftKey) {
-          if (allowDrawNext() && clickIfEnabled("btnDrawNext")) return;
-          // Fallback: aktuelle Runde auslosen
-          clickIfEnabled("btnRedraw");
+          // Eine bereits ausgeloste Folgerunde öffnen. Nur eine neue Runde auslosen.
+          if (!clickIfEnabled("btnNextRound")) clickIfEnabled("btnDrawNext");
           return;
         }
 

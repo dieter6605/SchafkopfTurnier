@@ -1,6 +1,7 @@
 # app/routes/tournaments/export.py
 from __future__ import annotations
 
+from contextlib import closing
 import csv
 import io
 import zipfile
@@ -11,7 +12,7 @@ from flask import Response, flash, redirect, url_for
 
 from ... import db
 from . import bp
-from .helpers import _get_tournament
+from .helpers import _scores_expected_count, _get_tournament
 
 
 def _csv_bytes(rows: list[list[Any]], *, delimiter: str = ";") -> bytes:
@@ -75,7 +76,7 @@ def tournament_export_csv(tournament_id: int):
     """
     Kompatibilität: bestehender Export bleibt (nur Gesamtwertung).
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -150,7 +151,7 @@ def tournament_export_zip(tournament_id: int):
       - sitzplan/Rxx.csv
       - tische/Rxx_Tyy.csv
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t_row = _get_tournament(con, tournament_id)
         if not t_row:
             flash("Turnier nicht gefunden.", "error")
@@ -528,7 +529,7 @@ def tournament_export_zip(tournament_id: int):
         # -------------------------
         scores_count_row = db.one(con, "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?", (tournament_id,))
         scores_count = int(scores_count_row["c"] or 0) if scores_count_row else 0
-        expected_scores = participants_count * rounds_count
+        expected_scores = _scores_expected_count(con, tournament_id)
 
         winner = None
         if overall_q:
@@ -574,7 +575,7 @@ def tournament_export_zip(tournament_id: int):
         readme_lines.append("-" * 30)
         readme_lines.append(f"Teilnehmer:       {participants_count}")
         readme_lines.append(f"Runden:           {rounds_count} ({', '.join(str(x) for x in round_nos) if round_nos else '-'})")
-        readme_lines.append(f"Scores:           {scores_count} / {expected_scores} (erwartet=Teilnehmer*Runden)")
+        readme_lines.append(f"Scores:           {scores_count} / {expected_scores} (ausgeloste Sitzplätze)")
         readme_lines.append(f"Summe Punkte:     {total_points} (Ø {avg_points:.2f} pro Teilnehmer)")
         readme_lines.append(f"Summe Soli:       {total_soli} (Ø {avg_soli:.2f} pro Teilnehmer)")
         if winner:

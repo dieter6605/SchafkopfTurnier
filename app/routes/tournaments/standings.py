@@ -1,11 +1,12 @@
 # app/routes/tournaments/standings.py
 from __future__ import annotations
 
+from contextlib import closing
 from flask import flash, redirect, render_template, url_for
 
 from ... import db
 from . import bp
-from .helpers import _get_tournament, _now_local_iso
+from .helpers import _scores_expected_count, _get_tournament, _now_local_iso
 
 
 @bp.get("/tournaments/<int:tournament_id>/standings")
@@ -16,7 +17,7 @@ def tournament_standings_overall(tournament_id: int):
     - Sum(soli) je Spieler
     - zusätzlich: Anzeige der Punkte je Runde
     """
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -40,7 +41,7 @@ def tournament_standings_overall(tournament_id: int):
         sc_row = db.one(con, "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?", (tournament_id,))
         scores_count = int(sc_row["c"] or 0) if sc_row else 0
 
-        expected_scores = participants_count * rounds_count
+        expected_scores = _scores_expected_count(con, tournament_id)
 
         rows = db.q(
             con,

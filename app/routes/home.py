@@ -1,9 +1,13 @@
 # app/routes/home.py
 from __future__ import annotations
 
+from contextlib import closing
+import sqlite3
 from pathlib import Path
 from datetime import datetime, date
+from tempfile import TemporaryDirectory
 from typing import Iterable
+from uuid import uuid4
 
 from flask import (
     Blueprint,
@@ -17,6 +21,7 @@ from flask import (
     send_file,
 )
 import markdown
+from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from .. import db
@@ -179,7 +184,7 @@ def _is_allowed_backup_name(name: str) -> bool:
     safe = Path(name).name
     if not safe.lower().endswith(".sqlite3"):
         return False
-    return safe.startswith("skt-backup-") or safe.startswith("skt-upload-")
+    return safe.startswith(("skt-backup-", "skt_backup_", "skt-upload-"))
 
 
 def _format_bytes(n: int) -> str:
@@ -202,11 +207,11 @@ def _list_backups(backup_dir: Path) -> list[dict]:
     if not backup_dir.exists():
         return []
 
-    files = []
-    files.extend(list(backup_dir.glob("skt-backup-*.sqlite3")))
-    files.extend(list(backup_dir.glob("skt-upload-*.sqlite3")))
-
-    files = sorted(set(files), key=lambda p: p.name, reverse=True)
+    files = sorted(
+        (p for p in backup_dir.iterdir() if p.is_file() and _is_allowed_backup_name(p.name)),
+        key=lambda p: p.name,
+        reverse=True,
+    )
 
     out: list[dict] = []
     for p in files:
@@ -251,7 +256,7 @@ def home():
     }
 
     try:
-        with db.connect() as con:
+        with closing(db.connect()) as con, con:
             dash["tournaments_total"] = _count(con, "SELECT COUNT(*) AS c FROM tournaments")
 
             ab_id = _default_ab_id(con)
@@ -346,7 +351,11 @@ def backup():
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
         return redirect(url_for("home.home"))
 
-    target = db.backup_db(Path(bdir))
+    try:
+        target = db.backup_db(Path(bdir))
+    except (OSError, sqlite3.Error) as e:
+        flash(f"Sicherung fehlgeschlagen: {e}", "error")
+        return redirect(url_for("home.home"))
     flash(f"Backup erstellt: {target.name}", "ok")
     return redirect(url_for("home.home"))
 
@@ -417,8 +426,18 @@ def restore(filename: str):
         flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
 
-    flash(f"Backup wiederhergestellt: {safe_name}. (Tipp: App ggf. neu starten)", "ok")
+    flash(f"Backup wiederhergestellt: {safe_name}.", "ok")
     return redirect(url_for("home.home"))
+
+
+def _store_uploaded_backup(backup_dir: Path, upload: FileStorage) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = backup_dir / f"skt-upload-{stamp}-{uuid4().hex}.sqlite3"
+    with TemporaryDirectory(dir=backup_dir) as tmp:
+        stage = Path(tmp) / "upload.sqlite3"
+        upload.save(stage)
+        stage.replace(target)
+    return target
 
 
 @bp.post("/upload-only")
@@ -441,16 +460,13 @@ def upload_only():
         flash("Ungültige Datei. Erwartet wird eine *.sqlite3-Datei.", "error")
         return redirect(url_for("home.home"))
 
-    target_name = f"skt-upload-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3"
-    target_path = backup_dir / target_name
-
     try:
-        f.save(target_path)
+        target_path = _store_uploaded_backup(backup_dir, f)
     except Exception as e:
         flash(f"Upload fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
 
-    flash(f"Backup hochgeladen: {target_name}", "ok")
+    flash(f"Backup hochgeladen: {target_path.name}", "ok")
     return redirect(url_for("home.home"))
 
 
@@ -474,11 +490,8 @@ def restore_upload():
         flash("Ungültige Datei. Erwartet wird eine *.sqlite3-Datei.", "error")
         return redirect(url_for("home.home"))
 
-    target_name = f"skt-upload-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3"
-    target_path = backup_dir / target_name
-
     try:
-        f.save(target_path)
+        target_path = _store_uploaded_backup(backup_dir, f)
     except Exception as e:
         flash(f"Upload fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
@@ -489,5 +502,5 @@ def restore_upload():
         flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
 
-    flash(f"Upload wiederhergestellt: {target_name}. (Tipp: App ggf. neu starten)", "ok")
+    flash(f"Upload wiederhergestellt: {target_path.name}.", "ok")
     return redirect(url_for("home.home"))

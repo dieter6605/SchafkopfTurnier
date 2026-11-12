@@ -1,16 +1,17 @@
 # app/routes/tournaments/player.py
 from __future__ import annotations
 
-import os
+from base64 import b64encode
+from contextlib import closing
 from io import BytesIO
-from urllib.parse import urlparse
+from pathlib import Path
 
 from flask import (
+    abort,
     flash,
     redirect,
     render_template,
     url_for,
-    request,
     send_file,
     current_app,
 )
@@ -66,45 +67,21 @@ def _medal_for_place(place: int | None) -> str:
     return ""
 
 
-# -----------------------------------------------------------------------------
-# WeasyPrint: robustes Laden von /static/... ohne HTTP
-# -----------------------------------------------------------------------------
-def _weasy_url_fetcher(url: str):
-    """
-    WeasyPrint lädt externe Ressourcen (CSS/IMG) per URL.
-    Das kann in lokalen Umgebungen (oder ohne HTTP-Server für static) fehlschlagen.
+def _qr_png(target: str) -> bytes:
+    try:
+        import qrcode
+        from qrcode.image.pil import PilImage
+    except ImportError:
+        abort(503, description="Für den QR-Code werden qrcode und Pillow benötigt.")
 
-    Dieser Fetcher mappt /static/... und auch absolute http(s)://.../static/... URLs
-    auf echte Files aus current_app.static_folder.
-    """
-    parsed = urlparse(url)
-
-    # Absolute URL: http(s)://host/static/...
-    if parsed.scheme in ("http", "https") and parsed.path.startswith("/static/"):
-        rel = parsed.path[len("/static/") :]
-        fspath = os.path.join(current_app.static_folder, rel)
-        return {"file_obj": open(fspath, "rb"), "mime_type": None}
-
-    # Root-relative: /static/...
-    if parsed.scheme == "" and url.startswith("/static/"):
-        rel = url[len("/static/") :]
-        fspath = os.path.join(current_app.static_folder, rel)
-        return {"file_obj": open(fspath, "rb"), "mime_type": None}
-
-    # file://... direkt durchreichen
-    if parsed.scheme == "file":
-        # WeasyPrint kann das i. d. R. selbst; wir lassen Default arbeiten
-        from weasyprint.urls import default_url_fetcher  # type: ignore
-        return default_url_fetcher(url)
-
-    # data: etc.
-    from weasyprint.urls import default_url_fetcher  # type: ignore
-    return default_url_fetcher(url)
+    stream = BytesIO()
+    qrcode.make(target, image_factory=PilImage).save(stream, format="PNG")
+    return stream.getvalue()
 
 
-@bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>")
-def tournament_player_view(tournament_id: int, tp_id: int):
-    with db.connect() as con:
+def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
+    with closing(db.connect()) as con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -280,296 +257,50 @@ def tournament_player_view(tournament_id: int, tp_id: int):
 
         medal = _medal_for_place(place)
 
-        # URLs (für QR/PDF/WeasyPrint)
-        player_url = url_for(
-            "tournaments.tournament_player_view",
-            tournament_id=tournament_id,
-            tp_id=tp_id,
-            _external=True,
-        )
-        # QR als same-origin /static-ähnliche Route (wir liefern sie als PNG)
-        # Für WeasyPrint: _external=False ist ok, da wir /static-Fetcher haben
-        qr_url = url_for("tournaments.tournament_player_qr_png", tournament_id=tournament_id, tp_id=tp_id, _external=False)
-
-        # PDF-Link (in HTML-Ansicht)
-        pdf_url = url_for("tournaments.tournament_player_pdf", tournament_id=tournament_id, tp_id=tp_id, _external=False)
-
-        # Branding: für Browser darf _external=True bleiben, für PDF ist /static/... aber robuster
-        club_logo = url_for("static", filename="branding/logo.png", _external=False)
-        tourney_logo = url_for("static", filename="branding/turnierlogo.png", _external=False)
+    player_url = url_for(
+        "tournaments.tournament_player_view", tournament_id=tournament_id, tp_id=tp_id, _external=True,
+    )
+    if pdf:
+        qr_url = "data:image/png;base64," + b64encode(_qr_png(player_url)).decode("ascii")
+    else:
+        qr_url = url_for("tournaments.tournament_player_qr_png", tournament_id=tournament_id, tp_id=tp_id)
 
     return render_template(
-        "tournament_player.html",
-        t=t,
-        p=p,
-        place=place,
-        medal=medal,
-        sum_points=sum_points,
-        sum_soli=sum_soli,
-        best=best,
-        worst=worst,
-        timeline=timeline,
-        now=_now_local_iso(),
-        prev_tp_id=prev_tp_id,
-        next_tp_id=next_tp_id,
-        spark=spark,
-        played=played,
-        rounds_total=len(round_numbers),
-        # links/assets
-        player_url=player_url,
-        qr_url=qr_url,
-        pdf_url=pdf_url,
-        # branding
-        club_logo=club_logo,
-        tourney_logo=tourney_logo,
-        print_mode=False,
-        pdf_mode=False,
+        "tournament_player.html", t=t, p=p, place=place, medal=medal,
+        sum_points=sum_points, sum_soli=sum_soli, best=best, worst=worst,
+        timeline=timeline, now=_now_local_iso(), prev_tp_id=prev_tp_id, next_tp_id=next_tp_id,
+        spark=spark, played=played, rounds_total=len(round_numbers),
+        player_url=player_url, qr_url=qr_url, pdf_mode=pdf,
+        pdf_url=url_for("tournaments.tournament_player_pdf", tournament_id=tournament_id, tp_id=tp_id),
     )
+
+
+@bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>")
+def tournament_player_view(tournament_id: int, tp_id: int):
+    return _render_player_card(tournament_id, tp_id, pdf=False)
 
 
 @bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>/qr.png")
 def tournament_player_qr_png(tournament_id: int, tp_id: int):
-    """
-    QR-Code zur Spielerkarte (PNG).
-    """
-    # Ziel-URL: Spielerkarte
     target = url_for("tournaments.tournament_player_view", tournament_id=tournament_id, tp_id=tp_id, _external=True)
-
-    try:
-        import qrcode
-    except Exception:
-        # harte Fehlermeldung im Browser ist hier ok, weil es eine Asset-Route ist
-        return ("qrcode library missing. Install with: pip install qrcode[pil]", 500)
-
-    img = qrcode.make(target)
-    bio = BytesIO()
-    img.save(bio, format="PNG")
-    bio.seek(0)
-    return send_file(bio, mimetype="image/png", max_age=3600)
+    return send_file(BytesIO(_qr_png(target)), mimetype="image/png", max_age=3600)
 
 
 @bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>/pdf")
 def tournament_player_pdf(tournament_id: int, tp_id: int):
-    """
-    PDF-Export der Spielerkarte via WeasyPrint.
-    Robust: statische Assets (Logos + QR) werden ohne HTTP über _weasy_url_fetcher geladen.
-    """
     try:
-        from weasyprint import HTML  # type: ignore
-    except Exception:
-        return ("WeasyPrint missing. Install with: pip install weasyprint", 500)
+        from weasyprint import HTML
+    except (ImportError, OSError):
+        abort(503, description="Für den PDF-Export werden WeasyPrint und seine Systembibliotheken benötigt.")
 
-    # Wir rendern die gleiche View wie HTML, aber mit print/pdf flags.
-    with db.connect() as con:
-        t = _get_tournament(con, tournament_id)
-        if not t:
-            flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
+    card = _render_player_card(tournament_id, tp_id, pdf=True)
+    if not isinstance(card, str):
+        return card  # Weiterleitung für ein fehlendes Turnier oder eine fehlende Anmeldung.
 
-        p = db.one(
-            con,
-            """
-            SELECT
-                tp.id AS tp_id,
-                tp.player_no,
-                tp.display_name,
-                a.nachname, a.vorname, a.wohnort
-            FROM tournament_participants tp
-            JOIN addresses a ON a.id = tp.address_id
-            WHERE tp.tournament_id=? AND tp.id=?
-            """,
-            (int(tournament_id), int(tp_id)),
-        )
-        if not p:
-            flash("Spieler im Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournament_standings_overall", tournament_id=tournament_id))
-
-        rounds = db.q(
-            con,
-            "SELECT DISTINCT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
-            (int(tournament_id),),
-        )
-        round_numbers = [int(r["round_no"]) for r in rounds]
-
-        scores = db.q(
-            con,
-            """
-            SELECT round_no, table_no, points, soli
-            FROM tournament_scores
-            WHERE tournament_id=? AND tp_id=?
-            ORDER BY round_no ASC
-            """,
-            (int(tournament_id), int(tp_id)),
-        )
-        by_round = {int(r["round_no"]): r for r in scores}
-
-        seats = db.q(
-            con,
-            """
-            SELECT round_no, table_no, seat
-            FROM tournament_seats
-            WHERE tournament_id=? AND tp_id=?
-            ORDER BY round_no ASC
-            """,
-            (int(tournament_id), int(tp_id)),
-        )
-        seat_by_round = {int(r["round_no"]): {"table_no": int(r["table_no"]), "seat": r["seat"]} for r in seats}
-
-        timeline = []
-        sum_points = 0
-        sum_soli = 0
-        best = None
-        worst = None
-
-        points_series: list[int | None] = []
-        cum_series: list[int] = []
-
-        cum = 0
-        played = 0
-
-        for rn in round_numbers:
-            sc = by_round.get(rn)
-            pts = int(sc["points"]) if sc else None
-            sol = int(sc["soli"]) if sc else None
-
-            seatinfo = seat_by_round.get(rn)
-            tab_no = seatinfo["table_no"] if seatinfo else (int(sc["table_no"]) if sc else None)
-            seat = seatinfo["seat"] if seatinfo else None
-
-            if pts is not None:
-                played += 1
-                sum_points += pts
-                sum_soli += (sol or 0)
-                cum += pts
-
-                if best is None or pts > best["points"]:
-                    best = {"round_no": rn, "points": pts, "soli": sol or 0}
-                if worst is None or pts < worst["points"]:
-                    worst = {"round_no": rn, "points": pts, "soli": sol or 0}
-
-            cum_series.append(cum)
-            points_series.append(pts)
-
-            timeline.append(
-                {
-                    "round_no": rn,
-                    "table_no": tab_no,
-                    "seat": seat,
-                    "points": pts,
-                    "soli": sol,
-                    "has_score": (pts is not None),
-                }
-            )
-
-        ranking_rows = db.q(
-            con,
-            """
-            SELECT
-                tp.id AS tp_id,
-                COALESCE(SUM(sc.points), 0) AS points,
-                COALESCE(SUM(sc.soli), 0)   AS soli,
-                a.nachname, a.vorname, a.wohnort,
-                tp.player_no
-            FROM tournament_participants tp
-            JOIN addresses a ON a.id = tp.address_id
-            LEFT JOIN tournament_scores sc
-              ON sc.tournament_id = tp.tournament_id
-             AND sc.tp_id = tp.id
-            WHERE tp.tournament_id = ?
-            GROUP BY tp.id, a.nachname, a.vorname, a.wohnort, tp.player_no
-            ORDER BY
-                points DESC,
-                soli   DESC,
-                a.nachname COLLATE NOCASE,
-                a.vorname  COLLATE NOCASE,
-                a.wohnort  COLLATE NOCASE,
-                tp.player_no
-            """,
-            (int(tournament_id),),
-        )
-
-        ordered_tp_ids: list[int] = []
-        place: int | None = None
-
-        last_key = None
-        cur_place = 0
-        idx = 0
-
-        for r in ranking_rows:
-            idx += 1
-            key = (int(r["points"]), int(r["soli"]))
-            if key != last_key:
-                cur_place = idx
-                last_key = key
-            rid = int(r["tp_id"])
-            ordered_tp_ids.append(rid)
-            if rid == int(tp_id):
-                place = cur_place
-
-        medal = _medal_for_place(place)
-
-        spark = {
-            "width": 520,
-            "height": 64,
-            "pad": 6,
-            "points_pts": _sparkline_points(points_series, width=520, height=64, pad=6),
-            "points_cum": _sparkline_points([int(x) for x in cum_series], width=520, height=64, pad=6),
-            "has_pts": (len([v for v in points_series if v is not None]) >= 2),
-            "has_cum": (len(cum_series) >= 2),
-        }
-
-        # Wichtig:
-        # - Für PDF NICHT _external=True, damit wir sauber /static/... und interne Routen bekommen,
-        #   die der url_fetcher auf Files mappen kann.
-        player_url = url_for(
-            "tournaments.tournament_player_view",
-            tournament_id=tournament_id,
-            tp_id=tp_id,
-            _external=True,  # in der Fußzeile darf gern die echte URL stehen
-        )
-        qr_url = url_for("tournaments.tournament_player_qr_png", tournament_id=tournament_id, tp_id=tp_id, _external=False)
-
-        html = render_template(
-            "tournament_player.html",
-            t=t,
-            p=p,
-            place=place,
-            medal=medal,
-            sum_points=sum_points,
-            sum_soli=sum_soli,
-            best=best,
-            worst=worst,
-            timeline=timeline,
-            now=_now_local_iso(),
-            prev_tp_id=None,
-            next_tp_id=None,
-            spark=spark,
-            played=played,
-            rounds_total=len(round_numbers),
-            player_url=player_url,
-            qr_url=qr_url,
-            pdf_url="",
-            # Branding als /static/... (wird vom Fetcher direkt vom FS geladen)
-            club_logo=url_for("static", filename="branding/logo.png", _external=False),
-            tourney_logo=url_for("static", filename="branding/turnierlogo.png", _external=False),
-            print_mode=True,
-            pdf_mode=True,
-        )
-
-    # base_url:
-    # - damit relative URLs (z.B. /static/...) sinnvoll sind
-    # url_fetcher:
-    # - mappt /static/... auf Dateisystem => keine HTTP-Abhängigkeit
-    pdf_bytes = HTML(
-        string=html,
-        base_url=request.url_root,
-        url_fetcher=_weasy_url_fetcher,
-    ).write_pdf()
-
-    fname = f"spielerkarte-T{tournament_id}-P{int(tp_id)}.pdf"
+    # Relative Stylesheets und Logos kommen aus dem lokalen static-Verzeichnis.
+    static_root = Path(current_app.static_folder).resolve().as_uri() + "/"
+    pdf_bytes = HTML(string=card, base_url=static_root).write_pdf()
     return send_file(
-        BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=fname,
+        BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True,
+        download_name=f"spielerkarte-T{tournament_id}-P{tp_id}.pdf",
     )

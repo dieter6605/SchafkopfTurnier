@@ -1,6 +1,7 @@
 # app/routes/api.py
 from __future__ import annotations
 
+from contextlib import closing
 from flask import Blueprint, jsonify, request
 
 from .. import db
@@ -24,7 +25,7 @@ def api_wohnorte():
 
     like = f"%{q}%"
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         rows = db.q(
             con,
             """
@@ -64,7 +65,7 @@ def api_swap_search(tournament_id: int):
     if len(qtxt) < 2:
         return jsonify({"ok": True, "items": []})
 
-    with db.connect() as con:
+    with closing(db.connect()) as con, con:
         t = _get_tournament(con, tournament_id)
         if not t:
             return jsonify({"ok": False, "error": "Turnier nicht gefunden."}), 404

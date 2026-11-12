@@ -306,7 +306,7 @@
               <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
               <button class="btn btn-sm btn-outline-danger mt-2"
                       {% if not backup_dir %}disabled{% endif %}
-                      onclick="return confirm('Upload wirklich einspielen?\\n\\nTipp: App ggf. neu starten');">
+                      onclick="return confirm('Den aktuellen Datenstand durch die hochgeladene Sicherung ersetzen?');">
                 Upload wiederherstellen
               </button>
             </form>
@@ -342,7 +342,7 @@
 
                     <form method="post" action="{{ url_for('home.restore', filename=b.name) }}">
                       <button class="btn btn-sm btn-outline-warning"
-                              onclick="return confirm('Backup wirklich wiederherstellen?\\n\\nTipp: App ggf. neu starten');">
+                              onclick="return confirm('Den aktuellen Datenstand durch diese Sicherung ersetzen?');">
                         Restore
                       </button>
                     </form>

@@ -1,59 +1,40 @@
 {% extends "layout.html" %}
 {% block content %}
-
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+<div class="d-flex align-items-center justify-content-between gap-2 mb-3 flex-wrap">
+  <h3>Adressbuch – CSV-Import</h3>
   <div>
-    <h3 class="mb-0">Adressbuch – Import (CSV)</h3>
-    <div class="text-muted small">
-      Import ersetzt immer komplett alle Adressen im Standard-Adressbuch. Kein Überschreiben/Merge.
-    </div>
-    <div class="text-muted small mt-1">
-      Tastatur:
-      <span class="fw-semibold">Esc</span> zurück ·
-      <span class="fw-semibold">X</span> Export (Vorlage)
-    </div>
-  </div>
-  <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
     <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Export (CSV)</a>
   </div>
 </div>
-
-<div class="card shadow-sm">
-  <div class="card-body">
-
-    <div class="alert alert-warning">
-      <div class="fw-semibold">Achtung: Replace-All</div>
-      <div class="small">
-        - Die vorhandenen Adressen werden vor dem Import gelöscht und anschließend neu importiert.<br>
-        - Trennzeichen: <strong>;</strong> · Zeichensatz: <strong>UTF-8</strong> · Header: <strong>DB-Feldnamen</strong><br>
-        - Pflichtspalten: <code>nachname</code>, <code>vorname</code>, <code>wohnort</code><br>
-        - Import ist gesperrt, wenn es bereits Turnier-Teilnehmerdaten gibt.
-      </div>
+<div class="card shadow-sm"><div class="card-body">
+  <p id="bookCount">Standardadressbuch · {{ existing }} vorhandene Adressen</p>
+  <p class="alert alert-info" id="bookLock" {% if not registered %}hidden{% endif %}>
+    Das Ersetzen ist wegen vorhandener Turnieranmeldungen gesperrt. Du kannst eine CSV-Datei prüfen.
+  </p>
+  <form method="post" id="csvImport" action="{{ url_for('addresses.addresses_import_post') }}" enctype="multipart/form-data">
+    <label for="csvFile" class="form-label">CSV-Datei auswählen</label>
+    <input id="csvFile" class="form-control" type="file" name="file" required accept=".csv,text/csv" aria-describedby="csvHelp">
+    <p class="form-text" id="csvHelp">UTF-8 mit Semikolon. Pflichtspalten sind <code>nachname</code>, <code>vorname</code> und <code>wohnort</code>.</p>
+    <button class="btn btn-primary" name="step" value="preview" id="previewButton">Datei prüfen</button>
+    <section id="summary" class="mt-3" aria-live="polite">
+      {% if preview %}
+        <p>Gültige Adresszeilen: {{ preview.valid }} · Fehlerhafte Zeilen: {{ preview.invalid }}</p>
+        {% for error in preview.errors %}<p>{{ error }}</p>{% endfor %}
+        {% if preview.error_count > preview.errors|length %}<p>Weitere Meldungen: {{ preview.error_count - preview.errors|length }}</p>{% endif %}
+      {% endif %}
+    </section>
+    <input type="hidden" name="preview_token" value="{{ preview.token if preview else '' }}">
+    <div id="confirmArea" {% if not preview or not preview.token %}hidden{% endif %}>
+      <p>Beim Bestätigen werden die vorhandenen Adressen des Standardadressbuchs durch die geprüften Zeilen ersetzt.</p>
+      {% if preview and preview.token %}<p>Wähle für die Bestätigung dieselbe Datei erneut aus.</p>{% endif %}
+      <button class="btn btn-danger" name="step" value="apply">Standardadressbuch ersetzen</button>
     </div>
-
-    <form method="post" action="{{ url_for('addresses.addresses_import_post') }}" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label class="form-label">CSV-Datei auswählen</label>
-        <input class="form-control" type="file" name="file" accept=".csv,text/csv" required>
-        <div class="form-text">
-          Tipp: Nutze zuerst <strong>Export</strong>, bearbeite die Datei, importiere sie dann wieder.
-        </div>
-      </div>
-
-      <button class="btn btn-danger"
-              id="btnAddrImportStart"
-              type="submit"
-              onclick="return confirm('Wirklich importieren?\n\nHinweis: Alle vorhandenen Adressen im Standard-Adressbuch werden gelöscht und neu importiert.');">
-        Import starten (Replace All)
-      </button>
-    </form>
-
-  </div>
-</div>
-
+  </form>
+</div></div>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/addresses_keys.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/address_import.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/addresses_keys.js') }}"></script>
 {% endblock %}
