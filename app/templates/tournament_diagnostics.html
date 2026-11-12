@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DB-Diagnose</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; padding: 16px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px; }
+    th { text-align: left; background: #f6f6f6; }
+    .ok { color: #0a7; }
+    .bad { color: #c00; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h2>DB-Diagnose – {% if tournament_id is not none %}Turnier #{{ tournament_id }}{% else %}Turniere{% endif %}</h2>
+  <p><a href="{{ url_for('tournaments.tournament_detail', tournament_id=tournament_id) if tournament else url_for('tournaments.tournaments_list') }}">← Zurück</a></p>
+
+  <h3>Prüfstatus</h3>
+  <ul>
+    <li>PRAGMA foreign_keys: <b class="{{ 'ok' if fk_on == 1 else 'bad' }}">{{ fk_on }}</b></li>
+    <li>PRAGMA integrity_check: <b class="{{ 'ok' if integrity|lower == 'ok' else 'bad' }}">{{ integrity }}</b></li>
+    <li>foreign_key_check Probleme: <b class="{{ 'bad' if issues else 'ok' }}">{{ issues|length }}</b></li>
+  </ul>
+
+  {% if tournament_id is not none %}
+    <h3>Turnier</h3>
+    {% if tournament %}
+      <p><b>{{ tournament.title }}</b> · {{ tournament.event_date }} {{ tournament.start_time }}
+        <span class="muted">(marker: {{ tournament.marker or '-' }})</span></p>
+      <ul>
+        <li>Teilnehmer: <b>{{ counts.participants }}</b></li>
+        <li>Runden: <b>{{ counts.rounds }}</b></li>
+        <li>Sitzplan-Zeilen: <b>{{ counts.seats }}</b></li>
+        <li>Ergebnis-Zeilen: <b>{{ counts.scores }}</b></li>
+      </ul>
+    {% else %}
+      <p class="bad">Turnier nicht gefunden.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if issues %}
+    <h3>foreign_key_check – Details</h3>
+    <table>
+      <thead><tr><th>Tabelle</th><th>rowid</th><th>Parent</th><th>fkid</th></tr></thead>
+      <tbody>
+        {% for issue in issues %}
+          <tr><td>{{ issue.table }}</td><td>{{ issue.rowid }}</td><td>{{ issue.parent }}</td><td>{{ issue.fkid }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="ok"><b>Keine FK-Probleme gefunden.</b></p>
+  {% endif %}
+</body>
+</html>

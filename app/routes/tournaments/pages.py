@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import closing
 
-from flask import Response, flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, url_for
 
 from ... import db
 from . import bp
@@ -270,91 +270,30 @@ def tournament_update(tournament_id: int):
 @bp.get("/tournaments/diagnostics")
 @bp.get("/tournaments/<int:tournament_id>/diagnostics")
 def tournaments_diagnostics(tournament_id: int | None = None):
-    with closing(db.connect()) as con, con:
-        fk_on = int(con.execute("PRAGMA foreign_keys;").fetchone()[0] or 0)
-        integrity = str(con.execute("PRAGMA integrity_check;").fetchone()[0] or "")
+    with closing(db.connect()) as con:
+        con.execute("BEGIN")
+        fk_on = con.execute("PRAGMA foreign_keys").fetchone()[0]
+        integrity = con.execute("PRAGMA integrity_check").fetchone()[0]
+        issues = db.q(con, "PRAGMA foreign_key_check")
 
-        fk_issues = db.q(con, "PRAGMA foreign_key_check;")
-        issues = []
-        for r in fk_issues:
-            issues.append({"table": r["table"], "rowid": r["rowid"], "parent": r["parent"], "fkid": r["fkid"]})
-
-        t = None
+        tournament = _get_tournament(con, tournament_id) if tournament_id is not None else None
         counts = None
-        extras = {}
-        if tournament_id is not None:
-            t = _get_tournament(con, int(tournament_id))
-            if t:
-                counts = _tournament_counts(con, int(tournament_id))
-                extras["rounds"] = int(
-                    (db.one(con, "SELECT COUNT(*) AS c FROM tournament_rounds WHERE tournament_id=?", (tournament_id,)) or {"c": 0})[
-                        "c"
-                    ]
-                    or 0
-                )
-                extras["seats"] = int(
-                    (db.one(con, "SELECT COUNT(*) AS c FROM tournament_seats WHERE tournament_id=?", (tournament_id,)) or {"c": 0})[
-                        "c"
-                    ]
-                    or 0
-                )
-                extras["scores"] = int(
-                    (db.one(con, "SELECT COUNT(*) AS c FROM tournament_scores WHERE tournament_id=?", (tournament_id,)) or {"c": 0})[
-                        "c"
-                    ]
-                    or 0
-                )
+        if tournament is not None:
+            counts = con.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM tournament_participants WHERE tournament_id=:tid) AS participants,
+                    (SELECT COUNT(*) FROM tournament_rounds WHERE tournament_id=:tid) AS rounds,
+                    (SELECT COUNT(*) FROM tournament_seats WHERE tournament_id=:tid) AS seats,
+                    (SELECT COUNT(*) FROM tournament_scores WHERE tournament_id=:tid) AS scores
+                """,
+                {"tid": tournament_id},
+            ).fetchone()
 
-    title = "DB-Diagnose – Turniere" if tournament_id is None else f"DB-Diagnose – Turnier #{tournament_id}"
-    back = url_for("tournaments.tournaments_list") if tournament_id is None else url_for("tournaments.tournament_detail", tournament_id=tournament_id)
-
-    html = []
-    html.append("<!doctype html><html><head><meta charset='utf-8'>")
-    html.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
-    html.append("<title>DB-Diagnose</title>")
-    html.append(
-        "<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;padding:16px}"
-        "table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:6px}"
-        "th{text-align:left;background:#f6f6f6}.ok{color:#0a7}.bad{color:#c00}.muted{color:#666}</style>"
+    return render_template(
+        "tournament_diagnostics.html", tournament_id=tournament_id, tournament=tournament,
+        counts=counts, fk_on=fk_on, integrity=integrity, issues=issues,
     )
-    html.append("</head><body>")
-    html.append(f"<h2>{title}</h2>")
-    html.append(f"<p><a href='{back}'>← Zurück</a></p>")
-
-    html.append("<h3>Prüfstatus</h3>")
-    html.append("<ul>")
-    html.append(f"<li>PRAGMA foreign_keys: <b class='{ 'ok' if fk_on==1 else 'bad' }'>{fk_on}</b></li>")
-    html.append(f"<li>PRAGMA integrity_check: <b class='{ 'ok' if integrity.lower()=='ok' else 'bad' }'>{integrity}</b></li>")
-    html.append(f"<li>foreign_key_check Probleme: <b class='{ 'ok' if len(issues)==0 else 'bad' }'>{len(issues)}</b></li>")
-    html.append("</ul>")
-
-    if tournament_id is not None:
-        html.append("<h3>Turnier</h3>")
-        if not t:
-            html.append("<p class='bad'>Turnier nicht gefunden.</p>")
-        else:
-            html.append(
-                f"<p><b>{t['title']}</b> · {t['event_date']} {t['start_time']} "
-                f"<span class='muted'>(marker: {t['marker'] or '-'})</span></p>"
-            )
-            html.append("<ul>")
-            html.append(f"<li>Teilnehmer: <b>{counts['participants'] if counts else 0}</b></li>")
-            html.append(f"<li>Runden: <b>{extras.get('rounds',0)}</b></li>")
-            html.append(f"<li>Sitzplan-Zeilen: <b>{extras.get('seats',0)}</b></li>")
-            html.append(f"<li>Ergebnis-Zeilen: <b>{extras.get('scores',0)}</b></li>")
-            html.append("</ul>")
-
-    if issues:
-        html.append("<h3>foreign_key_check – Details</h3>")
-        html.append("<table><thead><tr><th>Tabelle</th><th>rowid</th><th>Parent</th><th>fkid</th></tr></thead><tbody>")
-        for it in issues:
-            html.append(f"<tr><td>{it['table']}</td><td>{it['rowid']}</td><td>{it['parent']}</td><td>{it['fkid']}</td></tr>")
-        html.append("</tbody></table>")
-    else:
-        html.append("<p class='ok'><b>Keine FK-Probleme gefunden.</b></p>")
-
-    html.append("</body></html>")
-    return Response("\n".join(html), mimetype="text/html")
 
 
 @bp.post("/tournaments/<int:tournament_id>/delete")
