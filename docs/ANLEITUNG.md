@@ -30,6 +30,8 @@ Kurzanleitung für den Turniertag
     - Anzahl Teilnehmer
     - Anzahl Tische
 
+Beim Anlegen und Bearbeiten ist der Marker optional. Für den Abschluss braucht jedes Turnier einen eigenen Marker aus dem Veranstaltungsdatum im Format JJMMTT und vier weiteren Buchstaben oder Ziffern. Für den 12. November 2026 ist etwa `261112ABCD` gültig. Bei einem belegten Marker zeigt das Formular Nummer und Namen des zugehörigen Turniers. Die übrigen Eingaben bleiben zur Korrektur im Formular.
+
 ## 3. Teilnehmer erfassen
 
 Teilnehmer hinzufügen

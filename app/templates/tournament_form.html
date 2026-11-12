@@ -6,9 +6,6 @@
   .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 </style>
 
-{% set back_url = (url_for('tournaments.tournament_detail', tournament_id=t.id) if mode=='edit'
-                   else url_for('tournaments.tournaments_list')) %}
-
 <div class="d-flex justify-content-between align-items-start mb-3">
   <div>
     <h3 class="mb-0">
@@ -34,7 +31,7 @@
 
       <div class="col-md-6">
         <label class="form-label">Turniername *</label>
-        <input class="form-control" name="title" required value="{{ t.title }}" autofocus>
+        <input class="form-control" name="title" required value="{{ t.title }}" {% if not marker_owner %}autofocus{% endif %}>
       </div>
 
       <div class="col-md-3">
@@ -49,24 +46,33 @@
 
       <div class="col-md-6">
         <label class="form-label">Ort</label>
-        <input class="form-control" name="location" value="{{ t.location }}">
+        <input class="form-control" name="location" value="{{ t.location or '' }}">
       </div>
 
       <div class="col-md-3">
-        <label class="form-label">Marker</label>
-        <input class="form-control sk-mono"
+        <label class="form-label" for="marker">Marker</label>
+        <input class="form-control sk-mono{% if marker_owner %} is-invalid{% endif %}"
                id="marker"
                name="marker"
                value="{{ t.marker or '' }}"
-               placeholder="z.B. 7C oder KIRCHWEIH25"
+               placeholder="z. B. 261112ABCD"
+               aria-describedby="marker-help{% if marker_owner %} marker-error{% endif %}"
+               {% if marker_owner %}aria-invalid="true" autofocus{% endif %}
                autocomplete="off"
                inputmode="text">
-        <div class="form-text">Kurzer Code/Kennzeichen (optional)</div>
+        {% if marker_owner %}
+          <div id="marker-error" class="invalid-feedback" role="alert">
+            Der Marker {{ t.marker }} ist bereits vergeben an
+            <a href="{{ url_for('tournaments.tournament_detail', tournament_id=marker_owner.id) }}">Turnier Nr. {{ marker_owner.id }} „{{ marker_owner.title }}“</a>.
+            Bitte einen anderen Marker wählen.
+          </div>
+        {% endif %}
+        <div id="marker-help" class="form-text">Datum als JJMMTT, gefolgt von vier Buchstaben oder Ziffern. Beim Anlegen optional, zum Abschluss erforderlich.</div>
       </div>
 
       <div class="col-md-3">
         <label class="form-label">Veranstalter</label>
-        <input class="form-control" name="organizer" value="{{ t.organizer }}">
+        <input class="form-control" name="organizer" value="{{ t.organizer or '' }}">
       </div>
 
       <div class="col-md-6">
@@ -82,7 +88,7 @@
 
       <div class="col-12">
         <label class="form-label">Beschreibung</label>
-        <textarea class="form-control" name="description" rows="3">{{ t.description }}</textarea>
+        <textarea class="form-control" name="description" rows="3">{{ t.description or '' }}</textarea>
       </div>
 
       <div class="col-12 mt-2 d-flex gap-2">
@@ -123,7 +129,7 @@
     if (isSave) {
       ev.preventDefault();
       const f = document.getElementById("tForm");
-      if (f) f.submit();
+      if (f) f.requestSubmit();
     }
   }, { passive: false });
 })();

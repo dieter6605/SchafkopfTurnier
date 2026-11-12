@@ -13,6 +13,7 @@ from .helpers import (
     _validate_marker_for_event_date,
     _guard_closed_redirect,
     _now_local_iso,
+    _normalize_marker,
     _read_tournament_form,
     _scores_expected_count,
     _tournament_counts,
@@ -63,6 +64,25 @@ def tournaments_list():
     return render_template("tournaments.html", tournaments=tournaments, now=_now_local_iso())
 
 
+def _marker_owner(con, marker: str | None, tournament_id: int | None = None):
+    if not marker:
+        return None
+    # Ältere Sicherungen können Kleinbuchstaben oder Leerzeichen enthalten.
+    for row in con.execute("SELECT id, title, marker FROM tournaments WHERE marker IS NOT NULL ORDER BY id"):
+        if row["id"] != tournament_id and _normalize_marker(row["marker"]) == marker:
+            return row
+    return None
+
+
+def _tournament_form(values, tournament_id: int | None = None, *, marker_owner=None):
+    back_url = (url_for("tournaments.tournaments_list") if tournament_id is None
+                else url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+    return render_template(
+        "tournament_form.html", t=values, mode="new" if tournament_id is None else "edit",
+        back_url=back_url, marker_owner=marker_owner,
+    )
+
+
 @bp.get("/tournaments/new")
 def tournament_new():
     defaults = {
@@ -76,23 +96,25 @@ def tournament_new():
         "min_participants": 0,
         "max_participants": 0,
     }
-    return render_template(
-        "tournament_form.html",
-        t=defaults,
-        mode="new",
-        back_url=url_for("tournaments.tournaments_list"),
-    )
+    return _tournament_form(defaults)
 
 
 @bp.post("/tournaments/new")
 def tournament_create():
     data = _read_tournament_form()
-    err = _validate_tournament_form(data)
-    if err:
-        flash(err, "error")
-        return redirect(url_for("tournaments.tournament_new"))
 
     with closing(db.connect()) as con, con:
+        # Prüfung und Speichern gehören zur selben Schreibtransaktion.
+        con.execute("BEGIN IMMEDIATE")
+        owner = _marker_owner(con, data["marker"])
+        if owner is not None:
+            return _tournament_form(data, marker_owner=owner), 409
+
+        err = _validate_tournament_form(data)
+        if err:
+            flash(err, "error")
+            return redirect(url_for("tournaments.tournament_new"))
+
         con.execute(
             """
             INSERT INTO tournaments(
@@ -202,23 +224,15 @@ def tournament_edit(tournament_id: int):
         if resp:
             return resp
 
-    return render_template(
-        "tournament_form.html",
-        t=t,
-        mode="edit",
-        back_url=url_for("tournaments.tournament_detail", tournament_id=tournament_id),
-    )
+    return _tournament_form(t, tournament_id)
 
 
 @bp.post("/tournaments/<int:tournament_id>/edit")
 def tournament_update(tournament_id: int):
     data = _read_tournament_form()
-    err = _validate_tournament_form(data)
-    if err:
-        flash(err, "error")
-        return redirect(url_for("tournaments.tournament_edit", tournament_id=tournament_id))
 
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -232,6 +246,15 @@ def tournament_update(tournament_id: int):
         )
         if resp:
             return resp
+
+        owner = _marker_owner(con, data["marker"], tournament_id)
+        if owner is not None:
+            return _tournament_form(dict(data, id=tournament_id), tournament_id, marker_owner=owner), 409
+
+        err = _validate_tournament_form(data)
+        if err:
+            flash(err, "error")
+            return redirect(url_for("tournaments.tournament_edit", tournament_id=tournament_id))
 
         con.execute(
             """
