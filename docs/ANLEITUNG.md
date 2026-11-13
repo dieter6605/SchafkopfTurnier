@@ -176,6 +176,8 @@ Platz | Name | Punkte (Soli)
 
 In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Im Einzelplatzbetrieb öffnet der QR-Code die Karte am Turnierrechner. Im WLAN-Betrieb enthält eine neu angezeigte oder gedruckte Karte einen persönlichen Link für das Handy. Wer diesen Link hat, kann die betreffende Karte lesen. Die Turnierleitung gibt jede Karte an den zugehörigen Spieler. Nach der Berichtigung einer falschen Anmeldung eine neue Karte ausgeben.
 
+Die Spielerkarte zeigt am Rechner, am Handy und im PDF denselben Platz wie die Gesamtwertung. Bei einer vorläufigen Platzierung nennt sie den Prüfhinweis und lässt die Medaille weg. In der Rundenübersicht bleiben auch beanstandete Einzelwerte sichtbar.
+
 ### Ergebnisse durch Helfer im Vereins-WLAN
 
 Den WLAN-Start für Mac oder Windows beschreibt die Installationsanleitung. Auf dem Turnierrechner die lokale Turnierliste öffnen und das offene Turnier wählen. Im Abschnitt **Helferzugang für dieses Turnier** stehen die Adresse und der Helfercode. Beides nur den Helfern dieses Turniers geben.

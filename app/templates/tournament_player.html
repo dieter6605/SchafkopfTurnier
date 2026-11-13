@@ -217,16 +217,16 @@
 
       <div class="d-flex gap-2 flex-wrap mt-2">
         <span class="sk-chip">
-          Platz:
+          {{ "Vorläufiger Platz" if score_issue else "Platz" }}:
           <span class="sk-mono">{{ place if place is not none else "–" }}</span>
         </span>
         <span class="sk-chip">
           Punkte:
-          <span class="sk-mono">{{ sum_points }}</span>
+          <span class="sk-mono">{{ sum_points if sum_points is not none else "nicht berechenbar" }}</span>
         </span>
         <span class="sk-chip">
           Soli:
-          <span class="sk-mono">{{ sum_soli }}</span>
+          <span class="sk-mono">{{ sum_soli if sum_soli is not none else "nicht berechenbar" }}</span>
         </span>
         <span class="sk-chip">
           gespielt:
@@ -244,6 +244,7 @@
           </span>
         {% endif %}
       </div>
+      {% if score_issue %}<p class="small mt-2 mb-0">{{ score_issue }}</p>{% endif %}
     </div>
   </div>
 
@@ -253,12 +254,15 @@
         <div class="card-body">
           <div class="fw-semibold mb-2">Verlauf</div>
 
+          {% if sum_points is none %}
+          <p class="small sk-muted mb-0">Der Punkteverlauf ist wegen eines ungültigen Rundenergebnisses nicht berechenbar.</p>
+          {% else %}
           <div class="sk-spark-wrap mb-2">
             <div class="sk-spark-title">Punkte je Runde</div>
             <div class="sk-spark">
-              {% if spark and spark.has_pts and spark.points_pts %}
-                <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Punkteverlauf">
-                  <polyline fill="none" stroke="#0d6efd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ spark.points_pts }}"></polyline>
+              {% if points_curve %}
+                <svg viewBox="0 0 520 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Punkteverlauf">
+                  <polyline fill="none" stroke="#0d6efd" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ points_curve }}"></polyline>
                 </svg>
               {% else %}
                 <div class="small sk-muted">Noch nicht genug Werte für Verlauf (mind. 2 Ergebnisse).</div>
@@ -269,9 +273,9 @@
           <div class="sk-spark-wrap">
             <div class="sk-spark-title">Kumuliert</div>
             <div class="sk-spark">
-              {% if spark and spark.has_cum and spark.points_cum %}
-                <svg viewBox="0 0 {{ spark.width }} {{ spark.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kumulierte Punkte">
-                  <polyline fill="none" stroke="#198754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ spark.points_cum }}"></polyline>
+              {% if cumulative_curve %}
+                <svg viewBox="0 0 520 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kumulierte Punkte">
+                  <polyline fill="none" stroke="#198754" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ cumulative_curve }}"></polyline>
                 </svg>
               {% else %}
                 <div class="small sk-muted">Noch nicht genug Werte für Verlauf.</div>
@@ -282,6 +286,7 @@
           <div class="small sk-muted mt-2">
             Hinweis: Linie verbindet fehlende Runden ohne Ergebnis.
           </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -308,7 +313,7 @@
                 {% if r.has_score %}
                   <div class="sk-rndpts">
                     <div class="sk-mono">{{ r.points }}</div>
-                    <div class="small sk-muted sk-mono">S {{ r.soli or 0 }}</div>
+                    <div class="small sk-muted sk-mono">S {{ r.soli }}</div>
                   </div>
                 {% else %}
                   <div class="small sk-muted">kein Ergebnis</div>

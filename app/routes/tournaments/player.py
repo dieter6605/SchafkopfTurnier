@@ -19,6 +19,7 @@ from flask import (
 from itsdangerous import BadData, URLSafeSerializer
 
 from ... import db
+from ...scoring import first_score_issue, overall_standings, rank_places
 from . import bp
 from .helpers import _get_tournament, _now_local_iso
 
@@ -170,122 +171,45 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: 
         )
         seat_by_round = {int(r["round_no"]): {"table_no": int(r["table_no"]), "seat": r["seat"]} for r in seats}
 
-        # Verlauf + Summen
+        standings = overall_standings(con, tournament_id, sort_by_town=True)
+        places = rank_places(standings)
+        position = next(i for i, row in enumerate(standings) if row["tp_id"] == tp_id)
+        current = standings[position]
+        place = places.get(tp_id)
+        score_issue = first_score_issue(con, tournament_id)
+        medal = _medal_for_place(place) if not score_issue else ""
+        prev_tp_id = standings[position - 1]["tp_id"] if position > 0 else None
+        next_tp_id = standings[position + 1]["tp_id"] if position + 1 < len(standings) else None
+
         timeline = []
-        sum_points = 0
-        sum_soli = 0
-        best = None
-        worst = None
-
-        points_series: list[int | None] = []
-        cum_series: list[int] = []
-
-        cum = 0
-        played = 0
-
         for rn in round_numbers:
-            sc = by_round.get(rn)
-            pts = int(sc["points"]) if sc else None
-            sol = int(sc["soli"]) if sc else None
+            score = by_round.get(rn)
+            seat = seat_by_round.get(rn)
+            timeline.append({
+                "round_no": rn,
+                "table_no": seat["table_no"] if seat else (score["table_no"] if score else None),
+                "seat": seat["seat"] if seat else None,
+                "points": score["points"] if score else None,
+                "soli": score["soli"] if score else None,
+                "has_score": score is not None,
+            })
 
-            seatinfo = seat_by_round.get(rn)
-            tab_no = seatinfo["table_no"] if seatinfo else (int(sc["table_no"]) if sc else None)
-            seat = seatinfo["seat"] if seatinfo else None
-
-            if pts is not None:
-                played += 1
-                sum_points += pts
-                sum_soli += (sol or 0)
-                cum += pts
-
-                if best is None or pts > best["points"]:
-                    best = {"round_no": rn, "points": pts, "soli": sol or 0}
-                if worst is None or pts < worst["points"]:
-                    worst = {"round_no": rn, "points": pts, "soli": sol or 0}
-
-            cum_series.append(cum)  # bleibt bei None stabil
-            points_series.append(pts)
-
-            timeline.append(
-                {
-                    "round_no": rn,
-                    "table_no": tab_no,
-                    "seat": seat,
-                    "points": pts,
-                    "soli": sol,
-                    "has_score": (pts is not None),
-                }
-            )
-
-        # Ranking (wie Gesamtwertung)
-        ranking_rows = db.q(
-            con,
-            """
-            SELECT
-                tp.id AS tp_id,
-                COALESCE(SUM(sc.points), 0) AS points,
-                COALESCE(SUM(sc.soli), 0)   AS soli,
-                a.nachname, a.vorname, a.wohnort,
-                tp.player_no
-            FROM tournament_participants tp
-            JOIN addresses a ON a.id = tp.address_id
-            LEFT JOIN tournament_scores sc
-              ON sc.tournament_id = tp.tournament_id
-             AND sc.tp_id = tp.id
-            WHERE tp.tournament_id = ?
-            GROUP BY tp.id, a.nachname, a.vorname, a.wohnort, tp.player_no
-            ORDER BY
-                points DESC,
-                soli   DESC,
-                a.nachname COLLATE NOCASE,
-                a.vorname  COLLATE NOCASE,
-                a.wohnort  COLLATE NOCASE,
-                tp.player_no
-            """,
-            (int(tournament_id),),
-        )
-
-        # Platzlogik + Nachbarspieler
-        ordered_tp_ids: list[int] = []
-        place: int | None = None
-
-        last_key = None
-        cur_place = 0
-        idx = 0
-
-        for r in ranking_rows:
-            idx += 1
-            key = (int(r["points"]), int(r["soli"]))
-            if key != last_key:
-                cur_place = idx
-                last_key = key
-
-            rid = int(r["tp_id"])
-            ordered_tp_ids.append(rid)
-            if rid == int(tp_id):
-                place = cur_place
-
-        prev_tp_id = None
-        next_tp_id = None
-        if int(tp_id) in ordered_tp_ids:
-            pos = ordered_tp_ids.index(int(tp_id))
-            if pos > 0:
-                prev_tp_id = ordered_tp_ids[pos - 1]
-            if pos < len(ordered_tp_ids) - 1:
-                next_tp_id = ordered_tp_ids[pos + 1]
-
-        # Sparkline-Daten
-        spark = {
-            "width": 520,
-            "height": 64,
-            "pad": 6,
-            "points_pts": _sparkline_points(points_series, width=520, height=64, pad=6),
-            "points_cum": _sparkline_points([int(x) for x in cum_series], width=520, height=64, pad=6),
-            "has_pts": (len([v for v in points_series if v is not None]) >= 2),
-            "has_cum": (len(cum_series) >= 2),
-        }
-
-        medal = _medal_for_place(place)
+        best = worst = None
+        points_curve = cumulative_curve = ""
+        if current["points"] is not None:
+            played_rounds = [entry for entry in timeline if entry["has_score"]]
+            if played_rounds:
+                best = max(played_rounds, key=lambda entry: entry["points"])
+                worst = min(played_rounds, key=lambda entry: entry["points"])
+            point_series = [entry["points"] for entry in timeline]
+            cumulative = []
+            total = 0
+            for points in point_series:
+                if points is not None:
+                    total += points
+                cumulative.append(total)
+            points_curve = _sparkline_points(point_series)
+            cumulative_curve = _sparkline_points(cumulative)
 
     player_url = _card_url(tournament_id, tp_id, p["address_id"], generation)
     if pdf or identity is not None:
@@ -295,9 +219,9 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: 
 
     return render_template(
         "tournament_player.html", t=t, p=p, place=place, medal=medal,
-        sum_points=sum_points, sum_soli=sum_soli, best=best, worst=worst,
+        score_issue=score_issue, sum_points=current["points"], sum_soli=current["soli"], best=best, worst=worst,
         timeline=timeline, now=_now_local_iso(), prev_tp_id=prev_tp_id, next_tp_id=next_tp_id,
-        spark=spark, played=played, rounds_total=len(round_numbers),
+        points_curve=points_curve, cumulative_curve=cumulative_curve, played=len(scores), rounds_total=len(round_numbers),
         player_url=player_url, qr_url=qr_url, pdf_mode=pdf, personal_card=identity is not None,
         pdf_url=url_for("tournaments.tournament_player_pdf", tournament_id=tournament_id, tp_id=tp_id),
     )

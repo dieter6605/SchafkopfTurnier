@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from lxml import html
 from weasyprint import HTML
@@ -87,6 +88,81 @@ class PlayerCardTests(unittest.TestCase):
         self.assertTrue(page.xpath("//link[@href='vendor/bootstrap/bootstrap.min.css']"))
         curves = page.xpath("//polyline[@fill='none']/@stroke")
         self.assertEqual(curves, ["#0d6efd", "#198754"])
+
+    def test_closed_tournament_card_matches_standings_on_screen_phone_and_pdf(self):
+        with closing(db.connect()) as con, con:
+            con.execute("DELETE FROM tournament_seats WHERE round_no=3")
+            con.execute("DELETE FROM tournament_rounds WHERE round_no=3")
+            con.execute("UPDATE tournaments SET closed_at='2026-11-13'")
+        valid = html.fromstring(self.client.get(self.card_path).get_data(as_text=True))
+        self.assertEqual(valid.xpath("//span[@aria-label='Medaille']/text()"), ["🥇"])
+        self.assertNotIn("Vorläufiger Platz", valid.text_content())
+
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournament_scores SET points=31 WHERE round_no=1 AND tp_id=1")
+        local = html.fromstring(self.client.get(self.card_path).get_data(as_text=True))
+        issue = "Runde 1, Tisch 1: Die Punktesumme beträgt 1 und muss 0 sein."
+        standings = self.client.get("/tournaments/1/standings").get_data(as_text=True)
+        self.assertIn(issue, standings)
+
+        self.app.config["WLAN_ORIGIN"] = "http://192.168.1.37:8051"
+        admin = html.fromstring(self.client.get(self.card_path).get_data(as_text=True))
+        card_link, = admin.xpath("//a[contains(@href,'/karte/')]/@href")
+        phone_response = self.app.test_client().get(urlsplit(card_link).path, base_url=self.app.config["WLAN_ORIGIN"],
+                                                    environ_overrides={"REMOTE_ADDR": "192.168.1.20"})
+        self.assertEqual(phone_response.status_code, 200)
+        phone = html.fromstring(phone_response.get_data(as_text=True))
+        self.assertNotIn("Dora", phone.text_content())
+        self.assertFalse(phone.xpath("//a[contains(@href,'/players/') or contains(@href,'/standings')]"))
+
+        pdf_input = []
+        original_init = HTML.__init__
+
+        def capture(instance, *args, **kwargs):
+            if "string" in kwargs:
+                pdf_input.append(html.fromstring(kwargs["string"]))
+            original_init(instance, *args, **kwargs)
+
+        with patch.object(HTML, "__init__", capture):
+            pdf = self.client.get(self.card_path + "/pdf")
+        self.assertTrue(pdf.data.startswith(b"%PDF-"))
+        self.assertEqual(len(pdf_input), 1)
+        for page in (local, phone, pdf_input[0]):
+            chips = [" ".join(span.text_content().split()) for span in page.xpath("//span[@class='sk-chip']")]
+            self.assertIn("Vorläufiger Platz: 1", chips)
+            self.assertIn("Punkte: 16", chips)
+            self.assertIn(issue, page.text_content())
+            self.assertFalse(page.xpath("//span[@aria-label='Medaille']"))
+
+    def test_unreadable_points_and_soli_on_player_cards(self):
+        cases = [
+            ("unlesbar", 1, "–", "nicht berechenbar", "2"),
+            (30, "unlesbar", "1", "15", "nicht berechenbar"),
+            (10, "unlesbar", "–", "-5", "nicht berechenbar"),
+        ]
+        for points, soli, place, sum_points, sum_soli in cases:
+            with self.subTest(points=points, soli=soli):
+                with closing(db.connect()) as con, con:
+                    con.execute("UPDATE tournament_scores SET points=?,soli=? WHERE round_no=1 AND tp_id=1",
+                                (points, soli))
+                response = self.client.get(self.card_path)
+                self.assertEqual(response.status_code, 200)
+                page = html.fromstring(response.get_data(as_text=True))
+                chips = [" ".join(span.text_content().split()) for span in page.xpath("//span[@class='sk-chip']")]
+                self.assertIn("Vorläufiger Platz: " + place, chips)
+                self.assertIn("Punkte: " + sum_points, chips)
+                self.assertIn("Soli: " + sum_soli, chips)
+                self.assertIn("gespielt: 2/3", chips)
+                self.assertIn("unlesbar", page.xpath("//div[@class='sk-rndbox']")[0].text_content())
+                self.assertTrue(page.xpath("//div[@class='sk-rndbox'][3]//*[text()='kein Ergebnis']"))
+                self.assertEqual(bool(page.xpath("//polyline")), isinstance(points, int))
+                self.assertEqual(bool(page.xpath("//span[@title='Beste Runde']")), isinstance(points, int))
+                self.assertTrue(self.client.get(self.card_path + "/pdf").data.startswith(b"%PDF-"))
+                other = html.fromstring(self.client.get("/tournaments/1/players/2").get_data(as_text=True))
+                other_place = "–" if points == 10 else ("2" if points == 30 else "1")
+                other_chips = [" ".join(span.text_content().split()) for span in other.xpath("//span[@class='sk-chip']")]
+                self.assertIn("Vorläufiger Platz: " + other_place, other_chips)
+                self.assertFalse(other.xpath("//span[@aria-label='Medaille']"))
 
     def test_missing_card_preserves_html_and_pdf_redirects(self):
         for path in ("/tournaments/999/players/1", "/tournaments/1/players/999"):
