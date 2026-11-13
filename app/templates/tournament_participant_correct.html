@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1 class="h3">Anmeldung berichtigen</h1>
+<p>{{ tournament.title }} · Startnummer <strong>{{ player.player_no }}</strong></p>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div>Bisher eingetragen: <strong>{{ player.vorname }} {{ player.nachname }}</strong> · {{ player.wohnort }} (#{{ player.address_id }})</div>
+    <div>Gewertete Runden: {{ player.rounds }} · Punkte: {{ player.points }} · Soli: {{ player.soli }}</div>
+  </div>
+</div>
+<p>Wähle die Person, die von Anfang an unter dieser Startnummer gespielt hat.
+   Alle bisherigen Sitzplätze, Punkte und Soli dieser Startnummer werden ihr zugeordnet.</p>
+
+<form method="post">
+  {{ csrf_field() }}
+  <input type="hidden" name="expected_state" value="{{ state }}">
+  <div class="mb-3">
+    <label class="form-label" for="correctPerson">Tatsächlicher Spieler</label>
+    <select class="form-select" name="new_address_id" id="correctPerson" required>
+      <option value="">Person aus dem Adressbuch wählen</option>
+      {% for a in candidates %}
+        <option value="{{ a.id }}" {% if a.id == selected %}selected{% endif %}>{{ a.nachname }}, {{ a.vorname }} · {{ a.wohnort }} (#{{ a.id }})</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Zur Auswahl stehen Personen ohne eigene Startnummer in diesem Turnier. Fehlende Personen zuerst im Adressbuch erfassen.</div>
+  </div>
+  <div class="mb-3">
+    <label class="form-label" for="correctReason">Begründung für das Teilnehmerprotokoll</label>
+    <textarea class="form-control" id="correctReason" name="reason" rows="2" required>{{ reason }}</textarea>
+  </div>
+  <button class="btn btn-primary" type="submit" {% if not candidates %}disabled{% endif %}>Berichtigung speichern</button>
+  <a class="btn btn-outline-secondary" href="{{ roster }}">Abbrechen</a>
+</form>
+{% endblock %}

@@ -63,6 +63,89 @@ class ParticipantIntegrityTests(unittest.TestCase):
             "tournament_seats", "tournament_scores", "audit_log", "tournaments",
         )]
 
+    def prepare_correction(self):
+        self.draw()
+        values = self.form()
+        values.update(points_1="30", points_2="-10", points_3="-10", points_4="-10", soli_1="3")
+        self.client.post(self.table, data=values)
+        with closing(db.connect()) as con, con:
+            con.execute("""INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort)
+                           VALUES(1,'Huber','Berta','Testort')""")
+        roster = html.fromstring(self.client.get(self.participants).get_data(as_text=True))
+        link, = roster.get_element_by_id("tp1").xpath(".//a[normalize-space()='Anmeldung berichtigen']/@href")
+        page = html.fromstring(self.client.get(link).get_data(as_text=True))
+        form, = page.xpath("//form[.//textarea[@name='reason']]")
+        fields = dict(form.fields)
+        fields.update(new_address_id="5", reason="Tischblatt von Berta geprüft.")
+        return link, fields
+
+    def test_correct_identity_transfers_all_rounds_and_records_the_reason(self):
+        path, fields = self.prepare_correction()
+        second = self.tournament + "/rounds/2"
+        self.client.post(second + "/draw", data={"draw_mode": "seeding"})
+        values = dict(html.fromstring(self.client.get(second + "/results/1").get_data(as_text=True)).forms[0].fields)
+        values.update(points_1="-15", points_2="5", points_3="5", points_4="5", soli_1="1")
+        self.client.post(second + "/results/1", data=values)
+        self.client.post(self.participants + "/1/withdraw", data={"expected_address_id": "1"})
+        old_table = self.form()
+        before = self.snapshot()
+        self.client.post(path, data=fields)
+        self.assertEqual(self.snapshot(), before)  # Stand vor Runde 2
+        page = html.fromstring(self.client.get(path).get_data(as_text=True))
+        fields["expected_state"] = page.xpath("//input[@name='expected_state']/@value")[0]
+        self.assertEqual(self.client.post(path, data=fields).status_code, 302)
+        after = self.snapshot()
+        self.assertEqual(before[0], after[0])  # Adressbuch einschließlich Historie
+        self.assertEqual(before[2:5], after[2:5])  # Runden, Sitze, Werte
+        self.assertEqual(self.query("SELECT player_no,address_id,withdrawn_at IS NOT NULL FROM tournament_participants WHERE id=1"),
+                         [(1, 5, 1)])
+        row, = self.query("SELECT tp_id,address_id_old,address_id_new,note FROM audit_log WHERE action='correct_identity'")
+        self.assertEqual(row[:3], (1, 1, 5))
+        for part in ("Startnummer 1", "Probe, Anna", "Huber, Berta", "Punkte: 15", "Soli: 4", fields["reason"]):
+            self.assertIn(part, row[3])
+        self.client.post(path, data=fields)  # wiederholtes Speichern
+        self.client.post(self.table, data=old_table)  # vor der Berichtigung geöffneter Tisch
+        self.assertEqual(self.snapshot(), after)
+        ranking = self.client.get(self.tournament + "/export.csv").data.decode("utf-8-sig")
+        winner, = (r for r in csv.DictReader(StringIO(ranking), delimiter=";") if r["nr"] == "1")
+        self.assertEqual((winner["nachname"], winner["vorname"], winner["punkte"], winner["soli"]), ("Huber", "Berta", "15", "4"))
+        for url in (self.tournament + "/standings", self.tournament + "/players/1"):
+            text = html.fromstring(self.client.get(url).get_data(as_text=True)).text_content()
+            self.assertIn("Huber", text)
+            self.assertNotIn("Anna", text)
+        sheet = self.client.get(self.tournament + "/rounds/1/tablesheets-docx/1?ausgabe=helfer")
+        with ZipFile(BytesIO(sheet.data)) as archive:
+            xml = etree.fromstring(archive.read("word/document.xml"))
+        texts = xml.xpath("//w:t/text()", namespaces={"w": xml.nsmap["w"]})
+        self.assertIn("Huber, Berta · Testort", texts)
+        self.assertNotIn("Probe, Anna · Testort", texts)
+        self.client.post(self.tournament + "/close")
+        self.assertEqual(self.query("SELECT id,participation_count FROM addresses WHERE id IN (1,5) ORDER BY id"),
+                         [(1, 0), (5, 1)])
+        closed = self.snapshot()
+        self.client.post(path, data={**fields, "new_address_id":"1"})
+        self.assertEqual(self.snapshot(), closed)
+
+    def test_correction_requires_free_target_reason_current_form_and_audit(self):
+        path, fields = self.prepare_correction()
+        with closing(db.connect()) as con, con:
+            con.execute("""INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort,status)
+                           VALUES(1,'Gesperrt','Test','Ort','gesperrt')""")
+        before = self.snapshot()
+        for bad in ({"new_address_id": "3"}, {"new_address_id": "1"}, {"new_address_id": "6"},
+                    {"new_address_id": "999"}, {"reason": "  "}, {"expected_state": ""}):
+            with self.subTest(bad=bad):
+                self.client.post(path, data={**fields, **bad})
+                self.assertEqual(self.snapshot(), before)
+        self.client.post("/tournaments/2/participants/1/correct", data=fields)
+        self.assertEqual(self.snapshot(), before)
+        with closing(db.connect()) as con, con:
+            con.execute("""CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log
+                           WHEN NEW.action='correct_identity' BEGIN SELECT RAISE(ABORT, 'Test'); END""")
+        response = self.client.post(path, data=fields)
+        self.assertIn("nicht gemeinsam gespeichert", response.get_data(as_text=True))
+        self.assertEqual(self.snapshot(), before)
+
     def test_withdraw_after_scoring_keeps_ranking_and_excludes_from_all_draws(self):
         with closing(db.connect()) as con, con:
             con.execute("UPDATE tournaments SET max_participants=4 WHERE id=1")

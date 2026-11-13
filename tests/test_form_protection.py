@@ -45,6 +45,9 @@ class FormProtectionTests(unittest.TestCase):
 
     def test_all_write_actions_are_represented_by_protected_controls(self):
         self.app.config["SKT_DEV_MODE"] = True
+        with closing(db.connect()) as con, con:
+            con.execute("""INSERT INTO tournament_scores(tournament_id, round_no, table_no, tp_id)
+                           SELECT tournament_id, round_no, table_no, tp_id FROM tournament_seats""")
         token = self.fields("/backup")["csrf_token"]
         self.assertTrue(token)
         self.assertEqual(self.client.post("/backup", data={"csrf_token": token}).status_code, 302)
@@ -53,7 +56,7 @@ class FormProtectionTests(unittest.TestCase):
         for path in ("/", "/addresses?view=all", "/addresses/new", "/addresses/1/edit", "/addresses/import",
                      "/tournaments", "/tournaments/new", "/tournaments/1", "/tournaments/2",
                      "/tournaments/1/edit", "/tournaments/1/participants?q=Probe", "/tournaments/1/rounds/1",
-                     "/tournaments/1/rounds/1/results/1"):
+                     "/tournaments/1/rounds/1/results/1", "/tournaments/1/participants/1/correct"):
             page = self.page(path)
             for form in page.forms:
                 fields = form.xpath(".//input[@type='hidden' and @name='csrf_token']/@value")

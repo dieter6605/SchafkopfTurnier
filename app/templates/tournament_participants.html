@@ -422,6 +422,11 @@
                     Swap…
                   </button>
 
+                  {% if has_score %}
+                    <a class="btn btn-sm btn-outline-primary"
+                       href="{{ url_for('tournaments.tournament_participant_correct', tournament_id=t.id, tp_id=p.id) }}">Anmeldung berichtigen</a>
+                  {% endif %}
+
                   {% if not p.withdrawn_at %}
                     <form method="post"
                           action="{{ url_for('tournaments.tournament_participant_withdraw', tournament_id=t.id, tp_id=p.id) }}"
@@ -547,7 +552,8 @@
                             'quickadd':'Quick-Add',
                             'edit':'Bearbeiten',
                             'remove':'Entfernen',
-                            'withdraw':'Abmeldung'
+                            'withdraw':'Abmeldung',
+                            'correct_identity':'Berichtigung'
                           }.get(act, act) %}
                           <span class="badge text-bg-light border">{{ label }}</span>
                         </td>
@@ -563,6 +569,8 @@
                               {% endif %}
                             </div>
 
+                          {% elif act == 'correct_identity' %}
+                            <div class="sk-mono">Adresse #{{ ao }} → #{{ an }}</div>
                           {% elif act == 'swap_replace' %}
                             <div class="sk-mono">
                               Ersetzen: tp {{ tp1 }} · #{{ ao }} → #{{ an }}

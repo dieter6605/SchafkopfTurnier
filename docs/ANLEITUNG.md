@@ -86,6 +86,14 @@ Teilnehmer ersetzen (Swap)
 - Sobald eine der beteiligten Anmeldungen ein Ergebnis hat oder abgemeldet ist, ist der Tausch gesperrt.
 - Vor dem Abschluss zeigt die Turnierübersicht den ersten Tisch mit fehlenden oder fehlerhaften Angaben. Jeder Tisch braucht die Sitze A bis D, vier passende Ergebnisse, eine Punktesumme von null und gültige Soli (ganze Zahlen ab null).
 
+**Falsche Person nach der ersten Wertung berichtigen**
+
+1. Unter „Teilnehmer erfassen“ bei der betroffenen Startnummer **Anmeldung berichtigen** wählen. Startnummer, bisherige Person, Punkte und Soli mit dem Tischblatt vergleichen.
+2. Die Person auswählen, die von Anfang an unter dieser Nummer gespielt hat. Sie braucht einen Adressbucheintrag und darf in diesem Turnier keine zweite Startnummer haben.
+3. Den Grund eintragen und **Berichtigung speichern** wählen. Gesamtwertung, Exporte und Nachdrucke zeigen die richtige Person. Das Teilnehmerprotokoll hält die bisherigen und die neuen Personalien, die Startnummer, den Wertungsstand und die Begründung fest.
+
+Bei einem bereits abgeschlossenen Turnier zuerst den unter „Abgeschlossenes Turnier korrigieren“ beschriebenen Weg zum Wiederöffnen nutzen. Nach der Berichtigung das Turnier erneut abschließen.
+
 ## 6. Runde auslosen
 
 Im Turnier:

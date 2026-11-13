@@ -1,6 +1,7 @@
 # app/routes/tournaments/participants.py
 from __future__ import annotations
 
+import sqlite3
 from contextlib import closing
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
@@ -80,16 +81,16 @@ def _audit_log(
     address_id_old_2: int | None = None,
     address_id_new_2: int | None = None,
     note: str | None = None,
+    required: bool = False,
 ) -> None:
     """
-    Audit-Log Eintrag schreiben (best effort).
-    Wichtig: Fehler im Audit-Log dürfen niemals die Fachfunktion blockieren.
+    Protokolleintrag schreiben. Bei einer Berichtigung gehört er zur Buchung.
     Erwartet DB-Tabelle:
       audit_log(id, created_at, tournament_id, action, tp_id, tp_id_2,
                 address_id_old, address_id_new, address_id_old_2, address_id_new_2, note)
     """
     try:
-        con.execute(
+        inserted = con.execute(
             """
             INSERT INTO audit_log(
               tournament_id, action,
@@ -113,8 +114,11 @@ def _audit_log(
                 (str(note).strip() if note else None),
             ),
         )
+        if required and inserted.rowcount != 1:
+            raise sqlite3.IntegrityError("Protokolleintrag fehlt.")
     except Exception:
-        pass
+        if required:
+            raise
 
 
 @bp.get("/tournaments/<int:tournament_id>/participants")
@@ -494,6 +498,79 @@ def tournament_close_participations(tournament_id: int):
 
     flash(f"Turnier abgeschlossen: Marker {marker} gepflegt ({affected} Teilnehmer).", "ok")
     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+
+@bp.route("/tournaments/<int:tournament_id>/participants/<int:tp_id>/correct", methods=["GET", "POST"])
+def tournament_participant_correct(tournament_id: int, tp_id: int):
+    roster = url_for("tournaments.tournament_participants", tournament_id=tournament_id, _anchor=f"tp{tp_id}")
+    saving = request.method == "POST"
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE" if saving else "BEGIN")
+        tournament = _get_tournament(con, tournament_id)
+        if not tournament:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+        if _is_closed(tournament):
+            flash("Das Turnier ist abgeschlossen.", "warning")
+            return redirect(roster)
+
+        player = db.one(con, """
+            SELECT tp.player_no, tp.address_id, a.nachname, a.vorname, a.wohnort,
+                   COUNT(*) AS rounds, SUM(sc.points) AS points, COALESCE(SUM(sc.soli), 0) AS soli,
+                   (SELECT COALESCE(MAX(log.id), 0) FROM audit_log log
+                    WHERE log.tournament_id=tp.tournament_id AND log.tp_id=tp.id AND log.action='correct_identity') AS last_correction
+            FROM tournament_participants tp
+            JOIN addresses a ON a.id=tp.address_id
+            JOIN tournament_scores sc ON sc.tournament_id=tp.tournament_id AND sc.tp_id=tp.id
+            WHERE tp.tournament_id=? AND tp.id=?
+            GROUP BY tp.id
+        """, (tournament_id, tp_id))
+        if not player:
+            flash("Für diese Anmeldung liegt keine Wertung vor.", "warning")
+            return redirect(roster)
+
+        candidates = db.q(con, """
+            SELECT a.id, a.nachname, a.vorname, a.wohnort FROM addresses a
+            WHERE LOWER(TRIM(COALESCE(a.status, ''))) != 'gesperrt'
+              AND NOT EXISTS (SELECT 1 FROM tournament_participants tp
+                              WHERE tp.tournament_id=? AND tp.address_id=a.id)
+            ORDER BY a.nachname COLLATE NOCASE, a.vorname COLLATE NOCASE, a.wohnort COLLATE NOCASE, a.id
+        """, (tournament_id,))
+        state = "/".join(str(player[key]) for key in ("address_id", "player_no", "rounds", "points", "soli", "last_correction"))
+        reason = request.form.get("reason", "").strip()
+        selected = request.form.get("new_address_id", type=int)
+
+        if saving:
+            target = next((a for a in candidates if a["id"] == selected), None)
+            if request.form.get("expected_state") != state:
+                flash("Die Anmeldung oder ihre Wertung hat sich geändert. Bitte die aktuellen Angaben erneut prüfen.", "warning")
+                return redirect(request.path)
+            if not target:
+                flash("Bitte eine verfügbare Person aus dem Adressbuch wählen. Jede Person kann nur eine Startnummer haben.", "warning")
+            elif not reason:
+                flash("Bitte begründen, warum die Anmeldung berichtigt wird.", "warning")
+            else:
+                new_name = _display_name(target)
+                note = (f"Startnummer {player['player_no']} von {_display_name(player)} auf {new_name} berichtigt. "
+                        f"Gewertete Runden: {player['rounds']}, Punkte: {player['points']}, Soli: {player['soli']}. "
+                        f"Begründung: {reason}")
+                try:
+                    con.execute("""
+                        UPDATE tournament_participants SET address_id=?, display_name=?, updated_at=datetime('now')
+                        WHERE tournament_id=? AND id=?
+                    """, (selected, new_name, tournament_id, tp_id))
+                    _audit_log(con, tournament_id=tournament_id, action="correct_identity", tp_id=tp_id,
+                               address_id_old=player["address_id"], address_id_new=selected, note=note, required=True)
+                    con.commit()
+                except sqlite3.Error:
+                    con.rollback()
+                    flash("Die Berichtigung und ihr Protokolleintrag konnten nicht gemeinsam gespeichert werden.", "error")
+                else:
+                    flash(f"Startnummer {player['player_no']} ist jetzt {new_name} zugeordnet.", "ok")
+                    return redirect(roster)
+
+    return render_template("tournament_participant_correct.html", tournament=tournament, player=player,
+                           candidates=candidates, selected=selected, reason=reason, state=state, roster=roster)
 
 
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/withdraw")
