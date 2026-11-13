@@ -1,94 +1,11 @@
-<!-- app/templates/tournament_results_table.html -->
-{% extends "layout.html" %}
+{% extends "_round_layout.html" %}
 {% from "_tablesheet_download.html" import tablesheet_download %}
-{% block content %}
-
-<style>
-  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
-  .sk-sum-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: .5rem;
-    padding: .25rem .5rem;
-    border-radius: .5rem;
-    font-weight: 600;
-    border: 1px solid rgba(0,0,0,.15);
-    background: rgba(0,0,0,.03);
-  }
-  .sk-sum-ok {
-    border-color: rgba(25,135,84,.35);
-    background: rgba(25,135,84,.08);
-  }
-  .sk-sum-bad {
-    border-color: rgba(220,53,69,.35);
-    background: rgba(220,53,69,.08);
-  }
-  .sk-help {
-    font-size: .9rem;
-    color: rgba(0,0,0,.6);
-  }
-</style>
-
-{# robust: t kann obj oder mapping sein #}
-{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
-{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
-
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-  <div>
-    <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }} – Tisch {{ table_no }}</h3>
-    <div class="text-muted small">
-      Punktesumme 0 · Höchstens {{ max_soli }} Soli pro Tisch und Runde · Soli leer = 0
-      {% if now %}· Stand: {{ now }}{% endif %}
-    </div>
-    <div class="sk-help mt-1">
-      Tastatur: <span class="fw-semibold">Enter/↓</span> nächstes Feld · <span class="fw-semibold">↑</span> vorheriges Feld
-      {% if is_closed %}
-        <br><span class="fw-semibold text-danger">Hinweis:</span> Turnier ist abgeschlossen – Eingabe gesperrt (nur Ansicht).
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
-      Tischübersicht
-    </a>
-
-    {% if not g.wlan_request %}
-    <a class="btn btn-outline-primary"
-       href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
-      Rundenwertung
-    </a>
-
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
-      Gesamtwertung
-    </a>
-
-    {{ tablesheet_download(url_for('tournaments.tournament_round_tablesheet_docx_single',
-                                      tournament_id=t.id, round_no=round_no, table_no=table_no)) }}
-
-    {% endif %}
-    {% if next_table %}
-      <a class="btn btn-outline-secondary"
-         href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">
-        Nächster Tisch
-      </a>
-    {% endif %}
-  </div>
-</div>
-
+{% block round_title %}Tisch {{ table_no }} · Runde {{ round_no }}{% endblock %}
+{% block round_content %}
+{% set is_closed = (t.closed_at or '')|trim != '' %}
 {% if is_closed %}
-  <div class="alert alert-warning d-flex justify-content-between align-items-start flex-wrap gap-2">
-    <div>
-      <div class="fw-semibold">Turnier ist abgeschlossen – Speichern ist deaktiviert.</div>
-      <div class="small text-muted mt-1">Abgeschlossen seit: <span class="sk-mono">{{ closed_at }}</span></div>
-    </div>
-  </div>
+  <p class="sk-round-notice">Das Turnier ist seit {{ t.closed_at }} abgeschlossen. Die Eingabe ist gesperrt.</p>
 {% endif %}
-
 {% if conflict_message %}
   <div class="alert alert-warning" role="alert">
     <strong>{{ conflict_message }} Deine Eingabe wurde nicht gespeichert.</strong>
@@ -100,10 +17,11 @@
   <div class="alert alert-danger" role="alert">{{ validation_message }} Bitte die Eingabe prüfen.</div>
 {% endif %}
 
-<div class="card shadow-sm">
-  <div class="card-body">
+<section class="sk-panel sk-pad sk-entry">
+    <h2>Punkte und Soli</h2>
+    <p class="text-secondary mt-2">Die Punkte müssen zusammen 0 ergeben. Höchstens {{ max_soli }} Soli sind möglich. Ein leeres Solifeld zählt als 0.</p>
 
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div class="sk-entry-checks">
       <div class="sk-sum-badge" id="skSumBadge" aria-live="polite">
         Summe Punkte: <span class="sk-mono" id="skSumValue">—</span>
         <span id="skSumState" class="small text-muted"></span>
@@ -125,13 +43,13 @@
       <input type="hidden" name="expected_score_state" value="{{ score_state }}">
       <input type="hidden" name="expected_generation" value="{{ generation }}">
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table sk-list sk-entry-table align-middle mb-0">
           <thead>
             <tr>
-              <th style="width:70px;">Sitz</th>
+              <th>Sitz</th>
               <th>Name</th>
-              <th style="width:140px;">Punkte</th>
-              <th style="width:140px;">Soli</th>
+              <th>Punkte</th>
+              <th>Soli</th>
               {% if conflict_message %}<th>Deine Eingabe (Punkte / Soli)</th>{% endif %}
             </tr>
           </thead>
@@ -142,12 +60,11 @@
                 <td class="sk-mono fw-bold">{{ p.seat }}</td>
                 <td>
                   <input type="hidden" name="address_{{ tp_id }}" value="{{ p.address_id }}">
-                  <strong>{{ p.nachname }}</strong>, {{ p.vorname }}
-                  <span class="text-muted">· {{ p.wohnort }}</span>
-                  <span class="text-muted sk-mono"> (#{{ p.player_no }})</span>
+                  <strong>{{ p.vorname }} {{ p.nachname }}</strong>
+                  <small class="d-block text-secondary">Nr. {{ p.player_no }} · {{ p.wohnort }}</small>
                 </td>
-                <td>
-                  <input class="form-control form-control-sm sk-points"
+                <td><span class="sk-field-label" aria-hidden="true">Punkte</span>
+                  <input class="form-control sk-points" aria-label="Punkte für Sitz {{ p.seat }}, {{ p.vorname }} {{ p.nachname }}"
                          name="points_{{ tp_id }}"
                          value="{{ request.form.get('points_' ~ tp_id, '') if validation_message else (p.points if p.points is not none else '') }}"
                          inputmode="numeric"
@@ -156,8 +73,8 @@
                          data-skt="points"
                          {% if is_closed %}disabled{% endif %}>
                 </td>
-                <td>
-                  <input class="form-control form-control-sm sk-soli"
+                <td><span class="sk-field-label" aria-hidden="true">Soli</span>
+                  <input class="form-control sk-soli" aria-label="Soli für Sitz {{ p.seat }}, {{ p.vorname }} {{ p.nachname }}"
                          name="soli_{{ tp_id }}"
                          value="{{ request.form.get('soli_' ~ tp_id, '') if validation_message else (p.soli if p.soli is not none else '') }}"
                          inputmode="numeric"
@@ -168,7 +85,7 @@
                          {% if is_closed %}disabled{% endif %}>
                 </td>
                 {% if conflict_message %}
-                  <td>{{ request.form.get('points_' ~ tp_id) or '–' }} / {{ request.form.get('soli_' ~ tp_id) or '0' }}</td>
+                  <td class="sk-conflict-values"><span class="sk-field-label">Deine Eingabe (Punkte / Soli)</span>{{ request.form.get('points_' ~ tp_id) or '–' }} / {{ request.form.get('soli_' ~ tp_id) or '0' }}</td>
                 {% endif %}
               </tr>
             {% endfor %}
@@ -200,11 +117,16 @@
       </div>
     </form>
 
-  </div>
+</section>
+<div class="sk-entry-footer no-print">
+  {% if next_table %}
+    <a href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">Tisch {{ next_table }} öffnen →</a>
+  {% endif %}
+  {% if not g.wlan_request %}
+    {{ tablesheet_download(url_for('tournaments.tournament_round_tablesheet_docx_single', tournament_id=t.id, round_no=round_no, table_no=table_no)) }}
+  {% endif %}
 </div>
-
 {% endblock %}
-
 {% block scripts %}
 <script>
 (function() {

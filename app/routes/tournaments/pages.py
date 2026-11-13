@@ -164,6 +164,8 @@ def tournament_detail(tournament_id: int):
             return redirect(url_for("tournaments.tournaments_list"))
 
         overview = tournament_overview(con, t)
+        if request.args.get("bereich") == "runden":
+            return render_template("tournament_rounds.html", t=t, overview=overview, section="runden")
 
         fk_on = int(con.execute("PRAGMA foreign_keys;").fetchone()[0] or 0)
         integrity = str(con.execute("PRAGMA integrity_check;").fetchone()[0] or "")
@@ -196,7 +198,7 @@ def tournament_detail(tournament_id: int):
         )
 
     section = request.args.get("bereich")
-    if section not in ("runden", "druck", "details"):
+    if section not in ("druck", "details"):
         section = "uebersicht"
     return render_template(
         "tournament_detail.html", wlan_generation=wlan_generation,

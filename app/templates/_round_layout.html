@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block main_class %}sk-workspace sk-round-workspace{% endblock %}
+{% block title %}{{ self.round_title() }} · {{ t.title }}{% endblock %}
+{% block screen_styles %}<link href="{{ url_for('static', filename='turnier.css') }}" rel="stylesheet">{% endblock %}
+{% block tournament_navigation %}{% endblock %}
+{% block content %}
+<header class="no-print">
+  {% if g.wlan_request %}
+    <a class="sk-back" href="{{ url_for('wlan.helper', tournament_id=t.id) }}">← Helferbereich</a>
+  {% else %}
+    <a class="sk-back" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='runden') }}">← Alle Runden</a>
+  {% endif %}
+  <div class="sk-heading">
+    <div>
+      <h1>{% block round_title %}{% endblock %}</h1>
+      <p class="text-secondary mt-2 mb-0">
+        {% if request.endpoint == 'tournaments.tournament_round_view' %}<a id="btnBackTournament" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">{{ t.title }}</a>{% else %}{{ t.title }}{% endif %}
+        · {{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr
+      </p>
+    </div>
+    {% if skt_tournament_closed %}<span class="sk-badge closed">Turnier abgeschlossen</span>{% endif %}
+  </div>
+  {% if not g.wlan_request %}
+    {% include "_tournament_nav.html" %}
+    {% if round_id is undefined or round_id %}
+      <nav class="sk-round-tabs" aria-label="Ansichten für Runde {{ round_no }}">
+        {% for label, endpoint in [('Sitzplan','tournament_round_view'),('Tischergebnisse','tournament_round_results_overview'),('Rundenwertung','tournament_round_results_standings')] %}
+          {% set active = request.endpoint == 'tournaments.' ~ endpoint or (label == 'Tischergebnisse' and table_no is defined) %}
+          <a href="{{ url_for('tournaments.' ~ endpoint, tournament_id=t.id, round_no=round_no) }}"
+             {% if active %}aria-current="{{ 'location' if table_no is defined else 'page' }}"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+  {% elif table_no is defined %}
+    <a class="sk-back" href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">← Tischergebnisse dieser Runde</a>
+  {% endif %}
+</header>
+{% block round_content %}{% endblock %}
+{% endblock %}

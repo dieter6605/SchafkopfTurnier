@@ -74,6 +74,24 @@ class WlanTests(unittest.TestCase):
         self.assertEqual(self.phone.post(form.action, data=dict(form.fields), **self.options).status_code, 303)
         self.assertEqual(self.phone.get(self.table, **self.options).location, self.helper)
 
+    def test_helper_round_views_link_only_to_helper_destinations(self):
+        self.login(self.access_code())
+        results = self.table.rsplit("/", 1)[0]
+        for path in (results, self.table):
+            with self.subTest(path=path):
+                page = html.fromstring(self.phone.get(path, **self.options).get_data(as_text=True))
+                self.assertFalse(page.xpath("//nav[@aria-label='Turniernavigation']"))
+                self.assertFalse(page.xpath("//a[contains(@href,'bereich=') or contains(@href,'standings') or contains(@href,'docx')]"))
+                self.assertTrue(page.xpath("//a[@href=$helper]", helper=self.helper))
+                css, = page.xpath("//link[contains(@href,'turnier.css')]/@href")
+                with self.phone.get(css, **self.options) as response:
+                    self.assertEqual(response.status_code, 200)
+                if path == self.table:
+                    self.assertTrue(page.xpath("//input[@aria-label and @data-skt='points']"))
+                    self.assertTrue(page.xpath("//a[@href=$results]", results=results))
+                else:
+                    self.assertTrue(page.xpath("//a[@href=$table]", table=self.table))
+
     def test_helper_saves_checked_values_and_conflicts_are_visible(self):
         self.login(self.access_code())
         page = self.phone.get(self.table, **self.options)

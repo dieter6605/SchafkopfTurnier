@@ -25,6 +25,7 @@ from .helpers import (
     _is_closed,
     _now_local_iso,
     _seeding_tp_ids,
+    _tournament_counts,
 )
 
 
@@ -318,8 +319,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
             if seats and rn == last_round_no:
                 seeding_issues[rn + 1] = _first_score_issue(con, tournament_id, through_round=rn)
 
-        if not seats:
-            flash(f"Für Runde {round_no} ist noch keine Auslosung vorhanden.", "info")
+        counts = _tournament_counts(con, tournament_id)
 
     return render_template(
         "tournament_round.html",
@@ -333,6 +333,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
         prev_round_no=prev_round_no,
         next_round_no=next_round_no,
         table_statuses=table_statuses,
+        counts=counts,
         has_results=has_results,
         round_id=tr["id"] if tr else 0,
         now=_now_local_iso(),

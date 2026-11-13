@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+{% block main_class %}sk-workspace{% endblock %}
+{% block title %}Runden &amp; Ergebnisse · {{ t.title }}{% endblock %}
+{% block tournament_navigation %}{% endblock %}
+{% block content %}
+{% set current = overview.current %}
+{% set count = overview.counts %}
+{% set next_no = current.number + 1 if current else 1 %}
+<a class="sk-back" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">← {{ t.title }}</a>
+<div class="sk-heading">
+  <div><h1>Runden &amp; Ergebnisse</h1><p class="text-secondary mt-2 mb-0">{{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr{% if t.location %} · {{ t.location }}{% endif %}</p></div>
+  {% if skt_tournament_closed %}<span class="sk-badge closed">Turnier abgeschlossen</span>{% endif %}
+</div>
+{% include "_tournament_nav.html" %}
+
+<div class="sk-feature-grid">
+  <section class="sk-panel">
+    <div class="sk-pad">
+      {% if current %}
+        <p class="sk-kicker text-secondary mb-1">{{ 'Letzte Runde' if skt_tournament_closed else 'Aktuelle Runde' }}</p>
+        <h2>Runde {{ current.number }}</h2>
+        <p class="text-secondary mt-1 mb-0">{{ current.done }} fertig · {{ current.open_count }} offen{% if current.review %} · {{ current.review }} zu prüfen{% endif %}</p>
+        <div class="sk-tables">
+          {% for tn, status in current.tables|dictsort %}
+            {% set state = 'review' if status.issue else 'done' if status.complete else 'open' %}
+            <a class="sk-table {{ state }}" href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=current.number, table_no=tn) if status.seats == 4 else url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=current.number) }}">
+              <strong>Tisch {{ tn }}</strong><span>{{ 'Wertung prüfen' if status.issue else '✓ Fertig' if status.complete else '○ Offen' }}</span>
+              {% if status.issue %}<small>{{ status.issue }}</small>{% endif %}
+            </a>
+          {% else %}<p class="mb-0">Für diese Runde fehlt der Sitzplan.</p>{% endfor %}
+        </div>
+      {% else %}
+        <h2>Erste Runde</h2><p class="text-secondary mt-2 mb-0">Es wurde noch keine Runde ausgelost.</p>
+      {% endif %}
+    </div>
+    {% if current %}
+      <div class="sk-round-links">
+        <a href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=current.number) }}">Sitzplan</a>
+        <a href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=current.number) }}">Tischergebnisse</a>
+        <a href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=current.number) }}">Rundenwertung</a>
+      </div>
+    {% endif %}
+  </section>
+  <section class="sk-panel sk-next">
+    {% if skt_tournament_closed %}
+      <h2>Turnier abgeschlossen</h2>
+      <p>Die Ergebnisse aller Runden findest du in der Gesamtwertung.</p>
+      <a class="btn btn-primary mt-auto" href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">Gesamtwertung öffnen</a>
+    {% else %}
+      <div class="sk-kicker">Auslosung</div>
+      <h2>Runde {{ next_no }} vorbereiten</h2>
+      {% if count.active >= 4 and not count.rest %}
+        <p>{{ count.active }} aktive Teilnehmer · {{ count.tables }} {{ 'Vierertisch' if count.tables == 1 else 'Vierertische' }}</p>
+        <a class="btn btn-primary mt-auto" href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_no) }}">Zur Vorbereitung →</a>
+        <form method="post" action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_no) }}"
+              data-confirm="Runde {{ next_no }} auslosen?" onsubmit="return window.confirm(this.dataset.confirm)">
+          {{ csrf_field() }}<input type="hidden" name="expected_round_id" value="0">
+          <button class="btn btn-sm btn-outline-secondary" id="btnDrawNext">Direkt per Zufall auslosen</button>
+        </form>
+      {% else %}
+        <p>{{ count.active }} aktive Teilnehmer. Für vollständige Vierertische {{ 'fehlt eine Person' if count.rest == 3 else 'fehlen ' ~ (4 - count.rest) ~ ' Personen' }}.</p>
+        <a class="btn btn-primary mt-auto" href="{{ url_for('tournaments.tournament_participants', tournament_id=t.id) }}">Teilnehmer öffnen</a>
+      {% endif %}
+    {% endif %}
+  </section>
+</div>
+{% if overview.rounds|length > 1 %}
+  <section class="sk-panel">
+    <div class="sk-pad"><h2>Frühere Runden</h2></div>
+    {% for rnd in overview.rounds[:-1]|reverse %}
+      <div class="sk-round-links">
+        <div><strong>Runde {{ rnd.number }}</strong><small class="d-block text-secondary">{{ rnd.done }} fertig · {{ rnd.open_count }} offen{% if rnd.review %} · {{ rnd.review }} zu prüfen{% endif %}{% if not rnd.tables %} · Sitzplan fehlt{% endif %}</small></div>
+        <div class="d-flex flex-wrap gap-3">
+          <a href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rnd.number) }}">Sitzplan</a>
+          <a href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=rnd.number) }}">Tischergebnisse</a>
+          <a href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=rnd.number) }}">Rundenwertung</a>
+        </div>
+      </div>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>{% endblock %}

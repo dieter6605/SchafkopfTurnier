@@ -71,8 +71,8 @@
   </section>
 </div>
 {% endif %}
-{% if section in ['uebersicht','runden'] %}
-<details class="sk-panel sk-fold mt-3" {% if section == 'runden' %}open{% endif %}>
+{% if section == 'uebersicht' %}
+<details class="sk-panel sk-fold mt-3">
   <summary>Runden &amp; Ergebnisse</summary>
   <div class="sk-pad pt-0">
     {% for rnd in overview.rounds|reverse %}

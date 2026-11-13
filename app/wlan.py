@@ -20,7 +20,7 @@ RESULT_ENDPOINTS = {
 PUBLIC_ASSETS = {
     "branding/favicon.ico", "branding/apple-touch-icon.png", "branding/logo.png", "branding/turnierlogo.png",
     "vendor/bootstrap/bootstrap.min.css", "vendor/bootstrap/bootstrap.bundle.min.js",
-    "js/skt_ux.js",
+    "js/skt_ux.js", "turnier.css",
 }
 
 

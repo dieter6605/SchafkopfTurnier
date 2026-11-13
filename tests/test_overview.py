@@ -105,6 +105,43 @@ class OverviewTests(unittest.TestCase):
         self.assertIn("Runde 1, Tisch 1", page.text_content())
         self.page(self.button(page, "Gesamtwertung öffnen"))
 
+    def test_rounds_workspace_from_preparation_to_results_and_history(self):
+        hub = "/tournaments/1?bereich=runden"
+        self.tournament()
+        self.register(4)
+        start = self.page(hub)
+        self.assertEqual(start.xpath("//h1/text()"), ["Runden & Ergebnisse"])
+        preparation = self.page(self.button(start, "Zur Vorbereitung"))
+        self.assertFalse(preparation.xpath("//nav[@aria-label='Ansichten für Runde 1']"))
+        form = preparation.get_element_by_id("formDraw")
+        self.client.post(form.action, data=dict(form.fields))
+        plan = self.page(self.button(self.page(hub), "Sitzplan"))
+        tabs, = plan.xpath("//nav[@aria-label='Ansichten für Runde 1']")
+        self.assertEqual(tabs.xpath("a/text()"), ["Sitzplan", "Tischergebnisse", "Rundenwertung"])
+        results = self.page(tabs.xpath("a/@href")[1])
+        table = self.button(results, "Tisch 1")
+        self.assertEqual(self.save_table(table).location, tabs.xpath("a/@href")[1])
+        self.assertIn("1 fertig · 0 offen", self.page(hub).text_content())
+        self.assertEqual(self.page(tabs.xpath("a/@href")[2]).xpath("//tbody/tr[1]/td[4]/text()"), ["30"])
+        self.draw(2)
+        previous, = self.page(hub).xpath("//section[.//h2='Frühere Runden']")
+        self.assertEqual(previous.xpath(".//a/@href"), tabs.xpath("a/@href"))
+        self.assertIn("1 fertig · 0 offen", previous.text_content())
+
+    def test_rounds_workspace_reflects_draw_eligibility_and_closure(self):
+        self.tournament()
+        self.register(3)
+        hub = "/tournaments/1?bereich=runden"
+        page = self.page(hub)
+        self.assertEqual(self.button(page, "Teilnehmer öffnen"), "/tournaments/1/participants")
+        self.assertFalse(page.xpath("//form"))
+        self.assertIn("disabled", self.page("/tournaments/1/rounds/1").get_element_by_id("btnRedraw").attrib)
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET closed_at='2026-11-13 20:00:00'")
+        closed = self.page(hub)
+        self.assertFalse(closed.xpath("//form"))
+        self.assertEqual(self.button(closed, "Gesamtwertung öffnen"), "/tournaments/1/standings")
+
     def test_start_selection_empty_and_filtered_lists_and_navigation(self):
         self.assertIn("Erstes Turnier anlegen", self.page("/").text_content())
         self.tournament(days=-1)

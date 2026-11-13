@@ -1,10 +1,7 @@
-<!-- app/templates/tournament_round_standings.html -->
-{% extends "layout.html" %}
-{% block content %}
-
+{% extends "_round_layout.html" %}
+{% block round_title %}Rundenwertung · Runde {{ round_no }}{% endblock %}
+{% block round_content %}
 <style>
-  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
   @media print {
     /* @page bleibt hier sinnvoll, der Rest (nav/.btn/.alert/.no-print) kommt global aus layout */
     @page { margin: 12mm; }
@@ -51,84 +48,33 @@
     .sk-points .soli { font-weight: 700; }
   }
 </style>
-
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 no-print">
-  <div>
-    <h3 class="mb-0">{{ t.title }} – Rundenwertung {{ round_no }}</h3>
-    <div class="text-muted small">
-      Sortierung: Punkte ↓, Soli ↓ (Tie-Breaker), dann Name
-      {% if now %}· Stand: {{ now }}{% endif %}
+{% if score_issue %}<p class="sk-round-notice"><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>{% endif %}
+<section class="sk-panel no-print">
+  <div class="sk-toolbar">
+    <div>
+      <h2>Platzierungen</h2>
+      <p class="text-secondary mt-1 mb-0">{{ scores_count }}/{{ expected_scores }} Einzelwerte · Bei Punktgleichheit entscheiden die Soli.</p>
     </div>
-
-    {% if total_tables is defined %}
-      <div class="text-muted small mt-1">
-        Einzelwerte: <span class="fw-semibold">{{ scores_count }}</span>/{{ expected_scores }}
-        {% if scores_count < expected_scores %}
-          · Hinweis: Noch nicht alle Tische erfasst.
-        {% endif %}
-      </div>
-    {% endif %}
+    <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Rundenwertung drucken</button>
   </div>
-
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=round_no) }}">
-      Zurück zur Eingabe
-    </a>
-
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=round_no) }}">
-      Runde
-    </a>
-
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
-      Gesamtwertung
-    </a>
-
-    <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Drucken</button>
-  </div>
-</div>
-
-{% if score_issue %}<p><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>{% endif %}
-
-<div class="card shadow-sm no-print">
-  <div class="card-body">
-    {% if not rows %}
-      <div class="text-muted">Noch keine Ergebnisse für diese Runde vorhanden.</div>
-    {% else %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
+  {% if rows %}
+    <div class="table-responsive">
+      <table class="table sk-list sk-round-ranking align-middle mb-0">
+        <thead><tr><th>Platz</th><th>Spieler</th><th>Tisch/Sitz</th><th class="text-end">Punkte</th><th class="text-end">Soli</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
             <tr>
-              <th style="width:70px;">Platz</th>
-              <th>Nachname</th>
-              <th>Vorname</th>
-              <th>Wohnort</th>
-              <th style="width:110px;">(Nr)</th>
-              <th style="width:110px;">Tisch/Sitz</th>
-              <th class="text-end" style="width:140px;">Punkte (Soli)</th>
+              <td class="fw-bold">{{ r.place if r.place is not none else '–' }}</td>
+              <td><strong>{{ r.vorname }} {{ r.nachname }}</strong><small class="d-block text-secondary">Nr. {{ r.player_no }} · {{ r.wohnort }}</small></td>
+              <td>{{ r.table_no }}/{{ r.seat }}</td>
+              <td class="text-end fw-semibold">{{ r.points }}</td><td class="text-end">{{ r.soli }}</td>
             </tr>
-          </thead>
-          <tbody>
-            {% for r in rows %}
-              <tr>
-                <td class="sk-mono fw-bold">{{ r.place if r.place is not none else "–" }}</td>
-                <td><strong>{{ r.nachname }}</strong></td>
-                <td>{{ r.vorname }}</td>
-                <td><span class="text-muted">{{ r.wohnort }}</span></td>
-                <td class="sk-mono text-muted">({{ r.player_no }})</td>
-                <td class="sk-mono">{{ r.table_no }}/{{ r.seat }}</td>
-                <td class="sk-mono fw-bold text-end">{{ r.points }} ({{ r.soli }})</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  </div>
-</div>
-
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}<p class="sk-pad pt-0 mb-0 text-secondary">Noch keine Ergebnisse für diese Runde vorhanden.</p>{% endif %}
+</section>
 <div class="print-only">
   <div class="sk-print-title">
     <div class="headline">Rundenwertung – Runde {{ round_no }}</div>

@@ -87,22 +87,15 @@ Teilnehmer ersetzen oder tauschen
 
 Bei einem bereits abgeschlossenen Turnier zuerst den unter „Abgeschlossenes Turnier korrigieren“ beschriebenen Weg zum Wiederöffnen nutzen. Nach der Berichtigung das Turnier erneut abschließen.
 
-## 6. Runde auslosen
+## 6. Runden und Sitzpläne
 
-Im Turnier:
+Im Turnier **Runden & Ergebnisse** öffnen. Die aktuelle Runde zeigt alle Tische mit ihrem Stand. Frühere Runden stehen darunter. Pro Runde gibt es drei Ansichten: **Sitzplan**, **Tischergebnisse** und **Rundenwertung**.
 
-Runde 1
-- „Runde 1 auslosen“
-- Solange die Runde keine Ergebnisse enthält, kann die Turnierleitung einen neuen Sitzplan bestätigen. Mit dem ersten gespeicherten Ergebnis wird der Sitzplan gesperrt.
-
-Weitere Runden
-- „Nächste Runde vorbereiten“
-- Im Sitzplan unter „Auslosung für Runde X“ zwischen Zufall und „Setzliste nach Gesamtwertung“ wählen. Die Setzliste ist ab Runde 2 verfügbar, sobald alle Tische der vorherigen Runden gültig gewertet sind. Bei einer ausstehenden Wertung nennt die Anzeige Runde und Tisch. Nach der Ergebniseingabe den Sitzplan erneut öffnen oder die Seite neu laden.
-- „Runde X auslosen“
-- Im Sitzplan öffnet Umschalt+R eine vorhandene Folgerunde. Aus der letzten ausgelosten Runde heraus fragt die Anwendung, ob sie die nächste Runde auslosen soll.
-
-Anzeige
-- „Runde anzeigen“ zeigt Sitzplan (Tische & Plätze)
+- Unter **Zur Vorbereitung** zeigt die Anwendung die aktiven Teilnehmer und die möglichen Vierertische. Bei einer unvollständigen Besetzung führt ein Link zur Teilnehmerliste.
+- Für Runde 1 die Zufallsauslosung bestätigen. Ab Runde 2 lässt sich unter „Auslosung für Runde X“ auch die Setzliste wählen, sobald alle vorherigen Runden gültig gewertet sind. Bei einer gesperrten Setzliste nennt der Hinweis Runde und Tisch.
+- Im **Sitzplan** öffnet „Sitze“ die Sitzliste A bis D. Der Tischname führt direkt zum Eingabeformular. Nach dem ersten gespeicherten Ergebnis ist der Sitzplan der Runde gesperrt.
+- Unter **Tischblätter und Auslosungsdaten** findest du die Tischblätter für Helfer und Turnierleitung. „Sitzplan drucken“ erstellt den alphabetischen Aushang.
+- Im Sitzplan öffnet Umschalt+R eine bereits ausgeloste Folgerunde. In der letzten ausgelosten Runde fragt die Anwendung, ob sie die nächste Runde auslosen soll.
 
 ## 7. Sitzpläne drucken / aushängen
 
@@ -122,11 +115,10 @@ Die Anwendung erstellt die Word-Tischblätter für Einzelblatt, Sammeldokument u
 
 Wer einen Download im Projektordner aufbewahrt, kann dafür den Unterordner `exports/` anlegen. Git ignoriert seinen Inhalt auch nach dem Umbenennen der Dateien. Ein Software-ZIP für die Weitergabe enthält nur Programmdateien, Vereinsgrafiken und Anleitungen. Der vollständige Projektordner kann zusätzlich Adressen, Sicherungen, Exporte und ältere Git-Versionen enthalten.
 
-8. Ergebnisse eingeben
+## 8. Ergebnisse eingeben
 
-Vorgehen
-1.	Runde auswählen
-2.	Tisch auswählen
+1. Unter „Runden & Ergebnisse“ die Runde und „Tischergebnisse“ öffnen.
+2. Einen Tisch auswählen.
 3.	Für jeden der 4 Spieler:
     - Punkte
 	- Soli

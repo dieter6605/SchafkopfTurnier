@@ -13,9 +13,11 @@
   <title>{% block title %}SchafkopfTurnier{% endblock %}</title>
 
   <link href="{{ static_asset('vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
-  {% if not g.wlan_request and not pdf_mode|default(false) %}
-    <link href="{{ url_for('static', filename='turnier.css') }}" rel="stylesheet">
-  {% endif %}
+  {% block screen_styles %}
+    {% if not g.wlan_request and not pdf_mode|default(false) %}
+      <link href="{{ url_for('static', filename='turnier.css') }}" rel="stylesheet">
+    {% endif %}
+  {% endblock %}
   <link rel="icon" type="image/png" href="{{ static_asset('branding/favicon.ico') }}" sizes="32x32">
   <link rel="apple-touch-icon" href="{{ static_asset('branding/apple-touch-icon.png') }}">
 
