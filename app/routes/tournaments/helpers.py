@@ -10,6 +10,14 @@ from flask import flash, redirect, request, session, url_for
 
 from ... import db
 
+MAX_SOLI_PER_TABLE = 40
+
+
+def _soli_total_issue(total: int) -> str | None:
+    if total > MAX_SOLI_PER_TABLE:
+        return f"Die vier Spieler haben zusammen {total} Soli. Pro Tisch und Runde sind höchstens {MAX_SOLI_PER_TABLE} erlaubt."
+    return None
+
 
 def _to_int(v: Any, default: int = 0) -> int:
     try:
@@ -162,6 +170,9 @@ def _first_score_issue(con, tournament_id: int, *, through_round: int | None = N
             return f"{label}: {scored} von 4 Ergebnissen erfasst."
         if any(not isinstance(r["soli"], int) or r["soli"] < 0 for r in seats):
             return f"{label}: Soli müssen nichtnegative ganze Zahlen sein."
+        soli_issue = _soli_total_issue(sum(r["soli"] for r in seats))
+        if soli_issue:
+            return f"{label}: {soli_issue}"
         if any(not isinstance(r["points"], int) for r in seats):
             return f"{label}: Die Punkte müssen ganze Zahlen sein."
         total = sum(r["points"] for r in seats)

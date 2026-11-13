@@ -39,7 +39,7 @@
   <div>
     <h3 class="mb-0">{{ t.title }} – Runde {{ round_no }} – Tisch {{ table_no }}</h3>
     <div class="text-muted small">
-      Punkte müssen in Summe <span class="fw-semibold">0</span> ergeben · Soli leer = 0
+      Punktesumme 0 · Höchstens {{ max_soli }} Soli pro Tisch und Runde · Soli leer = 0
       {% if now %}· Stand: {{ now }}{% endif %}
     </div>
     <div class="sk-help mt-1">
@@ -94,6 +94,10 @@
   </div>
 {% endif %}
 
+{% if validation_message %}
+  <div class="alert alert-danger" role="alert">{{ validation_message }} Bitte die Eingabe prüfen.</div>
+{% endif %}
+
 <div class="card shadow-sm">
   <div class="card-body">
 
@@ -101,6 +105,9 @@
       <div class="sk-sum-badge" id="skSumBadge" aria-live="polite">
         Summe Punkte: <span class="sk-mono" id="skSumValue">—</span>
         <span id="skSumState" class="small text-muted"></span>
+      </div>
+      <div class="sk-sum-badge" id="skSoliBadge" aria-live="polite">
+        Soli am Tisch: <span class="sk-mono" id="skSoliTotal">—</span> / {{ max_soli }}
       </div>
       <div class="text-muted small" id="skSumHint">
         Bitte alle 4 Punkte eingeben – danach muss die Summe <span class="fw-semibold">0</span> sein.
@@ -138,7 +145,7 @@
                 <td>
                   <input class="form-control form-control-sm sk-points"
                          name="points_{{ tp_id }}"
-                         value="{{ p.points if p.points is not none else '' }}"
+                         value="{{ request.form.get('points_' ~ tp_id, '') if validation_message else (p.points if p.points is not none else '') }}"
                          inputmode="numeric"
                          autocomplete="off"
                          required
@@ -148,7 +155,7 @@
                 <td>
                   <input class="form-control form-control-sm sk-soli"
                          name="soli_{{ tp_id }}"
-                         value="{{ p.soli if p.soli is not none else '' }}"
+                         value="{{ request.form.get('soli_' ~ tp_id, '') if validation_message else (p.soli if p.soli is not none else '') }}"
                          inputmode="numeric"
                          autocomplete="off"
                          pattern="[0-9]+" title="Ganze Zahl ab 0"
@@ -196,6 +203,7 @@
 <script>
 (function() {
   const IS_CLOSED = {{ skt_tournament_closed|tojson }};
+  const maxSoli = {{ max_soli|tojson }};
 
   const form = document.getElementById("skResultsForm");
   if (!form) return;
@@ -208,6 +216,8 @@
   const sumValueEl = document.getElementById("skSumValue");
   const sumStateEl = document.getElementById("skSumState");
   const sumHintEl = document.getElementById("skSumHint");
+  const soliBadge = document.getElementById("skSoliBadge");
+  const soliTotalEl = document.getElementById("skSoliTotal");
 
   const btnSave = document.getElementById("btnSave");
   const btnSaveNext = document.getElementById("btnSaveNext");
@@ -220,7 +230,7 @@
     return parseInt(s, 10);
   }
 
-  function updateSumUI() {
+  function updatePointsUI() {
     if (IS_CLOSED) {
       let total = 0;
       let filled = 0;
@@ -247,9 +257,7 @@
 
       badge?.classList.remove("sk-sum-ok", "sk-sum-bad");
       if (sumHintEl) sumHintEl.textContent = "Turnier abgeschlossen – Eingabe ist gesperrt (nur Ansicht).";
-      if (btnSave) btnSave.disabled = true;
-      if (btnSaveNext) btnSaveNext.disabled = true;
-      return;
+      return false;
     }
 
     let total = 0;
@@ -278,9 +286,7 @@
       sumStateEl.textContent = "";
       badge?.classList.remove("sk-sum-ok", "sk-sum-bad");
       if (sumHintEl) sumHintEl.textContent = "Bitte alle 4 Punkte eingeben – danach muss die Summe 0 sein.";
-      if (btnSave) btnSave.disabled = true;
-      if (btnSaveNext) btnSaveNext.disabled = true;
-      return;
+      return false;
     }
 
     if (hasInvalid) {
@@ -289,9 +295,7 @@
       badge?.classList.add("sk-sum-bad");
       badge?.classList.remove("sk-sum-ok");
       if (sumHintEl) sumHintEl.textContent = "Nur ganze Zahlen bei Punkte zulässig (z.B. 12, -8).";
-      if (btnSave) btnSave.disabled = true;
-      if (btnSaveNext) btnSaveNext.disabled = true;
-      return;
+      return false;
     }
 
     sumValueEl.textContent = String(total);
@@ -303,26 +307,43 @@
       badge?.classList.remove("sk-sum-ok");
       badge?.classList.add("sk-sum-bad");
       if (sumHintEl) sumHintEl.textContent = "Bitte alle 4 Punktefelder ausfüllen.";
-      if (btnSave) btnSave.disabled = true;
-      if (btnSaveNext) btnSaveNext.disabled = true;
-      return;
+      return false;
     }
 
     if (total === 0) {
       sumStateEl.textContent = " ✓";
       badge?.classList.add("sk-sum-ok");
       badge?.classList.remove("sk-sum-bad");
-      if (sumHintEl) sumHintEl.textContent = "OK – Summe ist 0. Du kannst speichern.";
-      if (btnSave) btnSave.disabled = false;
-      if (btnSaveNext) btnSaveNext.disabled = false;
+      if (sumHintEl) sumHintEl.textContent = "Die Punktesumme stimmt.";
     } else {
       sumStateEl.textContent = " ✗";
       badge?.classList.remove("sk-sum-ok");
       badge?.classList.add("sk-sum-bad");
       if (sumHintEl) sumHintEl.textContent = `Fehler: Summe ist ${total} (muss 0 sein). Eingaben bleiben erhalten.`;
-      if (btnSave) btnSave.disabled = true;
-      if (btnSaveNext) btnSaveNext.disabled = true;
     }
+    return total === 0;
+  }
+
+  function updateSumUI() {
+    const pointsOK = updatePointsUI();
+    let soliTotal = 0;
+    let validSoli = true;
+    for (const input of soliInputs) {
+      const value = input.value.trim();
+      const valid = /^[0-9]*$/.test(value);
+      input.classList.toggle("is-invalid", !valid && !IS_CLOSED);
+      if (valid) soliTotal += Number(value);
+      else validSoli = false;
+    }
+    const soliOK = validSoli && soliTotal <= maxSoli;
+    soliTotalEl.textContent = validSoli && Number.isSafeInteger(soliTotal) ? String(soliTotal) : "—";
+    soliBadge.classList.toggle("sk-sum-bad", !soliOK);
+    if (!IS_CLOSED && !soliOK) {
+      sumHintEl.textContent = validSoli
+        ? `Die Summe der Soli ist zu hoch. Pro Tisch und Runde sind höchstens ${maxSoli} erlaubt.`
+        : "Bitte für Soli nur ganze Zahlen ab 0 eingeben.";
+    }
+    btnSave.disabled = btnSaveNext.disabled = !(pointsOK && soliOK);
   }
 
   function moveFocus(cur, dir) {
@@ -344,12 +365,9 @@
     if (e.key === "ArrowUp") { e.preventDefault(); moveFocus(target, -1); return; }
   }
 
-  for (const inp of pointsInputs) {
+  for (const inp of allInputs) {
     inp.addEventListener("input", updateSumUI);
     inp.addEventListener("change", updateSumUI);
-    inp.addEventListener("keydown", onKeyDown);
-  }
-  for (const inp of soliInputs) {
     inp.addEventListener("keydown", onKeyDown);
   }
 
@@ -360,7 +378,8 @@
     updateSumUI();
     if (btnSave && btnSave.disabled) {
       e.preventDefault();
-      const bad = document.querySelector("input.sk-points.is-invalid") || pointsInputs[0];
+      const bad = form.querySelector("input.is-invalid") ||
+        (soliBadge.classList.contains("sk-sum-bad") ? soliInputs[0] : pointsInputs[0]);
       if (bad) { bad.focus(); bad.select?.(); }
     }
   });

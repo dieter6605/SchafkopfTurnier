@@ -377,6 +377,7 @@ class ParticipantIntegrityTests(unittest.TestCase):
             ("UPDATE tournament_scores SET points=points+1 WHERE tp_id=1", "Punktesumme beträgt 1"),
             ("UPDATE tournament_scores SET soli=-1 WHERE tp_id=1", "Soli müssen"),
             ("UPDATE tournament_scores SET soli='x' WHERE tp_id=1", "Soli müssen"),
+            ("UPDATE tournament_scores SET soli=CASE WHEN tp_id=1 THEN 11 ELSE 10 END", "zusammen 41 Soli"),
             ("INSERT INTO tournament_rounds(tournament_id,round_no) VALUES(1,2)", "Sitzplan fehlt"),
         ]
         broken_links = [

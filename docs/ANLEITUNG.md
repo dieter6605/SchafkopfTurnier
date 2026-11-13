@@ -140,7 +140,7 @@ Vorgehen
 
 Plausibilitätsprüfung
 - Summe der Punkte muss 0 ergeben
-- Sonst Fehlermeldung
+- Die vier Spieler dürfen pro Tisch und Runde zusammen höchstens 40 Soli haben. Ein leeres Solifeld zählt als 0. Bei mehr als 40 Soli die Eingabe mit dem Tischblatt vergleichen und vor dem Speichern korrigieren.
 
 Ist ein Tisch in zwei Fenstern geöffnet, prüft die Anwendung beim Speichern die Punkte und Soli aller vier Spieler. Hat sich der Tisch inzwischen geändert, zeigt sie die gespeicherten Werte und daneben die Eingabe aus dem älteren Fenster. Die Turnierleitung kann beide mit dem Tischblatt vergleichen und eine Korrektur im aktuellen Formular speichern.
 

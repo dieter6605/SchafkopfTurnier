@@ -57,6 +57,33 @@ class ResultConflictTests(unittest.TestCase):
                 WHERE s.tournament_id=1 AND s.round_no=1 AND s.table_no=1 ORDER BY s.seat
             """)))
 
+    def test_soli_limit_applies_to_the_whole_table_on_entry_and_correction(self):
+        form = self.form(self.first.get(self.first_table))
+        too_many = self.values(form, soli=(11, 10, 10, 10))
+        rejected = self.first.post(self.first_table, data={**too_many, "go_next": "1"})
+        self.assertEqual(rejected.status_code, 422)
+        self.assertIn("zusammen 41 Soli", rejected.get_data(as_text=True))
+        self.assertEqual(self.stored(), [])
+        form = self.form(rejected)
+        self.assertEqual(form.xpath(".//input[@data-skt='soli']/@value"), ["11", "10", "10", "10"])
+        accepted = self.values(form, soli=(10, 10, 10, 10))
+        self.assertEqual(self.first.post(self.first_table, data={**accepted, "go_next": "1"}).location, self.second_table)
+        original = [(30, 10), (-10, 10), (-10, 10), (-10, 10)]
+        self.assertEqual(self.stored(), original)
+
+        current = self.form(self.first.get(self.first_table))
+        correction = self.values(current, points=(60, -20, -20, -20), soli=(41, "", "", ""))
+        self.assertEqual(self.first.post(self.first_table, data=correction).status_code, 422)
+        self.assertEqual(self.stored(), original)
+        correction = self.values(current, points=(60, -20, -20, -20), soli=(40, "", "", ""))
+        self.assertEqual(self.first.post(self.first_table, data=correction).status_code, 302)
+        self.assertEqual(self.stored(), [(60, 40), (-20, 0), (-20, 0), (-20, 0)])
+
+        other = self.form(self.first.get(self.second_table))
+        self.assertEqual(self.first.post(self.second_table, data=self.values(other, soli=(10, 10, 10, 10))).status_code, 302)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT SUM(soli) FROM tournament_scores WHERE tournament_id=1 AND round_no=1").fetchone()[0], 80)
+
     def test_first_entry_conflict_shows_both_values_and_allows_reviewed_correction(self):
         form_a = self.form(self.first.get(self.first_table))
         form_b = self.form(self.second.get(self.first_table))
