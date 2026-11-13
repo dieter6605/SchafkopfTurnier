@@ -87,6 +87,10 @@ class FormProtectionTests(unittest.TestCase):
         self.assertEqual(len(list(self.backups.glob("*.sqlite3"))), 2)
 
     def test_restore_upload_accepts_the_field_in_a_multipart_form(self):
+        # Das Platzhalterturnier „Archiv“ enthält keine gewertete Runde.
+        # Für die reguläre Wiederherstellung eine Sicherung mit offenen Turnieren verwenden.
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET closed_at=NULL WHERE id=2")
         self.client.post("/backup", data=self.fields("/backup"))
         [saved] = self.backups.glob("*.sqlite3")
         address = self.page("/addresses/new").forms[0]

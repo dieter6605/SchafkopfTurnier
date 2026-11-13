@@ -4,11 +4,14 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from datetime import datetime
+from hashlib import file_digest
 from itertools import groupby
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
 from uuid import uuid4
+
+from .scoring import first_score_issue
 
 _DB_PATH: Optional[Path] = None
 SCHEMA_VERSION = 8
@@ -779,7 +782,15 @@ def wlan_generation(con: sqlite3.Connection) -> str:
     return row[0] if row else ""
 
 
-def restore_db(backup_file: Path) -> None:
+class RestoreScoreWarning(ValueError):
+    def __init__(self, issues: list[str], digest: str):
+        super().__init__("\n".join(issues))
+        self.issues = issues
+        self.digest = digest
+
+
+def restore_db(backup_file: Path, *, confirmed_digest: str | None = None,
+               expected_generation: str | None = None) -> None:
     if _DB_PATH is None:
         raise RuntimeError("DB path not set.")
     backup_file = Path(backup_file)
@@ -789,10 +800,27 @@ def restore_db(backup_file: Path) -> None:
     live_path = _DB_PATH
     live_path.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=live_path.parent) as tmp:
-        with closing(sqlite3.connect(Path(tmp) / "restore.sqlite3")) as stage:
+        snapshot = Path(tmp) / "restore.sqlite3"
+        with closing(sqlite3.connect(snapshot)) as stage:
             with closing(sqlite3.connect(backup_file.resolve().as_uri() + "?mode=ro", uri=True)) as source:
                 source.backup(stage)
+        # Hash der vollständigen SQLite-Kopie vor Migrationen mit Zeitstempeln.
+        with snapshot.open("rb") as stream:
+            digest = file_digest(stream, "sha256").hexdigest()
+        if confirmed_digest is not None and digest != confirmed_digest:
+            raise ValueError("Die Sicherung hat sich seit der Warnung geändert. Bitte die Wiederherstellung neu beginnen.")
+
+        with closing(sqlite3.connect(snapshot)) as stage:
             _prepare_restore(stage)
+            issues = []
+            for tournament in stage.execute(
+                "SELECT id, title FROM tournaments WHERE trim(coalesce(closed_at, '')) <> '' ORDER BY id"
+            ):
+                issue = first_score_issue(stage, tournament["id"])
+                if issue:
+                    issues.append(f'Turnier {tournament["id"]} · {tournament["title"]}: {issue}')
+            if issues and confirmed_digest is None:
+                raise RestoreScoreWarning(issues, digest)
             # Eine eingespielte Sicherung kann dieselben IDs für andere Personen und Turniere enthalten.
             with stage:
                 stage.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('wlan_generation',?)", (uuid4().hex,))
@@ -803,6 +831,8 @@ def restore_db(backup_file: Path) -> None:
                 live.execute("PRAGMA locking_mode=EXCLUSIVE")
                 live.execute("BEGIN EXCLUSIVE")
                 live.commit()
+                if expected_generation is not None and wlan_generation(live) != expected_generation:
+                    raise ValueError("Inzwischen wurde eine andere Wiederherstellung durchgeführt. Bitte neu beginnen.")
                 safety = live_path.with_name(_snapshot_name(
                     f"{live_path.stem}.before-restore-", live_path.suffix
                 ))

@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1 class="h3">Endstand vor der Wiederherstellung prüfen</h1>
+<p>Sicherung <strong class="text-break">{{ filename }}</strong></p>
+<div class="alert alert-warning">
+  <p>Die folgenden Turniere sind in der Sicherung als abgeschlossen gespeichert.
+     Für jedes Turnier wird die erste auffällige Wertung angezeigt.</p>
+  <ul class="mb-0">
+    {% for issue in issues %}<li>{{ issue }}</li>{% endfor %}
+  </ul>
+</div>
+<p>Der aktuelle Datenbestand ist weiterhin aktiv. Wenn du die Sicherung einspielst,
+   übernimmt die Anwendung auch die aufgeführten Endstände. Vorher legt sie eine Kopie
+   des aktuellen Bestands an.</p>
+<form method="post" action="{{ url_for('home.restore', filename=filename) }}" class="d-flex gap-2 flex-wrap">
+  {{ csrf_field() }}
+  <input type="hidden" name="confirmation" value="{{ token }}">
+  <button class="btn btn-secondary" name="decision" value="cancel">Abbrechen</button>
+  <button class="btn btn-danger" name="decision" value="restore">Sicherung trotzdem einspielen</button>
+</form>
+{% endblock %}

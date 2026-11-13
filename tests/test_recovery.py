@@ -5,6 +5,8 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from lxml import html
+
 from app import db
 from app.web import create_app
 from tests.form_client import form_client
@@ -35,6 +37,124 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_participants").fetchone()[0], 1)
             self.assertEqual(con.execute("SELECT invite FROM addresses").fetchone()[0], 1)
             self.assertEqual(con.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+
+    def closed_score_backup(self):
+        self.client.post("/tournaments/new", data={
+            "title": "Freitagsturnier", "event_date": "2026-11-13", "start_time": "18:00", "marker": "261113TEST",
+        })
+        for name in ("Anna", "Berta", "Clara", "Dora"):
+            self.client.post("/tournaments/1/participants/quickadd", data={
+                "vorname": name, "nachname": "Probe", "wohnort": "Testort",
+            })
+        self.client.post("/tournaments/1/rounds/1/draw", data={"expected_round_id": "0"})
+        table = "/tournaments/1/rounds/1/results/1"
+        form = html.fromstring(self.client.get(table).data).get_element_by_id("skResultsForm")
+        values = dict(form.fields)
+        values.update(points_1="30", points_2="-10", points_3="-10", points_4="-10")
+        self.client.post(table, data=values)
+        self.client.post("/tournaments/1/close")
+        with closing(db.connect()) as con:
+            self.assertTrue(con.execute("SELECT closed_at FROM tournaments").fetchone()[0])
+        saved = db.backup_db(self.backups)
+        with closing(sqlite3.connect(saved)) as con, con:
+            con.execute("UPDATE tournament_scores SET points=points+1 WHERE tp_id=1")
+        return saved
+
+    def warning_form(self, response):
+        self.assertEqual(response.status_code, 200)
+        page = html.fromstring(response.get_data(as_text=True))
+        self.assertIn("Turnier 1 · Freitagsturnier: Runde 1, Tisch 1", page.text_content())
+        self.assertIn("Die Punktesumme beträgt 1 und muss 0 sein.", page.text_content())
+        form, = page.xpath("//form[.//input[@name='confirmation']]")
+        return form.action, dict(form.fields)
+
+    def test_restore_warns_until_confirmed_and_keeps_previous_valid_scores(self):
+        saved = self.closed_score_backup()
+        original = self.live.read_bytes()
+        target, fields = self.warning_form(self.client.post("/restore/" + saved.name))
+        self.assertEqual(self.live.read_bytes(), original)
+        self.assertFalse(list(self.directory.glob("*.before-restore-*")))
+        self.client.post(target, data={**fields, "decision": "cancel"})
+        self.client.post(target, data={**fields, "decision": "restore"})
+        self.assertEqual(self.live.read_bytes(), original)
+
+        target, fields = self.warning_form(self.client.post("/restore/" + saved.name))
+        self.assertEqual(self.client.post(target, data={**fields, "decision": "restore"}).status_code, 302)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 1)
+            self.assertTrue(con.execute("SELECT closed_at FROM tournaments").fetchone()[0])
+        self.client.post(target, data={**fields, "decision": "restore"})
+        safety, = self.directory.glob("*.before-restore-*")
+        with closing(sqlite3.connect(safety)) as con:
+            self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 0)
+
+    def test_uploaded_warning_is_bound_to_session_file_and_its_checked_contents(self):
+        saved = self.closed_score_backup()
+        source = saved.read_bytes()
+        original = self.live.read_bytes()
+        target, fields = self.warning_form(self.client.post("/restore-upload", data={
+            "backup_file": (BytesIO(source), "fremde-sicherung.sqlite3"),
+        }))
+        self.assertIn("/restore/skt-upload-", target)
+        confirm = {**fields, "decision": "restore"}
+        self.client.post("/restore/" + saved.name, data=confirm)
+        other = form_client(self.app)
+        other.post(target, data={k: v for k, v in confirm.items() if k != "csrf_token"})
+        self.assertEqual(self.live.read_bytes(), original)
+
+        uploaded, = self.backups.glob("skt-upload-*.sqlite3")
+        with closing(sqlite3.connect(uploaded)) as con, con:
+            con.execute("UPDATE tournament_scores SET points=points-1 WHERE tp_id=1")
+        response = self.client.post(target, data=confirm, follow_redirects=True)
+        self.assertIn("seit der Warnung geändert", response.get_data(as_text=True))
+        self.assertEqual(self.live.read_bytes(), original)
+        self.assertFalse(list(self.directory.glob("*.before-restore-*")))
+        self.assertEqual(saved.read_bytes(), source)
+
+        target, fields = self.warning_form(self.client.post("/restore-upload", data={
+            "backup_file": (BytesIO(source), "archiv.sqlite3"),
+        }))
+        self.client.post(target, data={**fields, "decision": "restore"})
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 1)
+
+    def test_confirmation_expires_after_restore_in_another_session(self):
+        saved = self.closed_score_backup()
+        target, fields = self.warning_form(self.client.post("/restore/" + saved.name))
+        other = form_client(self.app)
+        good = db.backup_db(self.backups)
+        self.assertEqual(other.post("/restore/" + good.name).status_code, 302)
+        previous = self.live.read_bytes()
+        result = self.client.post(target, data={**fields, "decision": "restore"}, follow_redirects=True)
+        self.assertIn("Inzwischen wurde eine andere Wiederherstellung durchgeführt", result.get_data(as_text=True))
+        self.assertEqual(self.live.read_bytes(), previous)
+        self.assertEqual(len(list(self.directory.glob("*.before-restore-*"))), 1)
+
+    def test_open_tournament_with_missing_results_restores_directly(self):
+        saved = self.closed_score_backup()
+        with closing(sqlite3.connect(saved)) as con, con:
+            con.execute("UPDATE tournaments SET closed_at=NULL")
+            con.execute("DELETE FROM tournament_scores WHERE tp_id=1")
+        self.assertEqual(self.client.post("/restore/" + saved.name).status_code, 302)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM tournament_scores").fetchone()[0], 3)
+            self.assertIsNone(con.execute("SELECT closed_at FROM tournaments").fetchone()[0])
+
+    def test_warning_lists_every_affected_closed_tournament(self):
+        saved = self.closed_score_backup()
+        with closing(sqlite3.connect(saved)) as con, con:
+            con.execute("UPDATE tournament_scores SET points=points-1, soli=41 WHERE tp_id=1")
+            con.execute("INSERT INTO tournaments(title,event_date,start_time,closed_at)"
+                        " VALUES('Früheres Turnier','2025-11-14','18:00','2025-11-14')")
+        original = self.live.read_bytes()
+        response = self.client.post("/restore/" + saved.name)
+        page = html.fromstring(response.get_data(as_text=True))
+        notices = page.xpath("//div[contains(@class,'alert-warning')]//li/text()")
+        self.assertEqual(len(notices), 2)
+        self.assertIn("Turnier 1 · Freitagsturnier: Runde 1, Tisch 1", notices[0])
+        self.assertIn("41 Soli", notices[0])
+        self.assertIn("Turnier 2 · Früheres Turnier: Es wurde noch keine Runde ausgelost.", notices[1])
+        self.assertEqual(self.live.read_bytes(), original)
 
     def test_v7_signup_is_active_and_withdrawal_survives_backup_and_restart(self):
         self.client.post("/tournaments/new", data={

@@ -16,6 +16,10 @@ Kurzanleitung für den Turniertag
 
 Beim ersten Start mit einer älteren Datenbank prüft die Anwendung die Sitzplätze und Ergebnisse. Fehlt zu einem Ergebnis der passende Sitzplatz oder zu einem Sitzplatz die Anmeldung oder Runde, bricht die Umstellung ab. Die Meldung nennt Turnier, Runde, Tisch und Teilnehmer-ID. Diese Angaben mit dem ursprünglichen Sitzplan vergleichen. Die Prüfung gilt auch bei der Wiederherstellung einer älteren Sicherung.
 
+**Sicherung wiederherstellen**
+
+Auf der Startseite bei der gewünschten Sicherung „Restore“ wählen oder unter „Upload / Restore“ eine Datei hochladen. Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
+
 **Adressen pflegen**
 
 - Tischblätter, Wertungen und Turnierexporte verwenden Namen und Wohnort aus dem aktuellen Adressbuch. Eine Korrektur gilt auch für Nachdrucke abgeschlossener Turniere.

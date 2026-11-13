@@ -16,6 +16,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    session,
     url_for,
     abort,
     send_file,
@@ -415,10 +416,34 @@ def restore(filename: str):
         flash("Ungültiger Backup-Dateiname.", "error")
         return redirect(url_for("home.home"))
 
-    backup_path = Path(bdir) / safe_name
+    return _restore_backup(Path(bdir) / safe_name)
+
+
+def _restore_backup(backup_path: Path, *, uploaded: bool = False):
+    pending = session.get("restore_warning", {})
+    generation = digest = None
+    if "confirmation" in request.form:
+        if (pending.get("filename") != backup_path.name
+                or pending.get("token") != request.form["confirmation"]):
+            flash("Diese Bestätigung ist nicht mehr gültig. Bitte die Sicherung erneut auswählen.", "error")
+            return redirect(url_for("home.home"))
+        session.pop("restore_warning")
+        if request.form.get("decision") != "restore":
+            flash("Wiederherstellung abgebrochen.", "ok")
+            return redirect(url_for("home.home"))
+        digest = pending["digest"]
+        generation = pending["generation"]
 
     try:
-        db.restore_db(backup_path)
+        db.restore_db(backup_path, confirmed_digest=digest, expected_generation=generation)
+    except db.RestoreScoreWarning as warning:
+        with closing(db.connect()) as con:
+            generation = db.wlan_generation(con)
+        token = uuid4().hex
+        session["restore_warning"] = {
+            "filename": backup_path.name, "digest": warning.digest, "generation": generation, "token": token,
+        }
+        return render_template("restore_warning.html", filename=backup_path.name, issues=warning.issues, token=token)
     except FileNotFoundError:
         flash("Backup-Datei nicht gefunden.", "error")
         return redirect(url_for("home.home"))
@@ -426,7 +451,9 @@ def restore(filename: str):
         flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
 
-    flash(f"Backup wiederhergestellt: {safe_name}.", "ok")
+    session.pop("restore_warning", None)
+    label = "Upload" if uploaded else "Backup"
+    flash(f"{label} wiederhergestellt: {backup_path.name}.", "ok")
     return redirect(url_for("home.home"))
 
 
@@ -496,11 +523,4 @@ def restore_upload():
         flash(f"Upload fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.home"))
 
-    try:
-        db.restore_db(target_path)
-    except Exception as e:
-        flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
-
-    flash(f"Upload wiederhergestellt: {target_path.name}.", "ok")
-    return redirect(url_for("home.home"))
+    return _restore_backup(target_path, uploaded=True)
