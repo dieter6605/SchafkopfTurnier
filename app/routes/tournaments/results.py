@@ -9,7 +9,7 @@ from typing import Any
 from flask import flash, g, redirect, render_template, request, url_for
 
 from ... import db
-from ...scoring import first_score_issue, rank_places, round_standings
+from ...scoring import first_score_issue, rank_places, round_standings, round_table_statuses
 from ...wlan import check_result_access
 from . import bp
 from .helpers import MAX_SOLI_PER_TABLE, _get_tournament, _guard_closed_redirect, _now_local_iso, _soli_total_issue
@@ -37,34 +37,9 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        tables = db.q(
-            con,
-            """
-            SELECT DISTINCT table_no
-            FROM tournament_seats
-            WHERE tournament_id=? AND round_no=?
-            ORDER BY table_no ASC
-            """,
-            (tournament_id, round_no),
-        )
-        table_nos = [int(r["table_no"]) for r in tables]
-        total_tables = len(table_nos)
-
-        done_rows = db.q(
-            con,
-            """
-            SELECT table_no, COUNT(*) AS c
-            FROM tournament_scores
-            WHERE tournament_id=? AND round_no=?
-            GROUP BY table_no
-            """,
-            (tournament_id, round_no),
-        )
-        done_map = {int(r["table_no"]): int(r["c"]) for r in done_rows}
-        done_tables = {k for k, c in done_map.items() if c >= 4}
-
-        done_count = len(done_tables)
-        open_count = max(0, total_tables - done_count)
+        tables = round_table_statuses(con, tournament_id, round_no)
+        done_count = sum(status.complete for status in tables.values())
+        review_count = sum(status.issue is not None for status in tables.values())
 
         scores_count_row = db.one(
             con,
@@ -76,17 +51,17 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
             (tournament_id, round_no),
         )
         scores_count = int(scores_count_row["c"] or 0) if scores_count_row else 0
-        expected_scores = total_tables * 4
+        expected_scores = sum(status.seats for status in tables.values())
 
     return render_template(
         "tournament_results_overview.html",
         t=t,
         round_no=round_no,
-        table_nos=table_nos,
-        done_tables=done_tables,
+        tables=tables,
         done_count=done_count,
-        open_count=open_count,
-        total_tables=total_tables,
+        open_count=len(tables) - done_count - review_count,
+        review_count=review_count,
+        total_tables=len(tables),
         scores_count=scores_count,
         expected_scores=expected_scores,
         now=_now_local_iso(),
@@ -105,14 +80,14 @@ def tournament_round_results_standings(tournament_id: int, round_no: int):
         total_tables_row = db.one(
             con,
             """
-            SELECT COUNT(DISTINCT table_no) AS c
+            SELECT COUNT(DISTINCT table_no) AS c, COUNT(*) AS seats
             FROM tournament_seats
             WHERE tournament_id=? AND round_no=?
             """,
             (tournament_id, round_no),
         )
         total_tables = int(total_tables_row["c"] or 0) if total_tables_row else 0
-        expected_scores = total_tables * 4
+        expected_scores = total_tables_row["seats"]
 
         scores_count_row = db.one(
             con,

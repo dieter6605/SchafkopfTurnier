@@ -58,6 +58,60 @@ class ResultConflictTests(unittest.TestCase):
                 WHERE s.tournament_id=1 AND s.round_no=1 AND s.table_no=1 ORDER BY s.seat
             """)))
 
+    def test_round_views_distinguish_valid_open_and_invalid_tables(self):
+        results = self.first_table.rsplit("/", 1)[0]
+        round_url = results.rsplit("/", 1)[0]
+
+        def check(counts, reason=None):
+            overview = html.fromstring(self.first.get(results).get_data(as_text=True))
+            self.assertIn(counts, " ".join(overview.text_content().split()))
+            plan = html.fromstring(self.first.get(round_url).get_data(as_text=True))
+            card = plan.get_element_by_id("accTable_1_1")
+            button, = overview.xpath("//a[@href=$url]", url=self.first_table)
+            if reason:
+                self.assertIn("Wertung prüfen", button.text_content())
+                self.assertIn(reason, button.getparent().text_content())
+                self.assertIn(reason, card.text_content())
+                self.assertNotIn("✓", card.text_content())
+                self.assertEqual(card.xpath(".//button/@aria-expanded"), ["true"])
+            else:
+                self.assertNotIn("Wertung prüfen", card.text_content())
+                self.assertNotIn("Wertung prüfen", button.text_content())
+            return overview, plan
+
+        check("0 fertig · 2 offen")
+        for path in (self.first_table, self.second_table):
+            self.first.post(path, data=self.values(self.form(self.first.get(path))))
+        check("2 fertig · 0 offen")
+
+        cases = [
+            (31, 0, "Die Punktesumme beträgt 1 und muss 0 sein."),
+            (30, 41, "zusammen 41 Soli"),
+            (30, -1, "Soli müssen nichtnegative ganze Zahlen sein."),
+            ("unlesbar", 0, "Die Punkte müssen ganze Zahlen sein."),
+        ]
+        for points, soli, reason in cases:
+            with self.subTest(points=points, soli=soli):
+                with closing(db.connect()) as con, con:
+                    con.execute("UPDATE tournament_scores SET points=?,soli=? WHERE tournament_id=1 AND round_no=1"
+                                " AND tp_id=(SELECT tp_id FROM tournament_seats WHERE tournament_id=1 AND round_no=1"
+                                " AND table_no=1 AND seat='A')", (points, soli))
+                before = self.stored()
+                overview, plan = check("1 fertig · 0 offen · 1 zu prüfen", reason)
+                self.assertIn("8/8", overview.text_content())
+                self.assertIn("✓", plan.get_element_by_id("accTable_1_2").text_content())
+                self.assertIn("disabled", plan.get_element_by_id("btnRedraw").attrib)
+                self.assertEqual(self.stored(), before)
+
+        self.first.post(self.first_table, data=self.values(self.form(self.first.get(self.first_table))))
+        overview, plan = check("2 fertig · 0 offen")
+        self.assertIn("✓", plan.get_element_by_id("accTable_1_1").text_content())
+        with closing(db.connect()) as con, con:
+            con.execute("DELETE FROM tournament_scores WHERE id=(SELECT MIN(id) FROM tournament_scores WHERE table_no=1)")
+        overview, plan = check("1 fertig · 1 offen")
+        self.assertIn("7/8", overview.text_content())
+        self.assertNotIn("✓", plan.get_element_by_id("accTable_1_1").text_content())
+
     def test_soli_limit_applies_to_the_whole_table_on_entry_and_correction(self):
         form = self.form(self.first.get(self.first_table))
         too_many = self.values(form, soli=(11, 10, 10, 10))

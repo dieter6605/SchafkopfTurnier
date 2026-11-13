@@ -395,7 +395,8 @@
       {% set table_no = grp.grouper %}
       {% set rows = grp.list %}
 
-      {% set is_done = (done_tables is defined and (table_no in done_tables)) %}
+      {% set status = table_statuses[table_no] %}
+      {% set is_done = status.complete %}
 
       {% set acc_id = "accTable_" ~ round_no ~ "_" ~ table_no %}
       {% set col_id = "colTable_" ~ round_no ~ "_" ~ table_no %}
@@ -407,7 +408,7 @@
                href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=table_no) }}"
                title="Ergebnisse für Tisch {{ table_no }} öffnen">
               Tisch {{ table_no }} <span aria-hidden="true">→</span>
-              {% if is_done %}<span class="ms-2" aria-hidden="true">✓</span><span class="visually-hidden"> – Ergebnisse erfasst</span>{% endif %}
+              {% if is_done %}<span class="ms-2" aria-hidden="true">✓</span><span class="visually-hidden"> – Ergebnisse erfasst</span>{% elif status.issue %}<span class="badge text-bg-warning">Wertung prüfen</span>{% endif %}
             </a>
             <button class="accordion-button{% if is_done %} collapsed{% endif %}"
                     type="button"
@@ -424,6 +425,7 @@
                class="accordion-collapse collapse {% if not is_done %}show{% endif %}"
                aria-labelledby="{{ acc_id }}_h">
             <div class="accordion-body">
+              {% if status.issue %}<p class="small mb-2">{{ status.issue }}</p>{% endif %}
               <div class="table-responsive">
                 <table class="table table-sm mb-0">
                   <thead>

@@ -146,6 +146,8 @@ Plausibilitätsprüfung
 - Summe der Punkte muss 0 ergeben
 - Die vier Spieler dürfen pro Tisch und Runde zusammen höchstens 40 Soli haben. Ein leeres Solifeld zählt als 0. Bei mehr als 40 Soli die Eingabe mit dem Tischblatt vergleichen und vor dem Speichern korrigieren.
 
+Ein grüner Haken in der Tischübersicht und im Sitzplan bedeutet, dass alle vier Ergebnisse vorliegen und die Tischwertung gültig ist. Fehlen nur Ergebnisse, zählt der Tisch als offen. Bei fehlerhaften Werten erscheint „Wertung prüfen“ mit dem Grund.
+
 Ist ein Tisch in zwei Fenstern geöffnet, prüft die Anwendung beim Speichern die Punkte und Soli aller vier Spieler. Hat sich der Tisch inzwischen geändert, zeigt sie die gespeicherten Werte und daneben die Eingabe aus dem älteren Fenster. Die Turnierleitung kann beide mit dem Tischblatt vergleichen und eine Korrektur im aktuellen Formular speichern.
 
 ## 9. Wertungen anzeigen & drucken

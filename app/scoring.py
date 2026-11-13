@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass, replace
 from itertools import groupby
 from operator import itemgetter
 
@@ -82,30 +83,58 @@ def soli_total_issue(total: int) -> str | None:
     return None
 
 
-def first_score_issue(con: sqlite3.Connection, tournament_id: int, *, through_round: int | None = None,
-                      round_only: int | None = None) -> str | None:
-    """Erste fehlerhafte Tischwertung, für Setzlisten bis einschließlich der Vorrunde."""
-    params = (tournament_id, through_round, through_round, round_only, round_only)
-    orphan_seat = con.execute("""
-        SELECT s.round_no, s.table_no FROM tournament_seats s
+@dataclass(frozen=True)
+class TableStatus:
+    seats: int
+    scores: int
+    issue: str | None
+
+    @property
+    def complete(self):
+        return self.scores == 4 and self.issue is None
+
+
+def _table_status(seats):
+    scored = [row for row in seats if row["score_id"] is not None]
+    issue = None
+    if len(seats) != 4 or {row["seat"] for row in seats} != {"A", "B", "C", "D"}:
+        issue = "Die vier Sitzplätze A bis D sind unvollständig oder fehlerhaft."
+    elif len({row["participant_id"] for row in seats}) != 4 or any(row["participant_id"] is None for row in seats):
+        issue = "Vier verschiedene Teilnehmer dieses Turniers müssen am Tisch sitzen."
+    elif any(not isinstance(row["soli"], int) or row["soli"] < 0 for row in scored):
+        issue = "Soli müssen nichtnegative ganze Zahlen sein."
+    elif (soli_issue := soli_total_issue(sum(row["soli"] for row in scored))):
+        issue = soli_issue
+    elif any(not isinstance(row["points"], int) for row in scored):
+        issue = "Die Punkte müssen ganze Zahlen sein."
+    elif len(scored) == 4:
+        total = sum(row["points"] for row in scored)
+        if total != 0:
+            issue = f"Die Punktesumme beträgt {total} und muss 0 sein."
+    return TableStatus(len(seats), len(scored), issue)
+
+
+def _assignment_issues(con, params):
+    for row in con.execute("""
+        SELECT DISTINCT s.round_no, s.table_no FROM tournament_seats s
         LEFT JOIN tournament_rounds r ON r.tournament_id=s.tournament_id AND r.round_no=s.round_no
         WHERE s.tournament_id=? AND (? IS NULL OR s.round_no <= ?) AND (? IS NULL OR s.round_no = ?)
-          AND r.id IS NULL LIMIT 1
-    """, params).fetchone()
-    if orphan_seat:
-        return f"Runde {orphan_seat['round_no']}, Tisch {orphan_seat['table_no']}: Der Sitzplan gehört zu keiner ausgelosten Runde."
+          AND r.id IS NULL ORDER BY s.round_no, s.table_no
+    """, params):
+        yield row["round_no"], row["table_no"], "Der Sitzplan gehört zu keiner ausgelosten Runde."
 
-    extra_score = con.execute("""
-        SELECT sc.round_no, sc.table_no FROM tournament_scores sc
+    for row in con.execute("""
+        SELECT DISTINCT sc.round_no, sc.table_no FROM tournament_scores sc
         LEFT JOIN tournament_seats s ON s.tournament_id=sc.tournament_id AND s.round_no=sc.round_no
                                     AND s.table_no=sc.table_no AND s.tp_id=sc.tp_id
         WHERE sc.tournament_id=? AND (? IS NULL OR sc.round_no <= ?) AND (? IS NULL OR sc.round_no = ?)
-          AND s.id IS NULL LIMIT 1
-    """, params).fetchone()
-    if extra_score:
-        return f"Runde {extra_score['round_no']}, Tisch {extra_score['table_no']}: Ein Ergebnis hat keinen passenden Sitzplatz."
+          AND s.id IS NULL ORDER BY sc.round_no, sc.table_no
+    """, params):
+        yield row["round_no"], row["table_no"], "Ein Ergebnis hat keinen passenden Sitzplatz."
 
-    rows = con.execute("""
+
+def _seat_scores(con, params):
+    return con.execute("""
         SELECT r.round_no, s.table_no, s.seat, tp.id AS participant_id, sc.id AS score_id, sc.points, sc.soli
         FROM tournament_rounds r
         LEFT JOIN tournament_seats s ON s.tournament_id=r.tournament_id AND s.round_no=r.round_no
@@ -115,6 +144,27 @@ def first_score_issue(con: sqlite3.Connection, tournament_id: int, *, through_ro
         WHERE r.tournament_id=? AND (? IS NULL OR r.round_no <= ?) AND (? IS NULL OR r.round_no = ?)
         ORDER BY r.round_no, s.table_no, s.seat
     """, params).fetchall()
+
+
+def round_table_statuses(con, tournament_id: int, round_no: int) -> dict[int, TableStatus]:
+    params = (tournament_id, None, None, round_no, round_no)
+    statuses = {number: _table_status(list(rows))
+                for number, rows in groupby(_seat_scores(con, params), key=itemgetter("table_no"))
+                if number is not None}
+    for _, number, reason in _assignment_issues(con, params):
+        status = statuses.get(number, TableStatus(0, 0, None))
+        statuses[number] = replace(status, issue=reason)
+    return statuses
+
+
+def first_score_issue(con: sqlite3.Connection, tournament_id: int, *, through_round: int | None = None,
+                      round_only: int | None = None) -> str | None:
+    """Erste fehlerhafte Tischwertung, für Setzlisten bis einschließlich der Vorrunde."""
+    params = (tournament_id, through_round, through_round, round_only, round_only)
+    for rn, tn, issue in _assignment_issues(con, params):
+        return f"Runde {rn}, Tisch {tn}: {issue}"
+
+    rows = _seat_scores(con, params)
     if not rows and through_round is None:
         return "Es wurde noch keine Runde ausgelost."
     last_seen = 0
@@ -124,26 +174,12 @@ def first_score_issue(con: sqlite3.Connection, tournament_id: int, *, through_ro
         last_seen = round_no
         if table_no is None:
             return f"Runde {round_no}: Der Sitzplan fehlt."
-        seats = list(group)
+        status = _table_status(list(group))
         label = f"Runde {round_no}, Tisch {table_no}"
-        if len(seats) != 4 or {r["seat"] for r in seats} != {"A", "B", "C", "D"}:
-            return f"{label}: Die vier Sitzplätze A bis D sind unvollständig oder fehlerhaft."
-        players = {r["participant_id"] for r in seats}
-        if len(players) != 4 or None in players:
-            return f"{label}: Vier verschiedene Teilnehmer dieses Turniers müssen am Tisch sitzen."
-        scored = sum(r["score_id"] is not None for r in seats)
-        if scored != 4:
-            return f"{label}: {scored} von 4 Ergebnissen erfasst."
-        if any(not isinstance(r["soli"], int) or r["soli"] < 0 for r in seats):
-            return f"{label}: Soli müssen nichtnegative ganze Zahlen sein."
-        soli_issue = soli_total_issue(sum(r["soli"] for r in seats))
-        if soli_issue:
-            return f"{label}: {soli_issue}"
-        if any(not isinstance(r["points"], int) for r in seats):
-            return f"{label}: Die Punkte müssen ganze Zahlen sein."
-        total = sum(r["points"] for r in seats)
-        if total != 0:
-            return f"{label}: Die Punktesumme beträgt {total} und muss 0 sein."
+        if status.issue:
+            return f"{label}: {status.issue}"
+        if not status.complete:
+            return f"{label}: {status.scores} von 4 Ergebnissen erfasst."
     if through_round is not None and last_seen < through_round:
         return f"Runde {last_seen + 1} wurde noch nicht ausgelost."
     return None

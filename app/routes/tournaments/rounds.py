@@ -7,6 +7,7 @@ from contextlib import closing
 from flask import flash, redirect, render_template, request, url_for
 
 from ... import db
+from ...scoring import round_table_statuses
 from . import bp
 from .draw import (
     DRAW_MODE_RANDOM,
@@ -273,18 +274,11 @@ def tournament_round_view(tournament_id: int, round_no: int):
         draw_seed = int(tr["draw_seed"]) if (tr and tr["draw_seed"] is not None) else None
         draw_attempt = int(tr["draw_attempt"]) if (tr and tr["draw_attempt"] is not None) else 0
 
-        done_rows = db.q(
-            con,
-            """
-            SELECT table_no, COUNT(*) AS c
-            FROM tournament_scores
-            WHERE tournament_id=? AND round_no=?
-            GROUP BY table_no
-            """,
+        table_statuses = round_table_statuses(con, tournament_id, round_no)
+        has_results = con.execute(
+            "SELECT 1 FROM tournament_scores WHERE tournament_id=? AND round_no=? LIMIT 1",
             (tournament_id, round_no),
-        )
-        done_map = {int(r["table_no"]): int(r["c"]) for r in done_rows}
-        done_tables = {k for k, c in done_map.items() if c >= 4}
+        ).fetchone() is not None
 
         seats_alpha = db.q(
             con,
@@ -319,7 +313,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
 
         seeding_issues = {}
         if not _is_closed(t):
-            if rn >= 2 and not done_rows:
+            if rn >= 2 and not has_results:
                 seeding_issues[rn] = _first_score_issue(con, tournament_id, through_round=rn - 1)
             if seats and rn == last_round_no:
                 seeding_issues[rn + 1] = _first_score_issue(con, tournament_id, through_round=rn)
@@ -338,8 +332,8 @@ def tournament_round_view(tournament_id: int, round_no: int):
         last_round_no=last_round_no,
         prev_round_no=prev_round_no,
         next_round_no=next_round_no,
-        done_tables=done_tables,
-        has_results=bool(done_rows),
+        table_statuses=table_statuses,
+        has_results=has_results,
         round_id=tr["id"] if tr else 0,
         now=_now_local_iso(),
         draw_seed=draw_seed,

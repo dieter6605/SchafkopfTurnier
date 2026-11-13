@@ -93,6 +93,23 @@ class RecoveryTests(unittest.TestCase):
         with closing(sqlite3.connect(safety)) as con:
             self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 0)
 
+    def test_restored_invalid_table_remains_locked_and_visible_in_both_round_views(self):
+        saved = self.closed_score_backup()
+        target, fields = self.warning_form(self.client.post("/restore/" + saved.name))
+        self.assertEqual(self.client.post(target, data={**fields, "decision": "restore"}).status_code, 302)
+        round_url = "/tournaments/1/rounds/1"
+        results = round_url + "/results"
+        for path in (round_url, results):
+            page = html.fromstring(self.client.get(path).get_data(as_text=True))
+            link, = page.xpath("//a[@href=$url]", url=results + "/1")
+            self.assertIn("Wertung prüfen", link.text_content())
+            self.assertNotIn("✓", link.text_content())
+            self.assertIn("Die Punktesumme beträgt 1 und muss 0 sein.", page.text_content())
+        table = html.fromstring(self.client.get(results + "/1").get_data(as_text=True))
+        self.assertEqual(len(table.xpath("//input[@data-skt='points' and @disabled]")), 4)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT points FROM tournament_scores WHERE tp_id=1").fetchone()[0], 31)
+
     def test_confirmed_invalid_total_is_flagged_in_standings_and_export(self):
         saved = self.closed_score_backup()
         standings = "/tournaments/1/standings"
