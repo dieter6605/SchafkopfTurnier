@@ -1,3 +1,4 @@
+import sqlite3
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -146,3 +147,56 @@ class ResultConflictTests(unittest.TestCase):
             statuses = [attempt.result() for attempt in attempts]
         self.assertEqual(sorted(statuses), [302, 409])
         self.assertEqual(self.stored(), list(zip(*corrections[statuses.index(302)])))
+
+    def test_restored_roster_with_the_same_ids_rejects_open_local_forms(self):
+        old = self.values(self.form(self.first.get(self.first_table)))
+        base = Path(self.app.config["SKT_BACKUP_DIR"])
+        backup = db.backup_db(base)
+        with closing(sqlite3.connect(backup)) as con, con:
+            con.execute("UPDATE addresses SET vorname='Ersatzperson ' || id")
+        target = "/restore/" + backup.name
+        self.second.post(target)
+
+        # Auch eine ältere Maske ohne Datenstand darf den leeren Tisch nicht befüllen.
+        legacy = {key: value for key, value in old.items() if key not in ("expected_generation", "expected_score_state")}
+        for submitted in (old, legacy):
+            response = self.first.post(self.first_table, data={**submitted, "go_next": "1"}, follow_redirects=True)
+            self.assertIn("wiederhergestellten Datenstand", response.get_data(as_text=True))
+            self.assertEqual(response.request.path, self.first_table)
+            form = self.form(response)
+            self.assertIn("Ersatzperson", form.text_content())
+            self.assertEqual(form.xpath(".//input[@data-skt='points']/@value"), [""] * 4)
+            self.assertEqual(self.stored(), [])
+
+        # Auch eine zweite Wiederherstellung derselben Datei ersetzt den Datenstand.
+        reopened = self.values(form)
+        self.second.post(target)
+        self.first.post(self.first_table, data=reopened)
+        self.assertEqual(self.stored(), [])
+        current = self.values(self.form(self.first.get(self.first_table)), soli=(2, 0, 1, 0))
+        self.first.post(self.first_table, data=current)
+        self.assertEqual(self.stored(), [(30, 2), (-10, 0), (-10, 1), (-10, 0)])
+
+    def test_scored_table_rejects_pre_restore_correction_and_accepts_reviewed_values(self):
+        initial = self.values(self.form(self.first.get(self.first_table)))
+        self.first.post(self.first_table, data=initial)
+        corrected = (60, -20, -20, -20)
+        old = self.values(self.form(self.first.get(self.first_table)), points=corrected)
+        backup = db.backup_db(Path(self.app.config["SKT_BACKUP_DIR"]))
+        self.second.post("/restore/" + backup.name)
+        response = self.first.post(self.first_table, data=old, follow_redirects=True)
+        self.assertIn("wiederhergestellten Datenstand", response.get_data(as_text=True))
+        self.assertEqual(self.stored(), [(30, 0), (-10, 0), (-10, 0), (-10, 0)])
+
+        other = self.values(self.form(self.second.get(self.first_table)))
+        over_limit = self.values(self.form(response), points=corrected, soli=(41, 0, 0, 0))
+        invalid = self.first.post(self.first_table, data=over_limit)
+        self.assertEqual(invalid.status_code, 422)
+        valid = self.values(self.form(invalid), points=corrected, soli=(40, 0, 0, 0))
+        self.first.post(self.first_table, data=valid)
+        self.assertEqual(self.stored(), [(60, 40), (-20, 0), (-20, 0), (-20, 0)])
+        conflict = self.second.post(self.first_table, data=other)
+        self.assertEqual(conflict.status_code, 409)
+        reviewed = self.values(self.form(conflict), points=corrected, soli=(39, 1, 0, 0))
+        self.second.post(self.first_table, data=reviewed)
+        self.assertEqual(self.stored(), [(60, 39), (-20, 1), (-20, 0), (-20, 0)])

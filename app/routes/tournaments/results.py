@@ -219,10 +219,11 @@ def _next_table(con, tournament_id, round_no, table_no):
     """, (tournament_id, round_no, table_no)).fetchone()[0]
 
 
-def _table_form(t, round_no, table_no, players, next_table, conflict_message=None, *, validation_message=None):
+def _table_form(t, round_no, table_no, players, next_table, generation, conflict_message=None, *, validation_message=None):
     return render_template(
         "tournament_results_table.html", t=t, round_no=round_no, table_no=table_no,
         players=players, round_id=players[0]["round_id"] or 0, next_table=next_table,
+        generation=generation,
         score_state=_score_state(players), conflict_message=conflict_message, now=_now_local_iso(),
         max_soli=MAX_SOLI_PER_TABLE, validation_message=validation_message,
     )
@@ -244,7 +245,8 @@ def tournament_round_results_table(tournament_id: int, round_no: int, table_no: 
                 return redirect(url_for("wlan.helper", tournament_id=tournament_id))
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
         next_table = _next_table(con, tournament_id, round_no, table_no)
-    return _table_form(t, round_no, table_no, players, next_table)
+        generation = db.wlan_generation(con)
+    return _table_form(t, round_no, table_no, players, next_table, generation)
 
 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
@@ -267,6 +269,13 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         )
         if resp:
             return resp
+
+        generation = db.wlan_generation(con)
+        if f.get("expected_generation", "") != generation:
+            flash("Dieses Tischformular passt nicht zum wiederhergestellten Datenstand. Deine Eingabe wurde nicht gespeichert. "
+                  "Bitte prüfe die Spieler und Werte im aktuellen Tischformular.", "warning")
+            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
+                                    round_no=round_no, table_no=table_no))
 
         seats = _table_players(con, tournament_id, round_no, table_no)
         if len(seats) != 4:
@@ -297,7 +306,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         if conflict:
             next_table = _next_table(con, tournament_id, round_no, table_no)
             con.rollback()
-            return _table_form(t, round_no, table_no, seats, next_table, conflict), 409
+            return _table_form(t, round_no, table_no, seats, next_table, generation, conflict), 409
 
         points_map: dict[int, int] = {}
         soli_map: dict[int, int] = {}
@@ -331,7 +340,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         if soli_issue:
             next_table = _next_table(con, tournament_id, round_no, table_no)
             con.rollback()
-            return _table_form(t, round_no, table_no, seats, next_table, validation_message=soli_issue), 422
+            return _table_form(t, round_no, table_no, seats, next_table, generation, validation_message=soli_issue), 422
 
         total = sum(points_map.values())
         if total != 0:
