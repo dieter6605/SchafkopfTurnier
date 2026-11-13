@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime
 from hashlib import file_digest
 from itertools import groupby
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import monotonic, sleep
 from typing import Optional
 from uuid import uuid4
 
@@ -789,6 +790,30 @@ class RestoreScoreWarning(ValueError):
         self.digest = digest
 
 
+@contextmanager
+def _locked_restore_target(path: Path):
+    deadline = monotonic() + 5
+    while True:
+        with closing(sqlite3.connect(path, timeout=0)) as live:
+            try:
+                live.execute("PRAGMA locking_mode=EXCLUSIVE")
+                live.execute("BEGIN EXCLUSIVE")
+                live.commit()
+            except sqlite3.OperationalError as exc:
+                if exc.sqlite_errorcode & 0xff != sqlite3.SQLITE_BUSY:
+                    raise
+            else:
+                # Der exklusive Modus hält die Sperre auch zwischen den zwei Sicherungskopien.
+                yield live
+                return
+        # Erst die Verbindung und damit auch ihre Lesesperre freigeben.
+        # Sonst kann eine bereits laufende Tischeingabe ihren Commit nicht abschließen.
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise ValueError("Die Datenbank ist noch in Benutzung. Bitte die Wiederherstellung erneut starten.")
+        sleep(min(0.05, remaining))
+
+
 def restore_db(backup_file: Path, *, confirmed_digest: str | None = None,
                expected_generation: str | None = None) -> None:
     if _DB_PATH is None:
@@ -825,12 +850,7 @@ def restore_db(backup_file: Path, *, confirmed_digest: str | None = None,
             with stage:
                 stage.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('wlan_generation',?)", (uuid4().hex,))
 
-            with closing(sqlite3.connect(live_path)) as live:
-                # SQLite hält diese Sperre bis zum Schließen. Zwischen Sicherung
-                # und Aktivierung kann kein zweiter Schreiber Daten verändern.
-                live.execute("PRAGMA locking_mode=EXCLUSIVE")
-                live.execute("BEGIN EXCLUSIVE")
-                live.commit()
+            with _locked_restore_target(live_path) as live:
                 if expected_generation is not None and wlan_generation(live) != expected_generation:
                     raise ValueError("Inzwischen wurde eine andere Wiederherstellung durchgeführt. Bitte neu beginnen.")
                 safety = live_path.with_name(_snapshot_name(

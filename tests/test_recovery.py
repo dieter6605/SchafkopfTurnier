@@ -1,9 +1,12 @@
 import sqlite3
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
+from unittest.mock import patch
 
 from lxml import html
 
@@ -229,6 +232,60 @@ class RecoveryTests(unittest.TestCase):
         with closing(sqlite3.connect(safety)) as con:
             self.assertEqual(con.execute("SELECT title FROM tournaments").fetchone()[0], "Aktuell")
         self.assertEqual(before, legacy.read_bytes())
+
+    def test_restore_waits_for_writer_and_copies_its_entire_commit(self):
+        saved = db.backup_db(self.backups)
+        reached_lock = Event()
+        connect = sqlite3.connect
+
+        def traced_connect(*args, **kwargs):
+            con = connect(*args, **kwargs)
+
+            def signal_lock(sql):
+                if sql.strip().upper() == "BEGIN EXCLUSIVE":
+                    reached_lock.set()
+
+            con.set_trace_callback(signal_lock)
+            return con
+
+        with closing(db.connect()) as writer, ThreadPoolExecutor(max_workers=1) as pool:
+            writer.execute("PRAGMA busy_timeout=1000")
+            writer.execute("BEGIN IMMEDIATE")
+            insert = "INSERT INTO tournaments(title,event_date,start_time) VALUES(?,'2026-11-13','18:00')"
+            writer.execute(insert, ("Erste Buchung",))
+            with patch.object(sqlite3, "connect", traced_connect):
+                restore = pool.submit(db.restore_db, saved)
+                try:
+                    self.assertTrue(reached_lock.wait(3))
+                    writer.execute(insert, ("Zweite Buchung",))
+                    writer.commit()
+                finally:
+                    writer.rollback()
+                restore.result(timeout=8)
+
+        with closing(db.connect()) as active:
+            self.assertEqual(active.execute("SELECT COUNT(*) FROM tournaments").fetchone()[0], 0)
+        safety, = self.directory.glob("*.before-restore-*.sqlite3")
+        with closing(sqlite3.connect(safety)) as previous:
+            self.assertEqual(previous.execute("SELECT title FROM tournaments ORDER BY id").fetchall(),
+                             [("Erste Buchung",), ("Zweite Buchung",)])
+
+    def test_restore_reports_a_persistent_lock_then_allows_retry(self):
+        saved = db.backup_db(self.backups)
+        with closing(db.connect()) as con, con:
+            con.execute("INSERT INTO tournaments(title,event_date,start_time) VALUES('Aktuell','2026-11-13','18:00')")
+        before = self.live.read_bytes()
+        with closing(db.connect()) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            with patch.object(db, "monotonic", side_effect=[0, 6]):
+                response = self.client.post("/restore/" + saved.name, follow_redirects=True)
+            self.assertIn("Die Datenbank ist noch in Benutzung.", response.get_data(as_text=True))
+            self.assertFalse(list(self.directory.glob("*.before-restore-*.sqlite3")))
+            self.assertEqual(self.live.read_bytes(), before)
+        self.assertEqual(self.client.post("/restore/" + saved.name).status_code, 302)
+        self.assertEqual(len(list(self.directory.glob("*.before-restore-*.sqlite3"))), 1)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM tournaments").fetchone()[0], 0)
 
     def test_restore_removes_only_logs_for_missing_tournaments(self):
         legacy = db.backup_db(self.backups)
