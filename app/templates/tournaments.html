@@ -1,42 +1,34 @@
 {% extends "layout.html" %}
+{% block main_class %}sk-workspace{% endblock %}
 
+{% block title %}Turniere · SchafkopfTurnier{% endblock %}
 {% block content %}
-
-<style>
-  .sk-row { cursor: pointer; }
-  .sk-row.sk-selected { outline: 3px solid rgba(13,110,253,.35); border-radius: 10px; }
-  .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
-  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-</style>
-
-<div class="d-flex justify-content-between align-items-start mb-3">
-  <div>
-    <h3 class="mb-0">Turniere</h3>
-    <div class="text-muted small">Übersicht aller angelegten Turniere</div>
-    <div class="sk-kbd mt-1">
-      Tastatur: ↑/↓ wählen · Enter öffnen · N = Neues Turnier · B = Bearbeiten · Shift + Entf = Löschen
-    </div>
-  </div>
-  <div>
-    <a class="btn btn-primary" id="btnNewTournament" href="{{ url_for('tournaments.tournament_new') }}">
-      Neues Turnier
-    </a>
-  </div>
+<div class="sk-heading">
+  <h1>Turniere</h1>
+  <a class="btn btn-primary" id="btnNewTournament" href="{{ url_for('tournaments.tournament_new') }}">Neues Turnier</a>
 </div>
-
-<div class="card shadow-sm">
-  <div class="card-body">
-
-    {% if tournaments %}
+<div class="sk-panel">
+  <div class="sk-toolbar">
+    <nav class="sk-filters" aria-label="Turniere filtern">
+      {% for key, label in [('alle','Alle'), ('offen','Offen'), ('abgeschlossen','Abgeschlossen')] %}
+        <a href="{{ url_for('tournaments.tournaments_list', status=key, q=search or none) }}" {% if status == key %}aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+    <form class="d-flex gap-2" method="get" role="search">
+      <input type="hidden" name="status" value="{{ status }}">
+      <input class="form-control" type="search" name="q" value="{{ search }}" aria-label="Turniername oder Ort" placeholder="Turniername oder Ort">
+      <button class="btn btn-outline-secondary" type="submit">Suchen</button>
+    </form>
+  </div>
+  {% if tournaments %}
       <div class="table-responsive">
-        <table class="table table-striped mb-0 align-middle">
+        <table class="table sk-list mb-0 align-middle">
           <thead>
             <tr>
               <th>Datum</th>
               <th>Turnier</th>
-              <th style="width:160px;">Marker</th>
-              <th style="width:180px;">Teilnehmer</th>
-              <th style="width:220px;">Status</th>
+              <th >Teilnehmer</th>
+              <th >Status</th>
               <th class="text-end">Aktion</th>
             </tr>
           </thead>
@@ -54,7 +46,7 @@
                   data-edit-url="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
                   data-delete-form-id="delForm{{ t.id }}">
                 <td class="text-nowrap">
-                  {{ t.event_date }}<br>
+                  {{ t.event_date|turnierdatum }}<br>
                   <span class="text-muted small">{{ t.start_time }}</span>
                 </td>
 
@@ -63,19 +55,7 @@
                   {% if t.location %}
                     <div class="text-muted small">{{ t.location }}</div>
                   {% endif %}
-                  {% if t.last_update %}
-                    <div class="text-muted small">zuletzt: <span class="sk-mono">{{ t.last_update }}</span></div>
-                  {% endif %}
                 </td>
-
-                <td class="sk-mono">
-                  {% if t.marker %}
-                    {{ t.marker }}
-                  {% else %}
-                    <span class="text-muted">–</span>
-                  {% endif %}
-                </td>
-
                 <td>
                   <div><strong>{{ t.participant_count }}</strong> <span class="text-muted small">Teilnehmer</span></div>
                   <div class="text-muted small">{{ rounds_count }} Runde(n)</div>
@@ -84,9 +64,9 @@
                 <td>
                   <div class="d-flex flex-wrap gap-1">
                     {% if is_closed %}
-                      <span class="badge text-bg-warning">geschlossen</span>
+                      <span class="sk-badge closed">Abgeschlossen</span>
                     {% else %}
-                      <span class="badge text-bg-success">offen</span>
+                      <span class="sk-badge done">{{ 'Läuft' if rounds_count else 'Anmeldung' }}</span>
                     {% endif %}
 
                     {% if not marker_ok %}
@@ -95,9 +75,9 @@
 
                     {% if rounds_count|int > 0 %}
                       {% if scores_complete %}
-                        <span class="badge text-bg-success">Scores komplett</span>
+                        <span class="badge text-bg-success">Ergebnisse vollständig</span>
                       {% else %}
-                        <span class="badge text-bg-danger">Scores: {{ scores_count }}/{{ expected_scores }}</span>
+                        <span class="badge text-bg-danger">{{ 'Wertung prüfen' if expected_scores == scores_count else 'Erfasst: ' ~ scores_count ~ '/' ~ expected_scores }}</span>
                       {% endif %}
                     {% else %}
                       <span class="badge text-bg-light border">keine Runden</span>
@@ -138,12 +118,12 @@
         </table>
       </div>
     {% else %}
-      <div class="text-muted">Noch keine Turniere angelegt.</div>
+      <p class="sk-pad mb-0">{{ 'Keine passenden Turniere gefunden.' if search or status != 'alle' else 'Noch keine Turniere angelegt.' }}
+        {% if search or status != 'alle' %}<a href="{{ url_for('tournaments.tournaments_list') }}">Alle Turniere anzeigen</a>{% endif %}</p>
     {% endif %}
 
-  </div>
 </div>
-
+<p class="small text-secondary mt-3">Tastatur: ↑/↓ wählen · Enter öffnen · N neues Turnier · B bearbeiten · Umschalt + Entf löschen</p>
 {% endblock %}
 
 {% block scripts %}
@@ -161,7 +141,7 @@
     return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
   }
 
-  function setSel(i) {
+  function setSel(i, scroll = true) {
     const r = rows();
     if (!r.length) return;
     if (i < 0) i = 0;
@@ -170,7 +150,7 @@
     r.forEach(x => x.classList.remove("sk-selected"));
     r[i].classList.add("sk-selected");
     idx = i;
-    r[i].scrollIntoView({ block: "nearest" });
+    if (scroll) r[i].scrollIntoView({ block: "nearest" });
   }
 
   function getSelRow() {
@@ -209,10 +189,9 @@
 
   function wireMouse() {
     rows().forEach((row, i) => {
-      row.addEventListener("mouseenter", () => setSel(i));
+      row.addEventListener("mouseenter", () => setSel(i, false));
       row.addEventListener("click", (ev) => {
-        const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : "";
-        if (tag === "a" || tag === "button" || tag === "input") return;
+        if (ev.target.closest("a, button, input, form")) return;
         setSel(i);
         openSel();
       });
@@ -221,7 +200,7 @@
 
   function onKey(ev) {
     if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
-    if (isTypingContext()) return;
+    if (isTypingContext() || (ev.key === "Enter" && ev.target.closest("a, button"))) return;
 
     const k = (ev.key || "").toLowerCase();
 
@@ -251,7 +230,7 @@
 
   function init() {
     wireMouse();
-    if (rows().length) setSel(0);
+    if (rows().length) setSel(0, false);
     document.addEventListener("keydown", onKey, { passive: false });
   }
 

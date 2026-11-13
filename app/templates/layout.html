@@ -10,32 +10,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SchafkopfTurnier</title>
+  <title>{% block title %}SchafkopfTurnier{% endblock %}</title>
 
   <link href="{{ static_asset('vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
+  {% if not g.wlan_request and not pdf_mode|default(false) %}
+    <link href="{{ url_for('static', filename='turnier.css') }}" rel="stylesheet">
+  {% endif %}
   <link rel="icon" type="image/png" href="{{ static_asset('branding/favicon.ico') }}" sizes="32x32">
   <link rel="apple-touch-icon" href="{{ static_asset('branding/apple-touch-icon.png') }}">
 
   <style>
-    /* Globales Logo: Bildschirm (Navbar) */
-    .sk-brand {
-      display: flex;
-      align-items: center;
-      gap: .75rem;
-      text-decoration: none;
-    }
-    .sk-brand img {
-      height: 34px;
-      width: auto;
-      display: block;
-      object-fit: contain;
-    }
-    .sk-brand-title {
-      color: #fff;
-      font-weight: 600;
-      letter-spacing: .2px;
-    }
-
     /* Globales Logo: Druck (Header oberhalb des Inhalts) */
     .sk-print-header {
       display: none;
@@ -59,7 +43,6 @@
     }
 
     /* Global: print helper */
-    .no-print { display: block; }
     .print-only { display: none; }
 
     /* Markdown-Styling (Hilfe/README) */
@@ -121,91 +104,54 @@
 
 <body class="bg-light">
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark no-print">
-  <div class="container">
-    <!-- Link einfach auf "/" -->
-    <a class="sk-brand" href="/">
-      <!-- Optional: in der Navbar KEIN Logo anzeigen (nur Titel). -->
-      <span class="sk-brand-title">SchafkopfTurnier</span>
-
-      <!-- ✅ DEV/DEBUG Status direkt im Header sichtbar -->
-      {% if dev_mode %}
-        <span class="badge text-bg-warning ms-2" title="Lokaler Wartungsmodus aktiv">Wartung</span>
-      {% endif %}
-      {% if skt_debug %}
-        <span class="badge text-bg-info ms-1" title="Flask Debug aktiv (app.debug=True)">DEBUG</span>
-      {% endif %}
+{% if not pdf_mode|default(false) %}
+<a class="visually-hidden-focusable" href="#hauptinhalt">Zum Inhalt</a>
+<header class="bg-white border-bottom no-print">
+  <nav class="navbar navbar-expand-md container sk-topbar" aria-label="Hauptnavigation">
+    <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="{{ url_for('home.home') }}">
+      <img src="{{ static_asset('branding/turnierlogo.png') }}" width="40" height="43" alt="" style="object-fit:contain">
+      SchafkopfTurnier
     </a>
-
+    {% if dev_mode %}<span class="badge text-bg-warning">Wartung</span>{% endif %}
+    {% if skt_debug %}<span class="badge text-bg-info">DEBUG</span>{% endif %}
     {% if g.wlan_request %}
       {% if session.get('helper_tournament') and config.WLAN_ORIGIN %}
-        <a class="btn btn-sm btn-outline-light" href="{{ url_for('wlan.helper', tournament_id=session.helper_tournament) }}">Helferbereich</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('wlan.helper', tournament_id=session.helper_tournament) }}">Helferbereich</a>
       {% endif %}
     {% else %}
-    <div class="d-flex gap-2 align-items-center">
-      <a class="btn btn-sm btn-outline-light" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
-      <a class="btn btn-sm btn-outline-light" href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
-
-      <!-- ✅ Turnierstatus-Badge (nur auf tournaments.* Seiten) -->
-      {% if skt_tournament_id %}
-        {% if skt_tournament_closed %}
-          <span class="badge text-bg-warning" title="Turnier ist abgeschlossen – Änderungen gesperrt">geschlossen</span>
-        {% else %}
-          <span class="badge text-bg-success" title="Turnier ist offen">offen</span>
-        {% endif %}
-      {% endif %}
-
-      <!-- Hilfe-Dropdown -->
-      <div class="dropdown">
-        <button class="btn btn-sm btn-outline-light dropdown-toggle"
-                type="button"
-                data-bs-toggle="dropdown"
-                aria-expanded="false">
-          Hilfe
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end">
-          <li>
-            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='readme') }}">Lies mich</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#hauptmenue" aria-controls="hauptmenue" aria-expanded="false">Menü</button>
+      <div class="collapse navbar-collapse justify-content-end" id="hauptmenue">
+        <ul class="navbar-nav gap-1">
+          {% set ep = request.endpoint or '' %}
+          {% for label, endpoint, active in [
+            ('Start', 'home.home', ep == 'home.home'),
+            ('Turniere', 'tournaments.tournaments_list', request.blueprint == 'tournaments'),
+            ('Adressbuch', 'addresses.addresses_list', request.blueprint == 'addresses'),
+            ('Datensicherung', 'home.backups_page', ep == 'home.backups_page')] %}
+            <li><a class="nav-link" href="{{ url_for(endpoint) }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a></li>
+          {% endfor %}
+          <li class="nav-item dropdown">
+            <button class="nav-link dropdown-toggle" {% if ep.startswith('home.help') %}aria-current="true"{% endif %} data-bs-toggle="dropdown" aria-expanded="false">Hilfe</button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              {% for doc, label in [('readme','Lies mich'), ('anleitung','Anleitung'), ('installation','Installation')] %}
+                <li><a class="dropdown-item" href="{{ url_for('home.help_docs', doc=doc) }}">{{ label }}</a></li>
+              {% endfor %}
+              <li><a class="dropdown-item" href="{{ url_for('home.help_tarif') }}">Tarifrechner</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics') }}">DB-Diagnose</a></li>
+              {% if skt_tournament_id %}
+                <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics', tournament_id=skt_tournament_id) }}">DB-Diagnose (dieses Turnier)</a></li>
+              {% endif %}
+            </ul>
           </li>
-          <li>
-            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='anleitung') }}">Anleitung</a>
-          </li>
-          <li>
-            <a class="dropdown-item" href="{{ url_for('home.help_docs', doc='installation') }}">Installation</a>
-          </li>
-
-          <li><hr class="dropdown-divider"></li>
-
-          <!-- ✅ NEU: Tarifrechner -->
-          <li>
-            <a class="dropdown-item" href="{{ url_for('home.help_tarif') }}">Tarifrechner</a>
-          </li>
-
-          <li><hr class="dropdown-divider"></li>
-
-          <!-- Diagnose ins Hilfe-Menü -->
-          <li>
-            <a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics') }}">
-              DB-Diagnose
-            </a>
-          </li>
-
-          <!-- Optional: Diagnose direkt für das aktuelle Turnier (wenn t vorhanden ist) -->
-          {% if t is defined and t and t.id %}
-            <li>
-              <a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics', tournament_id=t.id) }}">
-                DB-Diagnose (dieses Turnier)
-              </a>
-            </li>
-          {% endif %}
         </ul>
       </div>
-    </div>
     {% endif %}
-  </div>
-</nav>
+  </nav>
+</header>
+{% endif %}
 
-<main class="container py-4">
+<main id="hauptinhalt" class="container py-4 {% block main_class %}{% endblock %}">
 
   <!-- Druckkopf mit Logo (erscheint nur beim Drucken) -->
   <div class="sk-print-header print-only">
@@ -223,6 +169,11 @@
     {% endif %}
   {% endwith %}
 
+  {% block tournament_navigation %}
+    {% if skt_tournament_id and not g.wlan_request and not pdf_mode|default(false) %}
+      {% include '_tournament_nav.html' %}
+    {% endif %}
+  {% endblock %}
   {% block content %}{% endblock %}
 </main>
 

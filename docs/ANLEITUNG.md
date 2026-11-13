@@ -8,17 +8,18 @@ Kurzanleitung für den Turniertag
 **Anwendung starten**
 - Anwendung im Browser öffnen
 (z. B. http://127.0.0.1:8000)
-- Startseite prüfen (keine Fehlermeldungen)
+- Auf „Start“ das aktuelle Turnier und den nächsten Schritt prüfen. „Turnier öffnen“ führt zur Übersicht mit dem Stand der einzelnen Tische.
+- Unter „Turniere“ nach Name oder Ort suchen und offene oder abgeschlossene Turniere auswählen.
 
 **Backup erstellen (empfohlen)**
-- Startseite → „DB-Backup jetzt erstellen“
+- „Datensicherung“ → „Sicherung erstellen“
 - Meldung „Backup erstellt“ abwarten
 
 Beim ersten Start mit einer älteren Datenbank prüft die Anwendung die Sitzplätze und Ergebnisse. Fehlt zu einem Ergebnis der passende Sitzplatz oder zu einem Sitzplatz die Anmeldung oder Runde, bricht die Umstellung ab. Die Meldung nennt Turnier, Runde, Tisch und Teilnehmer-ID. Diese Angaben mit dem ursprünglichen Sitzplan vergleichen. Die Prüfung gilt auch bei der Wiederherstellung einer älteren Sicherung.
 
 **Sicherung wiederherstellen**
 
-Auf der Startseite bei der gewünschten Sicherung „Restore“ wählen oder unter „Upload / Restore“ eine Datei hochladen. Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
+Unter „Datensicherung“ bei der gewünschten Sicherung „Wiederherstellen“ wählen oder unter „Hochladen und wiederherstellen“ eine Datei auswählen. Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
 
 **Adressen pflegen**
 
@@ -90,6 +91,10 @@ Teilnehmer ersetzen (Swap)
 - Sobald eine der beteiligten Anmeldungen ein Ergebnis hat oder abgemeldet ist, ist der Tausch gesperrt.
 - Vor dem Abschluss zeigt die Turnierübersicht den ersten Tisch mit fehlenden oder fehlerhaften Angaben. Jeder Tisch braucht die Sitze A bis D, vier passende Ergebnisse, eine Punktesumme von null und gültige Soli (ganze Zahlen ab null).
 
+**Von der Turnierübersicht zum Tisch**
+
+„Teilnehmer“, „Runden & Ergebnisse“, „Gesamtwertung“ und „Druck & Export“ öffnen die Bereiche des gewählten Turniers. In der Übersicht öffnet „Tisch … erfassen“ das Formular des ausstehenden Tisches. „Speichern“ führt zur Übersicht mit dem neuen Stand zurück. „Speichern & nächster Tisch“ folgt der Tischreihenfolge. Sind alle Tische gültig gewertet, führt „Runde … vorbereiten“ zum Sitzplan für die nächste Auslosung.
+
 **Falsche Person nach der ersten Wertung berichtigen**
 
 1. Unter „Teilnehmer erfassen“ bei der betroffenen Startnummer **Anmeldung berichtigen** wählen. Startnummer, bisherige Person, Punkte und Soli mit dem Tischblatt vergleichen.
@@ -117,7 +122,7 @@ Anzeige
 
 ## 7. Sitzpläne drucken / aushängen
 
-- In der Turnierübersicht lädt „Helfer / Aushang (ZIP)“ Startliste, Gesamtwertung sowie Sitzpläne und Wertungen der einzelnen Runden herunter. Zur Spielerkennung dienen Startnummer, Vorname, Nachname und Wohnort.
+- Unter „Druck & Export“ lädt „Helfer / Aushang (ZIP)“ Startliste, Gesamtwertung sowie Sitzpläne und Wertungen der einzelnen Runden herunter. Zur Spielerkennung dienen Startnummer, Vorname, Nachname und Wohnort.
 - „Turnierleitung mit Kontaktdaten (ZIP)“ enthält zusätzlich die vollständigen Anmeldedaten und Auswertungen für die interne Verwaltung.
 - „Tischblatt für Helfer“ und „Tischblätter für Helfer“ drucken Namen, Startnummer und Wohnort. Für ein Einzelblatt, ein Sammeldokument oder ein Tischblatt-ZIP mit E-Mail auf der ersten Seite „Turnierleitung (mit E-Mail)“ öffnen.
 - In Tabellen-CSV erhalten Textfelder mit Formelanfang das sichtbare Präfix `Text: `. Negative Punkte bleiben Zahlen. Für den unveränderten Austausch von Adressdaten die CSV „Adressbuch für Wiederimport“ auf der Importseite verwenden.
@@ -201,12 +206,8 @@ Teilnehmerliste
 - Shift + Entf → Teilnehmer entfernen
 
 Turnierübersicht
-- E → Teilnehmer erfassen
-- L → Turnierliste
-- B → Bearbeiten
-- 1 → Runde 1 anzeigen
-- N → nächste Runde vorbereiten
-- R → Runde auslosen
+- Tab → zur nächsten Schaltfläche oder zum nächsten Link
+- Enter → Auswahl öffnen
 - Umschalt + R → Auslosung der nächsten Runde bestätigen
 
 ## 11. Typische Hinweise aus der Praxis

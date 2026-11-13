@@ -1,31 +1,23 @@
 {% extends "layout.html" %}
+{% block main_class %}sk-workspace{% endblock %}
+{% from "_tablesheet_download.html" import tablesheet_download %}
+{% block title %}{{ t.title }} · SchafkopfTurnier{% endblock %}
+{% block tournament_navigation %}{% endblock %}
 {% block content %}
-
-{# ----------------------------------------------------------
-   Turnier-Status: geschlossen?
----------------------------------------------------------- #}
-{% set closed_at = (t.closed_at if t.closed_at is defined else (t['closed_at'] if (t is mapping and 'closed_at' in t) else None)) %}
-{% set is_closed = (closed_at is not none and (closed_at|string)|trim|length > 0) %}
-{% set _closed_at_str = ((closed_at|string)|trim) if is_closed else '' %}
-
-{# ----------------------------------------------------------
-   Runde-Infos kommen aus der Route:
-   - round_list
-   - last_round_no
-   - next_round_no
----------------------------------------------------------- #}
-{% set last_rn = (last_round_no or 0) | int %}
-{% set next_rn = (next_round_no or ((last_rn + 1) if last_rn > 0 else 1)) | int %}
-
-{% set marker_disp = (t.marker or "JJMMTTxxxx") %}
-
-<style>
-  .sk-mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-                 "Liberation Mono", "Courier New", monospace;
-  }
-</style>
-
+{% set counts = overview.counts %}
+{% set current = overview.current %}
+{% set closed_at = t.closed_at %}
+{% set is_closed = (closed_at or '')|trim != '' %}
+{% set marker_disp = t.marker or '–' %}
+{% set next_rn = current.number + 1 if current else 1 %}
+<a class="sk-back" id="btnBackToList" href="{{ url_for('tournaments.tournaments_list') }}">← Alle Turniere</a>
+<div class="sk-heading">
+  <div><div class="d-flex align-items-center gap-3 flex-wrap"><h1>{{ t.title }}</h1>
+    <span class="sk-badge {{ 'closed' if is_closed else 'done' if current else 'open' }}">{{ 'Abgeschlossen' if is_closed else 'Läuft' if current else 'Anmeldung' }}</span>
+  </div><p class="text-secondary mt-2 mb-0">{{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr{% if t.location %} · {{ t.location }}{% endif %}</p></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='details') }}">Turnierdetails</a>
+</div>
+{% include '_tournament_nav.html' %}
 {% if config.WLAN_ORIGIN and not is_closed %}
   <section class="alert alert-info no-print" aria-label="Helferzugang">
     <strong>Helferzugang für dieses Turnier</strong>
@@ -34,49 +26,110 @@
   </section>
 {% endif %}
 
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-3">
-  <div>
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      <h3 class="mb-0">{{ t.title }}</h3>
 
-      {% if dev_mode %}
-        <span class="badge text-bg-warning">Wartung</span>
-      {% endif %}
-
-      {% if is_closed %}
-        <span class="badge text-bg-secondary">abgeschlossen</span>
+{% if section not in ['runden','druck','details'] %}
+<div class="sk-panel sk-stats">
+  <div><span>Teilnehmer</span><strong>{{ counts.participants }} <small>angemeldet</small></strong>
+    {% if counts.withdrawn %}<small>{{ counts.active }} aktiv · {{ counts.withdrawn }} abgemeldet</small>{% endif %}</div>
+  <div><span>{{ 'Tische in der Runde' if current else 'Vierertische möglich' }}</span><strong>{{ current.tables|length if current else counts.tables }}</strong></div>
+  <div><span>{{ 'Letzte Runde' if is_closed else 'Aktuelle Runde' }}</span><strong>{{ current.number if current else '–' }}</strong></div>
+  <div><span>Tische fertig</span><strong>{{ current.done if current else '–' }} {% if current %}<small>von {{ current.tables|length }}</small>{% endif %}</strong></div>
+</div>
+<div class="sk-feature-grid">
+  <section class="sk-panel">
+    <div class="sk-pad">
+      <h2>{{ 'Runde ' ~ current.number if current else 'Anmeldung' }}</h2>
+      {% if current %}
+        <p class="text-secondary mt-1 mb-0">{{ current.done }} fertig · {{ current.open_count }} offen{% if current.review %} · {{ current.review }} zu prüfen{% endif %}</p>
+        <div class="sk-tables">
+          {% for number, table in current.tables|dictsort %}
+            {% set status = 'done' if table.complete else 'review' if table.issue else 'open' %}
+            <a class="sk-table {{ status }}" href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=current.number, table_no=number, source='overview') if table.seats == 4 else url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=current.number) }}">
+              <strong>Tisch {{ number }}</strong><span>{{ '✓ Fertig' if table.complete else '⚠ Zu prüfen' if table.issue else '○ Offen' }}</span>
+              {% if table.issue %}<small>{{ table.issue }}</small>{% endif %}
+            </a>
+          {% else %}<span>Für diese Runde fehlt der Sitzplan.</span>{% endfor %}
+        </div>
+      {% else %}
+        <p class="text-secondary mt-2 mb-0">Noch keine Runde ausgelost. {{ counts.active }} Teilnehmer sind für die erste Runde angemeldet.</p>
       {% endif %}
     </div>
-
-    <div class="text-muted small">
-      {{ t.event_date }} · {{ t.start_time }}
-      {% if t.location %} · {{ t.location }}{% endif %}
-      {% if t.marker %} · <span class="sk-mono">Marker: {{ t.marker }}</span>{% endif %}
-      {% if is_closed and closed_at %}
-        · <span class="sk-mono">closed_at: {{ closed_at }}</span>
-      {% endif %}
+    <div class="sk-round-links">
+      {% if current %}
+        <a href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=current.number) }}">Sitzplan ansehen</a>
+        <a href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='druck') }}">Tischblätter →</a>
+      {% else %}<a href="{{ url_for('tournaments.tournament_participants', tournament_id=t.id) }}">Teilnehmer ansehen →</a>{% endif %}
     </div>
-
-    <div class="text-muted small mt-1">
-      Tastatur:
-      <strong>E</strong>=Teilnehmer ·
-      <strong>L</strong>=Liste ·
-      <strong>B</strong>=Bearbeiten ·
-      <strong>Shift+Entf</strong>=Löschen<br>
-      Runden:
-      <strong>1</strong>=R1 ·
-      <strong>A</strong>=Anzeigen ·
-      <strong>R</strong>=Auslosen ·
-      <strong>Shift+R</strong>=nächste Runde ·
-      <strong>N</strong>=Vorbereiten ·
-      <strong>+/-</strong>=Runde ändern
-    </div>
+  </section>
+  <section class="sk-panel sk-next">
+    <div class="sk-kicker">{{ 'Turnier abgeschlossen' if is_closed else 'Nächster Schritt' }}</div>
+    <h2>{{ overview.action.title }}</h2>
+    {% if is_closed and safe.score_issue %}
+      <p>Die Gesamtwertung ist vorläufig. {{ safe.score_issue }}</p>
+    {% else %}<p>{{ overview.action.hint }}</p>{% endif %}
+    <a class="btn btn-primary mt-auto" href="{{ overview.action.url }}">{{ overview.action.label }} →</a>
+  </section>
+</div>
+{% endif %}
+{% if section in ['uebersicht','runden'] %}
+<details class="sk-panel sk-fold mt-3" {% if section == 'runden' %}open{% endif %}>
+  <summary>Runden &amp; Ergebnisse</summary>
+  <div class="sk-pad pt-0">
+    {% for rnd in overview.rounds|reverse %}
+      <div class="sk-round-links px-0">
+        <strong>Runde {{ rnd.number }}</strong>
+        <span>{{ rnd.done }} fertig · {{ rnd.open_count }} offen{% if rnd.review %} · {{ rnd.review }} zu prüfen{% endif %}</span>
+        <a href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rnd.number) }}">Sitzplan</a>
+        <a href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=rnd.number) }}">Ergebnisse</a>
+        <a href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=rnd.number) }}">Rundenwertung</a>
+      </div>
+    {% else %}<p>Die erste Runde wurde noch nicht ausgelost.</p>{% endfor %}
+    {% if not is_closed %}
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=next_rn) }}">Runde {{ next_rn }} vorbereiten</a>
+        <form method="post" action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_rn) }}"
+              data-confirm="Runde {{ next_rn }} auslosen?" onsubmit="return window.confirm(this.dataset.confirm)">
+          {{ csrf_field() }}<input type="hidden" name="expected_round_id" value="0">
+          <button class="btn btn-outline-secondary" id="btnDrawNext" {% if counts.active < 4 or counts.rest %}disabled{% endif %}>Runde {{ next_rn }} auslosen</button>
+        </form>
+      </div>
+    {% endif %}
   </div>
+</details>
+{% endif %}
+{% if section in ['uebersicht','druck'] %}
+<details class="sk-panel sk-fold mt-3" {% if section == 'druck' %}open{% endif %}>
+  <summary>Druck &amp; Export</summary>
+  <div class="sk-pad pt-0">
+    <div class="d-flex gap-2 flex-wrap mb-2">
+    <a class="btn btn-outline-primary" href="{{ url_for('tournaments.tournament_helper_zip', tournament_id=t.id) }}">
+      Helfer / Aushang (ZIP)
+    </a>
+    <a class="btn btn-outline-primary" id="btnExport"
+       href="{{ url_for('tournaments.tournament_export_zip', tournament_id=t.id) }}"
+       data-confirm="Vollständigen Export mit Kontaktdaten für „{{ t.title or '' }}“ erstellen?"
+       onclick="return window.confirm(this.dataset.confirm)">
+      Turnierleitung mit Kontaktdaten (ZIP)
+    </a>
 
-  <div class="d-flex gap-2 flex-wrap justify-content-end">
-    <a class="btn btn-outline-secondary" id="btnBackToList"
-       href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
-
+      <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_export_csv', tournament_id=t.id) }}">Gesamtwertung (CSV)</a>
+    </div>
+    {% for rnd in overview.rounds|reverse %}
+      <h3 class="h6 mt-3">Tischblätter · Runde {{ rnd.number }}</h3>
+      {{ tablesheet_download(url_for('tournaments.tournament_round_tablesheets_docx_merged', tournament_id=t.id, round_no=rnd.number), url_for('tournaments.tournament_round_tablesheets_docx_zip', tournament_id=t.id, round_no=rnd.number)) }}
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+{% if section in ['uebersicht','details'] %}
+<details class="sk-panel sk-fold mt-3" {% if section == 'details' %}open{% endif %}>
+  <summary>Turnierdetails und Abschluss</summary>
+  <div class="sk-pad pt-0">
+    {% if t.marker %}<p>Teilnahmemarker · {{ t.marker }}</p>{% endif %}
+    {% if t.organizer %}<p>Veranstalter · {{ t.organizer }}</p>{% endif %}
+    {% if t.description %}<p>{{ t.description }}</p>{% endif %}
+    {% if closed_at %}<p>Abgeschlossen am {{ closed_at }}</p>{% endif %}
+    <div class="d-flex gap-2 mb-3">
     <a class="btn btn-outline-secondary" id="btnEditTournament"
        href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
        {% if is_closed %}aria-disabled="true"{% endif %}>
@@ -95,163 +148,14 @@
       </button>
     </form>
 
-    <a class="btn btn-primary" id="btnParticipants"
-       href="{{ url_for('tournaments.tournament_participants', tournament_id=t.id) }}">
-      Teilnehmer erfassen
-    </a>
 
-    <a class="btn btn-outline-primary" href="{{ url_for('tournaments.tournament_helper_zip', tournament_id=t.id) }}">
-      Helfer / Aushang (ZIP)
-    </a>
-    <a class="btn btn-outline-primary" id="btnExport"
-       href="{{ url_for('tournaments.tournament_export_zip', tournament_id=t.id) }}"
-       data-confirm="Vollständigen Export mit Kontaktdaten für „{{ t.title or '' }}“ erstellen?"
-       onclick="return window.confirm(this.dataset.confirm)">
-      Turnierleitung mit Kontaktdaten (ZIP)
-    </a>
-  </div>
-</div>
-
-<div class="row g-3 mb-3">
-  <div class="col-md-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="text-muted small">Teilnehmer</div>
-        <div class="fs-2 fw-bold">{{ counts.participants }}</div>
-        {% if counts.withdrawn %}
-          <div>{{ counts.active }} aktiv · {{ counts.withdrawn }} abgemeldet</div>
-        {% endif %}
-      </div>
     </div>
-  </div>
-
-  <div class="col-md-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="text-muted small">Vierertische aus aktiven Teilnehmern</div>
-        <div class="fs-2 fw-bold">
-          {{ counts.tables }}
-          {% if counts.rest %}
-            <span class="text-danger">+{{ counts.rest }}</span>
-          {% endif %}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <div class="text-muted small">Infos</div>
-        {% if t.organizer %}<div><strong>Orga:</strong> {{ t.organizer }}</div>{% endif %}
-        {% if t.description %}<div class="text-muted">{{ t.description }}</div>{% endif %}
-        {% if not t.organizer and not t.description %}
-          <div class="text-muted">–</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ==========================================================
-   ✅ RUNDEN-BLOCK
-========================================================== #}
 <div class="card shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
       <div>
         <div class="d-flex align-items-center gap-2">
-          <h5 class="mb-0">Runden</h5>
-          {% if round_list and (round_list|length > 0) %}
-            <span class="badge text-bg-secondary">{{ round_list|length }}</span>
-          {% else %}
-            <span class="badge text-bg-light border">0</span>
-          {% endif %}
-        </div>
-        <div class="text-muted small mt-1">
-          Anzeigen, Ergebnisse erfassen, Wertung je Runde – sowie „nächste Runde“ auslosen.
-        </div>
-      </div>
-
-      <div class="d-flex gap-2 flex-wrap justify-content-end">
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
-          Gesamtwertung
-        </a>
-
-        <form method="post"
-              action="{{ url_for('tournaments.tournament_round_draw', tournament_id=t.id, round_no=next_rn) }}"
-              class="d-inline"
-              data-confirm="Runde {{ next_rn }} auslosen?"
-              onsubmit="return window.confirm(this.dataset.confirm)">
-          {{ csrf_field() }}
-          <input type="hidden" name="expected_round_id" value="0">
-          <button class="btn btn-sm btn-primary" id="btnDrawNext"
-                  {% if is_closed %}disabled{% endif %}>
-            Runde {{ next_rn }} auslosen
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <hr class="my-3">
-
-    {% if round_list and (round_list|length > 0) %}
-      <div class="table-responsive">
-        <table class="table table-sm table-striped align-middle mb-0">
-          <thead>
-            <tr>
-              <th style="width:110px;">Runde</th>
-              <th>Aktionen</th>
-              <th class="text-end" style="width:240px;">Direktlinks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for rn in round_list %}
-              <tr>
-                <td class="sk-mono"><strong>R{{ "%02d"|format(rn) }}</strong></td>
-                <td class="text-muted small">
-                  Sitzplan/Ansicht, Ergebnisse, Rundenwertung
-                </td>
-                <td class="text-end">
-                  <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
-                    <a class="btn btn-sm btn-outline-secondary"
-                       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=rn) }}">
-                      Anzeigen
-                    </a>
-                    <a class="btn btn-sm btn-outline-secondary"
-                       href="{{ url_for('tournaments.tournament_round_results_overview', tournament_id=t.id, round_no=rn) }}">
-                      Ergebnisse
-                    </a>
-                    <a class="btn btn-sm btn-outline-secondary"
-                       href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=rn) }}">
-                      Wertung
-                    </a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="form-text mt-2">
-        Letzte Runde: <span class="sk-mono">R{{ "%02d"|format(last_rn) }}</span> · Nächste Runde: <span class="sk-mono">R{{ "%02d"|format(next_rn) }}</span>
-      </div>
-    {% else %}
-      <div class="text-muted">
-        Noch keine Runde ausgelost. Klicke oben auf <strong>„Runde {{ next_rn }} auslosen“</strong>.
-      </div>
-    {% endif %}
-  </div>
-</div>
-
-<div class="card shadow-sm mb-3">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-      <div>
-        <div class="d-flex align-items-center gap-2">
-          <h5 class="mb-0">Sicher</h5>
+          <h5 class="mb-0">Datenprüfung</h5>
           {% if safe.ready and safe.marker_ok %}
             <span class="badge text-bg-success">OK</span>
           {% else %}
@@ -274,7 +178,7 @@
     <div class="row g-2 small">
       <div class="col-md-3"><strong>FK:</strong> {{ safe.fk_on }}</div>
       <div class="col-md-3"><strong>Integrity:</strong> {{ safe.integrity }}</div>
-      <div class="col-md-3"><strong>Scores:</strong> {{ safe.scores }} / {{ safe.expected_scores }}</div>
+      <div class="col-md-3"><strong>Ergebnisse:</strong> {{ safe.scores }} / {{ safe.expected_scores }}</div>
       <div class="col-md-3"><strong>Marker:</strong> {{ "OK" if safe.marker_ok else "prüfen" }}</div>
     </div>
   </div>
@@ -400,8 +304,11 @@
 
 {% endif %}
 
-{% endblock %}
 
+  </div>
+</details>
+{% endif %}
+{% endblock %}
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/round_keys.js') }}"></script>
 <script>

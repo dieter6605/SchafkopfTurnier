@@ -7,6 +7,7 @@ from flask import current_app, flash, redirect, render_template, request, url_fo
 
 from ... import db
 from . import bp
+from .overview import tournament_overview
 from .helpers import (
     _get_tournament,
     _first_score_issue,
@@ -16,13 +17,16 @@ from .helpers import (
     _normalize_marker,
     _read_tournament_form,
     _scores_expected_count,
-    _tournament_counts,
     _validate_tournament_form,
 )
 
 
 @bp.get("/tournaments")
 def tournaments_list():
+    search = request.args.get("q", "").strip()
+    status = request.args.get("status", "alle")
+    if status not in ("offen", "abgeschlossen"):
+        status = "alle"
     with closing(db.connect()) as con, con:
         con.execute("BEGIN")
         rows = db.q(
@@ -55,13 +59,17 @@ def tournaments_list():
         )
         tournaments = []
         for row in rows:
+            if status == "offen" and row["is_closed"] or status == "abgeschlossen" and not row["is_closed"]:
+                continue
+            if search.casefold() not in f"{row['title']} {row['location'] or ''}".casefold():
+                continue
             tournament = dict(row)
             tournament["scores_complete"] = (
                 row["expected_scores"] > 0 and row["scores_count"] == row["expected_scores"]
                 and _first_score_issue(con, row["id"]) is None
             )
             tournaments.append(tournament)
-    return render_template("tournaments.html", tournaments=tournaments, now=_now_local_iso())
+    return render_template("tournaments.html", tournaments=tournaments, search=search, status=status)
 
 
 def _marker_owner(con, marker: str | None, tournament_id: int | None = None):
@@ -155,16 +163,7 @@ def tournament_detail(tournament_id: int):
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
-        counts = _tournament_counts(con, tournament_id)
-
-        rounds = db.q(
-            con,
-            "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no ASC",
-            (tournament_id,),
-        )
-        round_list = [int(r["round_no"]) for r in rounds]
-        last_round_no = max(round_list) if round_list else 0
-        next_round_no = (last_round_no + 1) if last_round_no > 0 else 1
+        overview = tournament_overview(con, t)
 
         fk_on = int(con.execute("PRAGMA foreign_keys;").fetchone()[0] or 0)
         integrity = str(con.execute("PRAGMA integrity_check;").fetchone()[0] or "")
@@ -196,14 +195,14 @@ def tournament_detail(tournament_id: int):
             and score_issue is None
         )
 
+    section = request.args.get("bereich")
+    if section not in ("runden", "druck", "details"):
+        section = "uebersicht"
     return render_template(
         "tournament_detail.html", wlan_generation=wlan_generation,
         t=t,
-        counts=counts,
-        now=_now_local_iso(),
-        last_round_no=last_round_no,
-        round_list=round_list,
-        next_round_no=next_round_no,
+        overview=overview,
+        section=section,
         safe=safe,
     )
 

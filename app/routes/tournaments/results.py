@@ -183,6 +183,9 @@ def tournament_round_results_table(tournament_id: int, round_no: int, table_no: 
 @bp.post("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/<int:table_no>")
 def tournament_round_results_table_post(tournament_id: int, round_no: int, table_no: int):
     f = request.form
+    origin = {"source": "overview"} if not g.wlan_request and request.args.get("source") == "overview" else {}
+    table_form_url = url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
+                             round_no=round_no, table_no=table_no, **origin)
 
     with closing(db.connect()) as con, con:
         con.execute("BEGIN IMMEDIATE")
@@ -205,8 +208,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         if f.get("expected_generation", "") != generation:
             flash("Dieses Tischformular passt nicht zum wiederhergestellten Datenstand. Deine Eingabe wurde nicht gespeichert. "
                   "Bitte prüfe die Spieler und Werte im aktuellen Tischformular.", "warning")
-            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
-                                    round_no=round_no, table_no=table_no))
+            return redirect(table_form_url)
 
         seats = _table_players(con, tournament_id, round_no, table_no)
         if len(seats) != 4:
@@ -216,15 +218,13 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         expected_id = f.get("expected_round_id")
         if expected_id is not None and expected_id != str(seats[0]["round_id"] or 0):
             flash("Der Sitzplan hat sich seit dem Öffnen geändert. Bitte den Tisch erneut prüfen.", "warning")
-            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
-                                    round_no=round_no, table_no=table_no))
+            return redirect(table_form_url)
 
         if expected_id is not None and any(
             f.get(f"address_{seat['tp_id']}") != str(seat["address_id"]) for seat in seats
         ):
             flash("Die Teilnehmerzuordnung muss erneut geprüft werden. Bitte den aktuellen Tisch kontrollieren.", "warning")
-            return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
-                                    round_no=round_no, table_no=table_no))
+            return redirect(table_form_url)
 
         expected_state = f.get("expected_score_state")
         conflict = None
@@ -248,21 +248,13 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
             p = _to_int(f.get(f"points_{tp_id}"), default=None)
             if p is None or not -(2**63) <= p < 2**63:
                 flash("Bitte für alle 4 Spieler gültige ganze Punkte eingeben.", "error")
-                return redirect(
-                    url_for(
-                        "tournaments.tournament_round_results_table",
-                        tournament_id=tournament_id,
-                        round_no=round_no,
-                        table_no=table_no,
-                    )
-                )
+                return redirect(table_form_url)
 
             raw_soli = (f.get(f"soli_{tp_id}") or "").strip() or "0"
             s = _to_int(raw_soli)
             if not raw_soli.isascii() or not raw_soli.isdecimal() or s is None or s >= 2**63:
                 flash(f"Bitte für Nr. {r['player_no']} eine gültige Anzahl Soli ab 0 eingeben.", "error")
-                return redirect(url_for("tournaments.tournament_round_results_table", tournament_id=tournament_id,
-                                        round_no=round_no, table_no=table_no))
+                return redirect(table_form_url)
 
             points_map[tp_id] = int(p)
             soli_map[tp_id] = int(s)
@@ -276,14 +268,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
         total = sum(points_map.values())
         if total != 0:
             flash(f"Fehler: Punktesumme am Tisch {table_no} ist {total} (muss 0 sein).", "error")
-            return redirect(
-                url_for(
-                    "tournaments.tournament_round_results_table",
-                    tournament_id=tournament_id,
-                    round_no=round_no,
-                    table_no=table_no,
-                )
-            )
+            return redirect(table_form_url)
 
         for tp_id in points_map:
             con.execute(
@@ -316,4 +301,6 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
                 )
 
         flash(f"Tisch {table_no} gespeichert.", "ok")
+        if origin and not go_next:
+            return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
         return redirect(url_for("tournaments.tournament_round_results_overview", tournament_id=tournament_id, round_no=round_no))

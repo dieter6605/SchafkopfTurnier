@@ -1,0 +1,14 @@
+{% set tid = skt_tournament_id %}
+{% set ep = request.endpoint or '' %}
+{% set detail = 'tournaments.tournament_detail' %}
+{% set area = section if ep == detail else '' %}
+<nav class="turnier-nav no-print" aria-label="Turniernavigation">
+  {% for label, href, active in [
+    ('Übersicht', url_for(detail, tournament_id=tid), area == 'uebersicht'),
+    ('Teilnehmer', url_for('tournaments.tournament_participants', tournament_id=tid), 'participant' in ep or 'player' in ep),
+    ('Runden & Ergebnisse', url_for(detail, tournament_id=tid, bereich='runden'), area == 'runden' or 'tournament_round' in ep),
+    ('Gesamtwertung', url_for('tournaments.tournament_standings_overall', tournament_id=tid), ep == 'tournaments.tournament_standings_overall'),
+    ('Druck & Export', url_for(detail, tournament_id=tid, bereich='druck'), area == 'druck')] %}
+    <a href="{{ href }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>

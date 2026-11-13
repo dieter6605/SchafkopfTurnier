@@ -6,7 +6,6 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime, date
 from tempfile import TemporaryDirectory
-from typing import Iterable
 from uuid import uuid4
 
 from flask import (
@@ -26,6 +25,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from .. import db
+from .tournaments.overview import tournament_overview
 
 bp = Blueprint("home", __name__)
 
@@ -53,129 +53,6 @@ def _render_markdown_file(md_path: Path) -> str:
         md_text,
         extensions=["fenced_code", "tables", "toc", "sane_lists"],
     )
-
-
-# -----------------------------------------------------------------------------
-# Dashboard-Helpers
-# -----------------------------------------------------------------------------
-def _default_ab_id(con) -> int:
-    dab = db.one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
-    return int(dab["id"]) if dab else 1
-
-
-def _count(con, sql: str, params: tuple = ()) -> int:
-    r = db.one(con, sql, params)
-    try:
-        return int((r["c"] if r else 0) or 0)
-    except Exception:
-        return 0
-
-
-def _parse_iso_date(d: str | None) -> date | None:
-    if not d:
-        return None
-    s = str(d).strip()
-    if not s:
-        return None
-    try:
-        return date.fromisoformat(s)
-    except Exception:
-        return None
-
-
-def _day_label(iso_date: str | None) -> str:
-    d = _parse_iso_date(iso_date)
-    if not d:
-        return ""
-    today = date.today()
-    delta = (d - today).days
-    if delta == 0:
-        return "Heute"
-    if delta == 1:
-        return "Morgen"
-    if delta == -1:
-        return "Gestern"
-    if delta > 1:
-        return f"in {delta} Tagen"
-    return f"vor {abs(delta)} Tagen"
-
-
-def _get_next_tournament(con) -> dict | None:
-    today = date.today().isoformat()
-    return db.one(
-        con,
-        """
-        SELECT *
-        FROM tournaments
-        WHERE event_date >= ?
-        ORDER BY event_date ASC, start_time ASC, id ASC
-        LIMIT 1
-        """,
-        (today,),
-    )
-
-
-def _get_last_tournament(con) -> dict | None:
-    today = date.today().isoformat()
-    return db.one(
-        con,
-        """
-        SELECT *
-        FROM tournaments
-        WHERE event_date < ?
-        ORDER BY event_date DESC, start_time DESC, id DESC
-        LIMIT 1
-        """,
-        (today,),
-    )
-
-
-def _list_upcoming(con, limit: int = 5) -> list[dict]:
-    today = date.today().isoformat()
-    return db.q(
-        con,
-        """
-        SELECT *
-        FROM tournaments
-        WHERE event_date >= ?
-        ORDER BY event_date ASC, start_time ASC, id ASC
-        LIMIT ?
-        """,
-        (today, int(limit)),
-    )
-
-
-def _list_recent(con, limit: int = 5) -> list[dict]:
-    return db.q(
-        con,
-        """
-        SELECT *
-        FROM tournaments
-        ORDER BY event_date DESC, start_time DESC, id DESC
-        LIMIT ?
-        """,
-        (int(limit),),
-    )
-
-
-def _participants_counts_for(con, tournament_ids: Iterable[int]) -> dict[int, int]:
-    ids = [int(x) for x in tournament_ids if int(x) > 0]
-    if not ids:
-        return {}
-
-    placeholders = ",".join(["?"] * len(ids))
-    rows = db.q(
-        con,
-        f"""
-        SELECT tournament_id, COUNT(*) AS c
-        FROM tournament_participants
-        WHERE tournament_id IN ({placeholders})
-        GROUP BY tournament_id
-        """,
-        tuple(ids),
-    )
-    out: dict[int, int] = {int(r["tournament_id"]): int(r["c"] or 0) for r in rows}
-    return out
 
 
 # -----------------------------------------------------------------------------
@@ -235,80 +112,50 @@ def _list_backups(backup_dir: Path) -> list[dict]:
 # -----------------------------------------------------------------------------
 # Startseite
 # -----------------------------------------------------------------------------
+@bp.app_template_filter("turnierdatum")
+def turnierdatum(value):
+    try:
+        return date.fromisoformat(value).strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return value
+
+
+@bp.get("/datensicherung")
+def backups_page():
+    bdir = current_app.config.get("SKT_BACKUP_DIR")
+    return render_template("backups.html", backup_dir=bdir, backups=_list_backups(Path(bdir)) if bdir else [])
+
+
 @bp.get("/")
 def home():
-    # Backups
-    bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
-    backups: list[dict] = []
-    if bdir:
-        backups = _list_backups(Path(bdir))
-
-    dash = {
-        "tournaments_total": 0,
-        "addresses_total": 0,
-        "addresses_active": 0,
-        "next_tournament": None,
-        "last_tournament": None,
-        "next_participants": 0,
-        "last_participants": 0,
-        "upcoming": [],
-        "recent": [],
-        "counts_by_tid": {},
-    }
-
-    try:
-        with closing(db.connect()) as con, con:
-            dash["tournaments_total"] = _count(con, "SELECT COUNT(*) AS c FROM tournaments")
-
-            ab_id = _default_ab_id(con)
-            dash["addresses_total"] = _count(
-                con,
-                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=?",
-                (ab_id,),
-            )
-            dash["addresses_active"] = _count(
-                con,
-                "SELECT COUNT(*) AS c FROM addresses WHERE addressbook_id=? AND status='aktiv'",
-                (ab_id,),
-            )
-
-            nt = _get_next_tournament(con)
-            lt = _get_last_tournament(con)
-
-            dash["next_tournament"] = nt
-            dash["last_tournament"] = lt
-
-            upcoming = _list_upcoming(con, 5)
-            recent = _list_recent(con, 5)
-
-            dash["upcoming"] = upcoming
-            dash["recent"] = recent
-
-            all_ids = []
-            if nt:
-                all_ids.append(int(nt["id"]))
-            if lt:
-                all_ids.append(int(lt["id"]))
-            all_ids.extend([int(x["id"]) for x in upcoming])
-            all_ids.extend([int(x["id"]) for x in recent])
-
-            counts_by_tid = _participants_counts_for(con, all_ids)
-            dash["counts_by_tid"] = counts_by_tid
-
-            if nt:
-                dash["next_participants"] = int(counts_by_tid.get(int(nt["id"]), 0))
-            if lt:
-                dash["last_participants"] = int(counts_by_tid.get(int(lt["id"]), 0))
-    except Exception:
-        pass
-
-    return render_template(
-        "home.html",
-        backups=backups,
-        backup_dir=bdir,
-        dash=dash,
-        day_label=_day_label,  # Jinja kann die Funktion direkt nutzen
-    )
+    bdir = current_app.config.get("SKT_BACKUP_DIR")
+    backups = _list_backups(Path(bdir)) if bdir else []
+    latest_backup = max(backups, key=lambda backup: backup["mtime"], default=None)
+    today = date.today()
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
+        events = db.q(con, """
+            SELECT t.*, EXISTS(SELECT 1 FROM tournament_rounds r WHERE r.tournament_id=t.id) AS drawn,
+                   (SELECT COUNT(*) FROM tournament_participants p WHERE p.tournament_id=t.id) AS signups
+            FROM tournaments t ORDER BY t.event_date, t.start_time, t.id
+        """)
+        open_events = [event for event in events if not (event["closed_at"] or "").strip()]
+        archive = [event for event in reversed(events) if (event["closed_at"] or "").strip()]
+        upcoming = [event for event in open_events if event["event_date"] >= today.isoformat()]
+        # Ein bereits gespieltes offenes Turnier geht einem zukünftigen Termin vor.
+        active = next((event for event in reversed(open_events)
+                       if event["drawn"] and event["event_date"] <= today.isoformat()), None)
+        if active is None:
+            active = next(iter(upcoming or open_events[::-1] or archive), None)
+        overview = tournament_overview(con, active) if active else None
+        addresses = db.one(con, """
+            SELECT COUNT(*) AS total, COUNT(CASE WHEN status='aktiv' THEN 1 END) AS active
+            FROM addresses WHERE addressbook_id=(SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1)
+        """)
+    return render_template("home.html", today=today.strftime("%d.%m.%Y"), t=active, overview=overview,
+                           upcoming=[e for e in upcoming if e != active][:5],
+                           archive=[e for e in archive if e != active][:5],
+                           addresses=addresses, backup_dir=bdir, backups=backups, latest_backup=latest_backup)
 
 
 # -----------------------------------------------------------------------------
@@ -350,15 +197,15 @@ def backup():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     try:
         target = db.backup_db(Path(bdir))
     except (OSError, sqlite3.Error) as e:
         flash(f"Sicherung fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
     flash(f"Backup erstellt: {target.name}", "ok")
-    return redirect(url_for("home.home"))
+    return redirect(url_for("home.backups_page"))
 
 
 @bp.get("/backup/download/<path:filename>")
@@ -383,25 +230,25 @@ def delete_backup(filename: str):
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     safe_name = Path(filename).name
     if not _is_allowed_backup_name(safe_name):
         flash("Ungültiger Backup-Dateiname.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     backup_path = Path(bdir) / safe_name
     try:
         backup_path.unlink()
     except FileNotFoundError:
         flash("Backup-Datei nicht gefunden.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
     except Exception as e:
         flash(f"Löschen fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     flash(f"Backup gelöscht: {safe_name}", "ok")
-    return redirect(url_for("home.home"))
+    return redirect(url_for("home.backups_page"))
 
 
 @bp.post("/restore/<path:filename>")
@@ -409,12 +256,12 @@ def restore(filename: str):
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     safe_name = Path(filename).name
     if not _is_allowed_backup_name(safe_name):
         flash("Ungültiger Backup-Dateiname.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     return _restore_backup(Path(bdir) / safe_name)
 
@@ -426,11 +273,11 @@ def _restore_backup(backup_path: Path, *, uploaded: bool = False):
         if (pending.get("filename") != backup_path.name
                 or pending.get("token") != request.form["confirmation"]):
             flash("Diese Bestätigung ist nicht mehr gültig. Bitte die Sicherung erneut auswählen.", "error")
-            return redirect(url_for("home.home"))
+            return redirect(url_for("home.backups_page"))
         session.pop("restore_warning")
         if request.form.get("decision") != "restore":
             flash("Wiederherstellung abgebrochen.", "ok")
-            return redirect(url_for("home.home"))
+            return redirect(url_for("home.backups_page"))
         digest = pending["digest"]
         generation = pending["generation"]
 
@@ -446,15 +293,15 @@ def _restore_backup(backup_path: Path, *, uploaded: bool = False):
         return render_template("restore_warning.html", filename=backup_path.name, issues=warning.issues, token=token)
     except FileNotFoundError:
         flash("Backup-Datei nicht gefunden.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
     except Exception as e:
         flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     session.pop("restore_warning", None)
     label = "Upload" if uploaded else "Backup"
     flash(f"{label} wiederhergestellt: {backup_path.name}.", "ok")
-    return redirect(url_for("home.home"))
+    return redirect(url_for("home.backups_page"))
 
 
 def _store_uploaded_backup(backup_dir: Path, upload: FileStorage) -> Path:
@@ -472,7 +319,7 @@ def upload_only():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     backup_dir = Path(bdir)
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -480,21 +327,21 @@ def upload_only():
     f = request.files.get("backup_file")
     if not f or not f.filename:
         flash("Keine Datei ausgewählt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     original = secure_filename(f.filename)
     if not original.lower().endswith(".sqlite3"):
         flash("Ungültige Datei. Erwartet wird eine *.sqlite3-Datei.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     try:
         target_path = _store_uploaded_backup(backup_dir, f)
     except Exception as e:
         flash(f"Upload fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     flash(f"Backup hochgeladen: {target_path.name}", "ok")
-    return redirect(url_for("home.home"))
+    return redirect(url_for("home.backups_page"))
 
 
 @bp.post("/restore-upload")
@@ -502,7 +349,7 @@ def restore_upload():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
         flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     backup_dir = Path(bdir)
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -510,17 +357,17 @@ def restore_upload():
     f = request.files.get("backup_file")
     if not f or not f.filename:
         flash("Keine Datei ausgewählt.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     original = secure_filename(f.filename)
     if not original.lower().endswith(".sqlite3"):
         flash("Ungültige Datei. Erwartet wird eine *.sqlite3-Datei.", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     try:
         target_path = _store_uploaded_backup(backup_dir, f)
     except Exception as e:
         flash(f"Upload fehlgeschlagen: {e}", "error")
-        return redirect(url_for("home.home"))
+        return redirect(url_for("home.backups_page"))
 
     return _restore_backup(target_path, uploaded=True)
