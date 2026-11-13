@@ -1,6 +1,7 @@
-Flask>=3.0,<4.0
+Flask>=3.1.3,<4.0
+Werkzeug>=3.1.9
 markdown
 waitress
 python-docx
-weasyprint
+weasyprint>=70.0
 qrcode[pil]
