@@ -63,6 +63,52 @@ class ParticipantIntegrityTests(unittest.TestCase):
             "tournament_seats", "tournament_scores", "audit_log", "tournaments",
         )]
 
+    def test_roster_controls_follow_capacity_withdrawal_and_tournament_close(self):
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET max_participants=4 WHERE id=1")
+            con.execute("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort)"
+                        " VALUES(1,'Huber','Elke','Aich')")
+        url = self.participants + "?q=Huber"
+
+        def page():
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            return html.fromstring(response.get_data(as_text=True))
+
+        roster = page()
+        self.assertEqual(roster.xpath("//nav[@aria-label='Turniernavigation']/a[@aria-current]/text()"), ["Teilnehmer"])
+        self.assertFalse(roster.xpath("//*[@id='quickAddCard']"))
+        self.assertTrue(roster.xpath("//*[@id='hitsBody']//button[@disabled]"))
+        anna = roster.get_element_by_id("tp1")
+        self.assertEqual(anna.get("data-number"), "1")
+        self.assertEqual(anna.get("data-status"), "active")
+        form, = anna.xpath(".//details//form[contains(@action,'/withdraw')]")
+        self.client.post(form.action, data=dict(form.fields))
+        roster = page()
+        self.assertEqual(roster.get_element_by_id("tp1").get("data-status"), "withdrawn")
+        self.assertTrue(roster.xpath("//*[@id='quickAddCard']//input[@name='wohnort' and @required]"))
+        form, = roster.get_element_by_id("hitsBody").xpath(".//form")
+        self.assertFalse(form.xpath(".//button[@disabled]"))
+        self.client.post(form.action, data=dict(form.fields))
+        self.assertEqual(page().get_element_by_id("tp5").get("data-person"), "Elke Huber Aich")
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET closed_at='2026-11-12 21:00:00' WHERE id=1")
+        closed = page()
+        self.assertFalse(closed.xpath("//form[@method='post']"))
+        self.assertTrue(closed.xpath("//*[@id='tp1']//a[@href='/tournaments/1/players/1']"))
+        self.assertTrue(closed.xpath("//*[@id='participantLog']//*[@data-audit-action='withdraw']"))
+
+    def test_number_check_opens_the_result_with_the_missing_start_number(self):
+        self.client.post(self.participants + "/2/remove")
+        roster = html.fromstring(self.client.get(self.participants).get_data(as_text=True))
+        tools = roster.get_element_by_id("numberTools")
+        self.assertNotIn("open", tools.attrib)
+        form, = tools.xpath(".//form[.//button[normalize-space()='Lücken prüfen']]")
+        checked = self.client.post(form.action, data=dict(form.fields), follow_redirects=True)
+        result = html.fromstring(checked.get_data(as_text=True)).get_element_by_id("numberTools")
+        self.assertIn("open", result.attrib)
+        self.assertIn("Freie Startnummern: 2", result.text_content())
+
     def prepare_correction(self):
         self.draw()
         values = self.form()

@@ -96,3 +96,47 @@
   .sk-heading { margin-bottom: 1rem; }
   .sk-toolbar form { max-width: 100%; }
 }
+
+.sk-roster-layout { display: grid; grid-template-columns: minmax(265px, .85fr) minmax(0, 2fr); align-items: start; gap: 1.4rem; }
+.sk-roster-layout.sk-readonly { grid-template-columns: minmax(0,1fr); }
+.sk-signup .form-label { font-size: .9rem; font-weight: 550; }
+.sk-roster-filters { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.sk-roster-filters label:first-child { flex: 1 1 220px; }
+.sk-participants [hidden] { display: none !important; }
+.sk-quickadd { border-top: 1px solid var(--sk-line); }
+.sk-quickadd > summary { color: var(--sk-blue); }
+.sk-capacity { background: #fff4db; color: var(--sk-amber); border-radius: .5rem; padding: .6rem .8rem; margin: .8rem 0; }
+.sk-person-meta, .sk-hits small { display: block; color: var(--sk-muted); }
+.sk-roster-table td, .sk-hits td, .sk-person-options { overflow-wrap: anywhere; }
+.sk-roster-table thead th { border-top: 1px solid var(--sk-line); }
+.sk-roster-table tbody tr:last-child td { border-bottom: 0; }
+.sk-player-no { display: inline-grid; place-items: center; min-width: 2.25rem; min-height: 2.25rem; padding: .2rem; background: #edf2f6; color: var(--sk-navy); border-radius: .5rem; font-variant-numeric: tabular-nums; }
+.sk-hits .sk-hit:not(.sk-hit-disabled) { cursor: pointer; }
+.sk-hit-disabled { color: var(--sk-muted); }
+.sk-participants .sk-selected > td { background: #f0f5fa; }
+.sk-person-actions summary { cursor: pointer; padding: .45rem .3rem; color: var(--sk-blue); font-size: .9rem; font-weight: 600; }
+.sk-person-options { display: grid; justify-items: start; gap: .55rem; margin-block: .5rem; max-width: 15rem; }
+.sk-person-options .btn { white-space: normal; text-align: left; }
+.sk-person-tools { width: 7.75rem; }
+.sk-person-actions summary { white-space: nowrap; }
+.sk-person-options .btn-outline-warning { color: var(--sk-amber); border-color: #b98d3e; }
+.sk-person-options .btn-outline-warning:hover { background: #fff4db; }
+@media (min-width: 576px) {
+  .sk-roster-table:has(.sk-person-actions[open]) .sk-person-tools { width: 31%; }
+}
+.sk-swap-item.sk-swap-picked { border-color: var(--sk-blue); background: #eaf0f5; }
+.sk-audit-filters .btn-group { flex-wrap: wrap; }
+.sk-correction { max-width: 48rem; }
+@media (max-width: 900px) {
+  .sk-roster-layout { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 575px) {
+  .sk-roster-table { display: block; }
+  .sk-roster-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .sk-roster-table tbody { display: block; }
+  .sk-roster-table tr { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: .35rem .65rem; padding: .75rem 1rem; border-top: 1px solid var(--sk-line); }
+  .sk-roster-table td { padding: 0; border: 0; background: transparent; }
+  .sk-roster-table .sk-selected { background: #f0f5fa; }
+  .sk-roster-table .sk-person-tools { width: auto; grid-column: 2 / -1; }
+  .sk-roster-filters label { width: 100%; }
+}

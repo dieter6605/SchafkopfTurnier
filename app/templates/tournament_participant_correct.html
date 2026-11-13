@@ -1,14 +1,18 @@
 {% extends "layout.html" %}
+{% block title %}Anmeldung berichtigen · {{ tournament.title }}{% endblock %}
+{% block main_class %}sk-workspace{% endblock %}
+{% block tournament_navigation %}{% endblock %}
 {% block content %}
-<h1 class="h3">Anmeldung berichtigen</h1>
-<p>{{ tournament.title }} · Startnummer <strong>{{ player.player_no }}</strong></p>
-
-<div class="card mb-3">
-  <div class="card-body">
-    <div>Bisher eingetragen: <strong>{{ player.vorname }} {{ player.nachname }}</strong> · {{ player.wohnort }} (#{{ player.address_id }})</div>
-    <div>Gewertete Runden: {{ player.rounds }} · Punkte: {{ player.points }} · Soli: {{ player.soli }}</div>
-  </div>
-</div>
+<a class="sk-back" href="{{ roster }}">← Zur Teilnehmerliste</a>
+<div class="sk-heading"><div>
+  <h1>Anmeldung berichtigen</h1>
+  <p class="text-secondary mt-2 mb-0">{{ tournament.title }} · Startnummer {{ player.player_no }}</p>
+</div></div>
+{% include "_tournament_nav.html" %}
+<section class="sk-panel sk-pad sk-correction">
+<h2>{{ player.vorname }} {{ player.nachname }}</h2>
+<p class="text-secondary">{{ player.wohnort }} · Adresse #{{ player.address_id }}</p>
+<p>Gewertete Runden: {{ player.rounds }} · Punkte: {{ player.points }} · Soli: {{ player.soli }}</p>
 <p>Wähle die Person, die von Anfang an unter dieser Startnummer gespielt hat.
    Alle bisherigen Sitzplätze, Punkte und Soli dieser Startnummer werden ihr zugeordnet.</p>
 
@@ -32,4 +36,5 @@
   <button class="btn btn-primary" type="submit" {% if not candidates %}disabled{% endif %}>Berichtigung speichern</button>
   <a class="btn btn-outline-secondary" href="{{ roster }}">Abbrechen</a>
 </form>
+</section>
 {% endblock %}

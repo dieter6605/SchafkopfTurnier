@@ -46,38 +46,22 @@ Beim Löschen eines offenen Turniers werden seine Anmeldungen, Runden, Ergebniss
 
 ## 3. Teilnehmer erfassen
 
-Teilnehmer hinzufügen
-- Button „Teilnehmer erfassen“
-- Im Adressbuch suchen (Name / Wohnort)
-- Übernehmen klicken
-    → Teilnehmer erhält automatisch eine Nummer
+Im Turnier **Teilnehmer** öffnen. Oben stehen die Zahl aller Anmeldungen, die aktiven und abgemeldeten Spieler sowie die möglichen Vierertische.
 
-**Quick-Add (neue Teilnehmer)**
-- Alt + N oder Button „Quick-Add“
-- Pflichtfelder:
-    - Nachname
-	- Vorname
-	- Wohnort
-	- „Anlegen + übernehmen“
+- **Aus dem Adressbuch anmelden.** Unter „Person anmelden“ nach Name oder Wohnort suchen. Beim passenden Treffer „Anmelden“ wählen. Die Person erhält automatisch eine freie Startnummer.
+- **Neue Person anlegen.** Unter der Adressbuchsuche „Neue Person anlegen“ öffnen und Nachname, Vorname und Wohnort eintragen. „Anlegen und anmelden“ speichert die Adresse und meldet die Person zum Turnier an.
+- **Angemeldete Person finden.** Im Suchfeld der Teilnehmerliste nach Startnummer, Name oder Wohnort filtern. Die Auswahl „Abgemeldete“ zeigt die Spieler, die für weitere Auslosungen abgemeldet wurden. Unter „Aktionen“ stehen die für die Startnummer verfügbaren Funktionen und die Spielerkarte.
+- **Änderungen nachvollziehen.** Unter der Liste das Teilnehmerprotokoll aufklappen. Dort lässt sich auch nach einer Begründung suchen.
 
-## 4. Teilnehmernummern prüfen
+## 4. Startnummern prüfen
 
-Im Bereich „Teilnehmernummern“:
-- Prüfen
-    → zeigt, ob Nummern fehlen (Lücken)
-- Neu durchnummerieren (1..N)
-    → alle Teilnehmer neu sortiert
-- Renummerieren ab Nr. X
-    → Nummern darunter bleiben unverändert
-
-***Hinweis:***
-Beim Entfernen eines Teilnehmers bleibt standardmäßig eine Nummernlücke bestehen.
+Unter „Startnummern verwalten“ zeigt „Lücken prüfen“ die freien Nummern. „Alle neu nummerieren“ ordnet die Startnummern lückenlos. Für eine teilweise Neuvergabe die erste betroffene Nummer eingeben und „Ab dieser Nummer ordnen“ wählen.
 
 ## 5. Teilnehmer abmelden, entfernen oder tauschen
 
 **Wenn ein Spieler das Turnier vorzeitig verlässt**
 
-Unter „Teilnehmer erfassen“ in der Zeile des Spielers „Für weitere Auslosungen abmelden“ wählen und bestätigen. Die Teilnehmerliste zeigt dann „Abgemeldet“. Die Startnummer, bereits ausgeloste Sitzplätze und alle erspielten Punkte und Soli bleiben erhalten. Für einen bereits ausgelosten Tisch können die Ergebnisse weiterhin eingetragen werden.
+Unter „Teilnehmer“ in der Zeile des Spielers „Aktionen“ öffnen, „Für weitere Auslosungen abmelden“ wählen und bestätigen. Die Teilnehmerliste zeigt dann „Abgemeldet“. Die Startnummer, bereits ausgeloste Sitzplätze und alle erspielten Punkte und Soli bleiben erhalten. Für einen bereits ausgelosten Tisch können die Ergebnisse weiterhin eingetragen werden.
 
 Jede spätere Auslosung berücksichtigt nur aktive Spieler. Das gilt für Zufall, Setzliste und die erneute Auslosung einer Runde ohne Ergebnisse. Fehlt ein Spieler für einen vollständigen Vierertisch, eine Ersatzperson als neuen Teilnehmer mit eigener Startnummer anmelden.
 
@@ -86,8 +70,8 @@ Teilnehmer entfernen
 - Button „Entfernen“
 - Nummer bleibt frei (keine automatische Renummerierung)
 
-Teilnehmer ersetzen (Swap)
-- „Swap…“ öffnen und die Zielperson wählen. Bei einem Tausch behalten die Startnummern ihre Sitzplätze. Der neue Name gilt für alle bisherigen Sitzpläne dieser Anmeldung.
+Teilnehmer ersetzen oder tauschen
+- Unter „Aktionen“ den Eintrag „Ersetzen oder tauschen“ öffnen und die Zielperson wählen. Bei einem Tausch behalten die Startnummern ihre Sitzplätze. Der neue Name gilt für alle bisherigen Sitzpläne dieser Anmeldung.
 - Sobald eine der beteiligten Anmeldungen ein Ergebnis hat oder abgemeldet ist, ist der Tausch gesperrt.
 - Vor dem Abschluss zeigt die Turnierübersicht den ersten Tisch mit fehlenden oder fehlerhaften Angaben. Jeder Tisch braucht die Sitze A bis D, vier passende Ergebnisse, eine Punktesumme von null und gültige Soli (ganze Zahlen ab null).
 
@@ -97,7 +81,7 @@ Teilnehmer ersetzen (Swap)
 
 **Falsche Person nach der ersten Wertung berichtigen**
 
-1. Unter „Teilnehmer erfassen“ bei der betroffenen Startnummer **Anmeldung berichtigen** wählen. Startnummer, bisherige Person, Punkte und Soli mit dem Tischblatt vergleichen.
+1. Unter „Teilnehmer“ bei der betroffenen Startnummer „Aktionen“ öffnen und **Anmeldung berichtigen** wählen. Startnummer, bisherige Person, Punkte und Soli mit dem Tischblatt vergleichen.
 2. Die Person auswählen, die von Anfang an unter dieser Nummer gespielt hat. Sie braucht einen Adressbucheintrag und darf in diesem Turnier keine zweite Startnummer haben.
 3. Den Grund eintragen und **Berichtigung speichern** wählen. Gesamtwertung, Exporte und Nachdrucke zeigen die richtige Person. Das Teilnehmerprotokoll hält die bisherigen und die neuen Personalien, die Startnummer, den Wertungsstand und die Begründung fest.
 
@@ -198,8 +182,8 @@ Am Helfergerät dasselbe Vereins-WLAN verwenden, die Adresse öffnen, den Code e
 ## 10. Tastatur-Shortcuts (wichtig!)
 
 Allgemein
-- Alt + N → Quick-Add
-- Esc → Quick-Add schließen
+- Alt + N → „Neue Person anlegen“
+- Esc → „Neue Person anlegen“ schließen
 
 Teilnehmerliste
 - ↑ / ↓ → Auswahl bewegen
