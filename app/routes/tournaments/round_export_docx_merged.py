@@ -539,7 +539,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             heights_mm[rix + 1] = game_h  # no-op safety
             heights_mm[23] = sum_h
             heights_mm[24] = bottom_h
-            heights_mm[25] = 14.0  # Platz für die mehrzeilige Soli-Beschriftung
+            heights_mm[25] = bottom_h
             dashed_rows = list(range(3, 23)) + [23]
 
         for rix, row in enumerate(tbl.rows):
@@ -740,7 +740,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             label = soli.cells[0]
             _set_cell_shading(label, fill=SHADE_BOTTOM)
             label.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            _set_cell_paragraph(label, "Anzahl der Soli je Spieler", align=WD_ALIGN_PARAGRAPH.LEFT, pt=10, bold=True)
+            _set_cell_paragraph(label, "Anzahl Soli", align=WD_ALIGN_PARAGRAPH.LEFT, pt=10, bold=True)
 
     for idx, table in enumerate(tables):
         _add_tablesheet_page(table, page_no=1, new_page=idx > 0)

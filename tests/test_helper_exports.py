@@ -115,11 +115,15 @@ class HelperExportTests(unittest.TestCase):
             document = etree.fromstring(archive.read("word/document.xml"))
         ns = {"w": document.nsmap["w"]}
         first, second = document.xpath("//w:body/w:tbl", namespaces=ns)
-        label = "Anzahl der Soli je Spieler"
+        label = "Anzahl Soli"
         self.assertNotIn(label, first.xpath(".//w:t/text()", namespaces=ns))
         total, soli = second.xpath("./w:tr", namespaces=ns)[-2:]
         self.assertEqual(total.xpath("./w:tc[1]//w:t/text()", namespaces=ns), ["Gesamt"])
         self.assertEqual(soli.xpath(".//w:t/text()", namespaces=ns), [label])
+        height = "./w:trPr/w:trHeight[@w:hRule='exact']/@w:val"
+        total_height = total.xpath(height, namespaces=ns)
+        self.assertEqual(len(total_height), 1)
+        self.assertEqual(soli.xpath(height, namespaces=ns), total_height)
         fields = soli.xpath("./w:tc[position() > 1]", namespaces=ns)
         self.assertEqual(len(fields), 4)
         for field in fields:
