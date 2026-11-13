@@ -501,18 +501,6 @@ def tournament_export_zip(tournament_id: int):
         scores_count = int(scores_count_row["c"] or 0) if scores_count_row else 0
         expected_scores = _scores_expected_count(con, tournament_id)
 
-        winner = None
-        if overall_q and not score_issue:
-            w = overall_q[0]
-            winner = {
-                "nr": int(w["player_no"]),
-                "nachname": w["nachname"],
-                "vorname": w["vorname"],
-                "wohnort": w["wohnort"],
-                "points": int(w["points"]),
-                "soli": int(w["soli"]),
-            }
-
         ts_export = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         readme_lines: list[str] = []
@@ -550,12 +538,16 @@ def tournament_export_zip(tournament_id: int):
                 total = sum(row[field] for row in overall_q)
                 average = total / participants_count if participants_count else 0
                 readme_lines.append(f"Summe {label}: {total} (Ø {average:.2f} pro Teilnehmer)")
-        if winner:
-            readme_lines.append(
-                "Sieger:           "
-                f"#{winner['nr']} {winner['nachname']} {winner['vorname']} ({winner['wohnort']}) "
-                f"– {winner['points']} Punkte, {winner['soli']} Soli"
-            )
+        if not score_issue:
+            winners = [row for row in overall_q if overall_place_by_tp.get(row["tp_id"]) == 1]
+            if len(winners) > 1:
+                readme_lines.append(f"Geteilter 1. Platz ({len(winners)} Personen):")
+            for row in winners:
+                prefix = "Sieger:           " if len(winners) == 1 else "  "
+                readme_lines.append(
+                    f"{prefix}#{row['player_no']} {row['nachname']} {row['vorname']} ({row['wohnort']}) "
+                    f"– {row['points']} Punkte, {row['soli']} Soli"
+                )
         readme_lines.append("")
         readme_lines.append("Inhalt des ZIP")
         readme_lines.append("-" * 30)

@@ -74,6 +74,44 @@ class HelperExportTests(unittest.TestCase):
                 for private in (self.contact, "Privatort", "Musterweg", "4B", "+49 123", "Intern-Organisation", "Vertraulich"):
                     self.assertNotIn(private, payload.decode("utf-8-sig"))
 
+    def test_summary_lists_every_player_sharing_first_place(self):
+        cases = [
+            ((10, 10, -10, -10), (2, 2, 0, 0), [1, 1, 3, 3]),
+            ((10, 10, -10, -10), (1, 2, 0, 0), [2, 1, 3, 3]),
+            ((0, 0, 0, 0), (0, 0, 0, 0), [1, 1, 1, 1]),
+        ]
+        for points, soli, places in cases:
+            with self.subTest(places=places):
+                with closing(db.connect()) as con, con:
+                    con.execute("UPDATE tournaments SET closed_at='2026-11-13'")
+                    con.executemany("UPDATE tournament_scores SET points=?, soli=? WHERE tp_id=?",
+                                    [(p, s, number) for number, (p, s) in enumerate(zip(points, soli), 1)])
+                with ZipFile(BytesIO(self.get(self.base + "/export.zip").data)) as archive:
+                    rows = records(archive.read("03_gesamtuebersicht.csv"))
+                    ranks = {int(row["nr"]): int(row["platz_gesamt"]) for row in rows}
+                    self.assertEqual(ranks, dict(enumerate(places, 1)))
+                    summary = archive.read("README.txt").decode().split("Inhalt des ZIP")[0]
+                tied = [number for number, place in enumerate(places, 1) if place == 1]
+                self.assertEqual(summary.count("Geteilter 1. Platz"), int(len(tied) > 1))
+                self.assertEqual(summary.count("Sieger:"), int(len(tied) == 1))
+                for row in rows:
+                    number = int(row["nr"])
+                    entry = (f"#{number} {self.family} {row['vorname']} (Oberdorf) "
+                             f"– {points[number - 1]} Punkte, {soli[number - 1]} Soli")
+                    self.assertEqual(summary.count(entry), int(number in tied))
+
+    def test_provisional_tie_has_no_winner_in_summary(self):
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournament_scores SET points=CASE WHEN tp_id<=2 THEN 11 ELSE -10 END")
+        with ZipFile(BytesIO(self.get(self.base + "/export.zip").data)) as archive:
+            rows = records(archive.read("03_gesamtuebersicht.csv"))
+            self.assertEqual({r["nr"] for r in rows if r["platz_gesamt"] == "1"}, {"1", "2"})
+            summary = archive.read("README.txt").decode()
+            self.assertIn("Vorläufige Platzierungen.", summary)
+            self.assertIn("Die Punktesumme beträgt 2 und muss 0 sein.", summary)
+            self.assertNotIn("Geteilter 1. Platz", summary)
+            self.assertNotIn("Sieger:", summary)
+
     def test_internal_zip_retains_contacts_and_spreadsheet_text_protection(self):
         response = self.get(self.base + "/export.zip")
         self.assertIn("Turnierleitung", response.headers["Content-Disposition"])
