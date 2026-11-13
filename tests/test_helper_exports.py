@@ -109,6 +109,22 @@ class HelperExportTests(unittest.TestCase):
             for invalid in ("?ausgabe=andere", "?ausgabe=helfer&ausgabe=leitung"):
                 self.assertEqual(self.client.get(path + invalid).status_code, 400)
 
+    def test_soli_fields_follow_total_on_second_page(self):
+        response = self.get(self.round + "/tablesheets-docx/1")
+        with ZipFile(BytesIO(response.data)) as archive:
+            document = etree.fromstring(archive.read("word/document.xml"))
+        ns = {"w": document.nsmap["w"]}
+        first, second = document.xpath("//w:body/w:tbl", namespaces=ns)
+        label = "Anzahl der Soli je Spieler"
+        self.assertNotIn(label, first.xpath(".//w:t/text()", namespaces=ns))
+        total, soli = second.xpath("./w:tr", namespaces=ns)[-2:]
+        self.assertEqual(total.xpath("./w:tc[1]//w:t/text()", namespaces=ns), ["Gesamt"])
+        self.assertEqual(soli.xpath(".//w:t/text()", namespaces=ns), [label])
+        fields = soli.xpath("./w:tc[position() > 1]", namespaces=ns)
+        self.assertEqual(len(fields), 4)
+        for field in fields:
+            self.assertEqual(field.xpath("./w:tcPr/w:gridSpan/@w:val", namespaces=ns), ["2"])
+
     def test_download_choices_and_address_interchange(self):
         page = html.fromstring(self.get(self.base).get_data(as_text=True))
         for tail in ("/helfer.zip","/export.zip"):

@@ -539,6 +539,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             heights_mm[rix + 1] = game_h  # no-op safety
             heights_mm[23] = sum_h
             heights_mm[24] = bottom_h
+            heights_mm[25] = 14.0  # Platz für die mehrzeilige Soli-Beschriftung
             dashed_rows = list(range(3, 23)) + [23]
 
         for rix, row in enumerate(tbl.rows):
@@ -668,8 +669,9 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
             c.text = ""
             c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    def _add_tablesheet_page(table: TableInfo, *, page_no: int) -> None:
+    def _add_tablesheet_page(table: TableInfo, *, page_no: int, new_page: bool) -> None:
         p = doc.add_paragraph()
+        p.paragraph_format.page_break_before = new_page
         try:
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(12)
@@ -718,7 +720,7 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 bottom_label_pt=10,
             )
         else:
-            tbl = doc.add_table(rows=25, cols=9)
+            tbl = doc.add_table(rows=26, cols=9)
             _apply_table_layout(tbl, page_no=2)
             _fill_header_row(tbl, table, include_email=False)
             _fill_carry_in_row(tbl, row_index=1)
@@ -733,12 +735,16 @@ def _build_merged_docx(*, tournament_title: str, round_no: int, tables: list[Tab
                 bottom_label_pt=12,
             )
 
+            soli = tbl.rows[25]
+            _merge_pairs(soli)
+            label = soli.cells[0]
+            _set_cell_shading(label, fill=SHADE_BOTTOM)
+            label.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            _set_cell_paragraph(label, "Anzahl der Soli je Spieler", align=WD_ALIGN_PARAGRAPH.LEFT, pt=10, bold=True)
+
     for idx, table in enumerate(tables):
-        _add_tablesheet_page(table, page_no=1)
-        doc.add_page_break()
-        _add_tablesheet_page(table, page_no=2)
-        if idx < len(tables) - 1:
-            doc.add_page_break()
+        _add_tablesheet_page(table, page_no=1, new_page=idx > 0)
+        _add_tablesheet_page(table, page_no=2, new_page=True)
 
     buf = io.BytesIO()
     doc.save(buf)
