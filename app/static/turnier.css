@@ -191,3 +191,49 @@
   .sk-entry-table .sk-conflict-values { grid-column: 1 / -1; }
   .sk-round-ranking td, .sk-round-ranking th { padding: .55rem .42rem; }
 }
+
+.sk-overall-status span { color: var(--sk-ink); font-size: 1.05rem; }
+.sk-overall .sk-round-notice a { display: inline-block; margin-left: .4rem; }
+.sk-overall-ranking > .sk-heading { margin: 0; }
+.sk-overall-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: 0 1.6rem 1.2rem; }
+.sk-overall-filter input { max-width: 24rem; }
+.sk-overall-table { font-variant-numeric: tabular-nums; }
+.sk-overall-table td, .sk-overall-table th { vertical-align: top; }
+.sk-overall-table th { border-top: 1px solid var(--sk-line); }
+.sk-overall-table td { overflow-wrap: anywhere; }
+.sk-overall-table tr:last-child td { border-bottom: 0; }
+.sk-overall-place { display: inline-block; padding: .12rem .5rem; border-radius: .45rem; background: #edf2f6; color: var(--sk-navy); font-weight: 650; }
+.sk-overall-place.sk-first-place { background: #eaf3ed; color: var(--sk-green); }
+.sk-place-note { display: block; color: var(--sk-muted); }
+.sk-overall-table .sk-points { font-weight: 700; }
+.sk-overall-person { width: 49%; }
+.sk-overall-person > a { text-decoration: none; }
+.sk-overall-person > a:hover { text-decoration: underline; }
+.sk-mobile-number { display: none; }
+.sk-overall-rounds { font-size: .86rem; }
+.sk-overall-rounds summary { color: var(--sk-blue); cursor: pointer; width: fit-content; padding-block: .3rem; }
+.sk-overall-rounds ul { list-style: none; padding: .25rem .7rem; margin: .2rem 0; border-left: 2px solid var(--sk-line); }
+.sk-overall-rounds li { display: flex; flex-wrap: wrap; gap: .1rem .7rem; padding-block: .15rem; }
+@media screen {
+  .sk-overall-table .sk-filtered-out { display: none; }
+}
+@media screen and (max-width: 650px) {
+  .sk-overall-filter { padding-inline: 1.15rem; }
+  .sk-overall-table td, .sk-overall-table th { padding: .65rem .38rem; }
+  .sk-overall-table { font-size: .93rem; table-layout: fixed; }
+  .sk-overall-table th:first-child { width: 16%; }
+  .sk-overall-table th:nth-child(3) { width: 49%; }
+  .sk-overall-table .sk-overall-number { display: none; }
+  .sk-mobile-number { display: inline; }
+  .sk-overall-rounds li { display: block; }
+  .sk-overall-rounds li span { display: block; }
+}
+@media print {
+  .sk-overall .sk-heading { margin-bottom: .5rem; }
+  .sk-overall .sk-overall-ranking { border: 0; }
+  .sk-overall-ranking > .sk-pad { padding: 0; }
+  .sk-overall-table thead { display: table-header-group; }
+  .sk-overall-table tr { break-inside: avoid; }
+  .sk-overall-table td, .sk-overall-table th { padding: .3rem .5rem; }
+  .sk-overall-table a, .sk-overall-place { color: black !important; }
+}

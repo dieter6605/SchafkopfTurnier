@@ -1,289 +1,87 @@
-{# app/templates/tournament_standings.html #}
 {% extends "layout.html" %}
+{% block title %}Gesamtwertung · {{ t.title }}{% endblock %}
+{% block main_class %}sk-workspace sk-overall{% endblock %}
+{% block tournament_navigation %}{% endblock %}
 {% block content %}
-
-<style>
-  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
-  .sk-card {
-    border: 1px solid rgba(0,0,0,.06);
-    border-radius: 14px;
-    box-shadow: 0 1px 10px rgba(0,0,0,.04);
-  }
-
-  .sk-headline {
-    font-weight: 900;
-    letter-spacing: .2px;
-  }
-
-  /* Platz-Badge */
-  .sk-place {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    height: 32px;
-    padding: 0 10px;
-    border-radius: 999px;
-    font-weight: 900;
-  }
-  .sk-place-1 { background: rgba(255, 193, 7, .18); color: #8a6a00; border: 1px solid rgba(255,193,7,.35); }
-  .sk-place-2 { background: rgba(13,110,253,.12); color: #0b4fb8; border: 1px solid rgba(13,110,253,.25); }
-  .sk-place-3 { background: rgba(25,135,84,.12); color: #0d5f38; border: 1px solid rgba(25,135,84,.25); }
-  .sk-place-x { background: rgba(108,117,125,.12); color: #495057; border: 1px solid rgba(108,117,125,.22); }
-
-  /* Row-Highlight für Top 3 */
-  .sk-row-top1 { background: linear-gradient(90deg, rgba(255,193,7,.18), transparent 55%); }
-  .sk-row-top2 { background: linear-gradient(90deg, rgba(13,110,253,.12), transparent 55%); }
-  .sk-row-top3 { background: linear-gradient(90deg, rgba(25,135,84,.12), transparent 55%); }
-
-  /* Punkte/Soli Darstellung */
-  .sk-score {
-    display: inline-flex;
-    gap: .5rem;
-    align-items: baseline;
-    justify-content: flex-end;
-    width: 100%;
-  }
-  .sk-points {
-    font-weight: 900;
-    font-size: 1.05rem;
-  }
-  .sk-soli {
-    font-weight: 800;
-    opacity: .75;
-  }
-
-  /* Runden-Badges */
-  .sk-rnd {
-    display: inline-flex;
-    gap: .35rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-  .sk-rnd .badge {
-    font-weight: 800;
-    border: 1px solid rgba(0,0,0,.08);
-  }
-
-  /* Vollständigkeit */
-  .sk-progress {
-    height: 10px;
-    border-radius: 999px;
-    overflow: hidden;
-    background: rgba(0,0,0,.06);
-  }
-  .sk-progress > div {
-    height: 100%;
-    width: 0%;
-  }
-  .sk-muted { color: rgba(0,0,0,.55); }
-
-  /* Sticky header on wide tables */
-  .sk-sticky thead th {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: var(--bs-body-bg);
-    box-shadow: 0 1px 0 rgba(0,0,0,.06);
-  }
-
-  /* Link-Styling für Spieler */
-  .sk-playerlink {
-    color: inherit;
-    text-decoration: none;
-  }
-  .sk-playerlink:hover {
-    text-decoration: underline;
-  }
-
-  @media (max-width: 992px) {
-    .sk-hide-md { display: none !important; }
-  }
-</style>
-
-<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+{% set closed = (t.closed_at or '')|trim != '' %}
+{% set provisional = score_issue and (rounds_count or closed) %}
+{% set final = closed and not score_issue %}
+<a class="sk-back no-print" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">← {{ t.title }}</a>
+<div class="sk-heading">
   <div>
-    <h3 class="sk-headline mb-0">Gesamtwertung</h3>
-    <div class="text-muted small">
-      {{ t.title }} · {{ t.event_date }} · {{ t.start_time }}
-      {% if now %}· Stand: <span class="sk-mono">{{ now }}</span>{% endif %}
-    </div>
+    <h1>Gesamtwertung</h1>
+    <strong class="print-only">{{ t.title }}</strong>
+    <p class="text-secondary mt-2 mb-0">{{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr{% if t.location %} · {{ t.location }}{% endif %}</p>
   </div>
-
-  <div class="d-flex gap-2 flex-wrap">
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">
-      Turnier
-    </a>
-    <a class="btn btn-outline-secondary"
-       href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=1) }}">
-      Runde 1
-    </a>
-  </div>
+  <span class="sk-badge {{ 'done' if final else 'open' if provisional else 'closed' }}">{{ 'Endstand' if final else 'Vorläufiger Endstand' if closed else 'Zwischenstand' }}</span>
 </div>
+{% include "_tournament_nav.html" %}
 
-{# --- Vollständigkeit / Status --- #}
-{% set exp = (expected_scores|default(0))|int %}
-{% set act = (scores_count|default(0))|int %}
-{% set pct = 0 %}
-{% if exp > 0 %}
-  {% set pct = ((act * 100) // exp)|int %}
+<section class="sk-stats sk-panel no-print" aria-label="Erfassungsstand">
+  <div><span>Teilnehmer</span><strong>{{ participants_count }}</strong></div>
+  <div><span>Ausgeloste Runden</span><strong>{{ rounds_count }}</strong></div>
+  <div><span>Spielerergebnisse</span><strong>{{ scores_count }} <small>von {{ expected_scores }}</small></strong></div>
+  <div><span>Erfassung</span><strong class="sk-overall-status">
+    {% if not rounds_count %}<span>Noch keine Runde</span>
+    {% elif not score_issue %}<span>Vollständig</span>
+    {% elif scores_count < expected_scores %}<span>Unvollständig</span>
+    {% else %}<span>Wertung prüfen</span>{% endif %}
+  </strong></div>
+</section>
+{% if provisional %}
+<p class="sk-round-notice"><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}
+  {% if rounds_count %}<a class="no-print" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='runden') }}">Runden &amp; Ergebnisse öffnen</a>{% endif %}
+</p>
 {% endif %}
 
-<div class="card sk-card mb-3">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-      <div>
-        <div class="fw-semibold">Erfassungsstatus</div>
-        <div class="small sk-muted">
-          Teilnehmer: <span class="sk-mono">{{ participants_count|default(0) }}</span> ·
-          Runden: <span class="sk-mono">{{ rounds_count|default(0) }}</span> ·
-          erwartete Einträge: <span class="sk-mono">{{ exp }}</span>
-        </div>
-      </div>
-
-      <div class="text-end">
-        {% if not rounds_count %}
-          <span class="badge text-bg-secondary">Noch keine Runden ausgelost</span>
-        {% else %}
-          {% if not score_issue %}
-            <span class="badge text-bg-success">Vollständig</span>
-          {% elif act < exp %}
-            <span class="badge text-bg-warning">Unvollständig</span>
-          {% else %}
-            <span class="badge text-bg-warning">Wertung prüfen</span>
-          {% endif %}
-          {% if exp > 0 %}
-          <div class="small sk-muted mt-1">
-            erfasst: <span class="sk-mono">{{ act }}</span>/<span class="sk-mono">{{ exp }}</span> ({{ pct }}%)
-          </div>
-          {% endif %}
-        {% endif %}
-      </div>
+<section class="sk-panel sk-overall-ranking" aria-labelledby="rankingHeading">
+  <div class="sk-pad sk-heading">
+    <div>
+      <h2 id="rankingHeading">{{ 'Vorläufige Rangliste' if provisional else 'Rangliste' }}</h2>
+      <p class="small text-secondary mt-1 mb-0">{% if not scores_count %}Bisher wurden keine Ergebnisse erfasst.{% else %}Bei Punktgleichheit entscheiden die Soli. Stimmen beide Werte überein, gilt derselbe Platz.{% endif %}</p>
     </div>
-
-    {% if exp > 0 %}
-      <div class="sk-progress mt-2" aria-label="Fortschritt Ergebniserfassung">
-        <div class="{% if score_issue %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ pct }}%;"></div>
-      </div>
-    {% endif %}
-    {% if score_issue and (rounds_count or t.closed_at) %}
-      <p class="mt-2 mb-0"><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>
-    {% endif %}
+    {% if rows %}<button class="btn btn-outline-secondary" type="button" onclick="window.print()">Gesamtwertung drucken</button>{% endif %}
   </div>
-</div>
-
-<div class="card sk-card">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-      <div class="fw-semibold">{{ "Vorläufige Rangliste" if score_issue else "Rangliste" }}</div>
-      <div class="small sk-muted">
-        Sortierung: Punkte ↓ · Soli ↓ · Name
-      </div>
-    </div>
-
-    <div class="table-responsive sk-sticky">
-      <table class="table table-hover align-middle mb-0">
-        <thead>
-          <tr>
-            <th style="width:90px;">Platz</th>
-            <th style="width:80px;">Nr</th>
-            <th>Name</th>
-            <th class="text-end" style="width:160px;">Punkte / Soli</th>
-            <th class="text-end sk-hide-md">Runden</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in rows %}
-            {% set p = r.place %}
-            {% set rowcls = "" %}
-            {% if p == 1 %}{% set rowcls = "sk-row-top1" %}{% endif %}
-            {% if p == 2 %}{% set rowcls = "sk-row-top2" %}{% endif %}
-            {% if p == 3 %}{% set rowcls = "sk-row-top3" %}{% endif %}
-
-            {# ✅ robust: tp_id kann fehlen, wenn standings.py es nicht mitliefert #}
-            {% set _tp_id = (r.tp_id if (r is mapping and 'tp_id' in r) else None) %}
-
-            <tr class="{{ rowcls }}">
-              <td>
-                {% if r.place is none %}
-                  <span class="text-muted">–</span>
-                {% elif p == 1 %}
-                  <span class="sk-place sk-place-1">#1</span>
-                {% elif p == 2 %}
-                  <span class="sk-place sk-place-2">#2</span>
-                {% elif p == 3 %}
-                  <span class="sk-place sk-place-3">#3</span>
-                {% else %}
-                  <span class="sk-place sk-place-x">#{{ p }}</span>
-                {% endif %}
-              </td>
-
-              <td class="sk-mono fw-semibold">
-                {{ r.player_no }}
-              </td>
-
-              <td>
-                <div class="fw-semibold">
-                  {% if _tp_id %}
-                    <a class="sk-playerlink"
-                       href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=_tp_id) }}"
-                       title="Spielerkarte öffnen">
-                      {{ r.nachname }}, {{ r.vorname }}
-                    </a>
-                  {% else %}
-                    {{ r.nachname }}, {{ r.vorname }}
-                  {% endif %}
-                </div>
-                <div class="small text-muted">
-                  {{ r.wohnort }}
-                </div>
-              </td>
-
-              <td class="text-end">
-                <div class="sk-score">
-                  <span class="sk-points sk-mono">{{ r.points if r.points is not none else "nicht berechenbar" }}</span>
-                  <span class="sk-soli sk-mono">· S {{ r.soli if r.soli is not none else "nicht berechenbar" }}</span>
-                </div>
-              </td>
-
-              <td class="text-end sk-hide-md">
-                <div class="sk-rnd">
-                  {% for rn in round_numbers %}
-                    {% set rr = (r.rounds.get(rn) if (r.rounds is defined and r.rounds) else None) %}
-                    {% if rr %}
-                      <span class="badge text-bg-light sk-mono"
-                            title="R{{ rn }}: {{ rr.points }} Punkte, {{ rr.soli }} Soli">
-                        R{{ rn }}: {{ rr.points }}
-                      </span>
-                    {% else %}
-                      <span class="badge text-bg-secondary sk-mono"
-                            title="R{{ rn }}: noch kein Ergebnis">
-                        R{{ rn }}: –
-                      </span>
-                    {% endif %}
-                  {% endfor %}
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-
-          {% if not rows or rows|length == 0 %}
-            <tr>
-              <td colspan="5" class="text-muted">
-                Keine Teilnehmer gefunden.
-              </td>
-            </tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="small sk-muted mt-2">
-      Hinweis: Auf kleineren Bildschirmen wird die Runden-Detailspalte ausgeblendet.
-    </div>
+  {% if rows %}
+  <div id="standingsFilter" class="sk-overall-filter no-print" hidden>
+    <label for="standingsQuery" class="visually-hidden">Rangliste durchsuchen</label>
+    <input id="standingsQuery" type="search" class="form-control" placeholder="Startnummer, Name oder Wohnort" aria-controls="standingsTable">
+    <span id="standingsMatches" class="small text-secondary" role="status"></span>
   </div>
-</div>
-
+  <table id="standingsTable" class="table sk-list sk-overall-table mb-0" aria-labelledby="rankingHeading">
+    <thead><tr><th scope="col">Platz</th><th scope="col" class="sk-overall-number">Nr.</th><th scope="col">Spieler</th><th scope="col" class="text-end">Punkte</th><th scope="col" class="text-end">Soli</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr data-number="{{ r.player_no }}" data-person="{{ r.vorname }} {{ r.nachname }} {{ r.wohnort }}">
+        <td><span class="sk-overall-place{% if final and r.place == 1 %} sk-first-place{% endif %}">{{ '#' ~ r.place if r.place is not none else '–' }}</span>
+          {% if scores_count and r.shared_place %}<small class="sk-place-note">geteilt</small>{% endif %}
+        </td>
+        <td class="sk-overall-number">{{ r.player_no }}</td>
+        <td class="sk-overall-person">
+          <a href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=r.tp_id) }}"><strong>{{ r.vorname }} {{ r.nachname }}</strong></a>
+          <small class="sk-person-meta"><span class="sk-mobile-number">Nr. {{ r.player_no }}{% if r.wohnort %} · {% endif %}</span>{{ r.wohnort }}</small>
+          {% if round_numbers %}
+          <details class="sk-overall-rounds no-print">
+            <summary>Rundenwerte<span class="visually-hidden"> für Nr. {{ r.player_no }}</span></summary>
+            <ul>{% for rn in round_numbers %}
+              {% set score = r.rounds.get(rn) %}
+              <li><strong>Runde {{ rn }}</strong> <span>{% if score %}{{ score.points }} Punkte · {{ score.soli }} Soli{% else %}Kein Ergebnis{% endif %}</span></li>
+            {% endfor %}</ul>
+          </details>
+          {% endif %}
+        </td>
+        <td class="text-end"><span class="sk-points">{{ r.points if r.points is not none else 'nicht berechenbar' }}</span></td>
+        <td class="text-end"><span>{{ r.soli if r.soli is not none else 'nicht berechenbar' }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sk-pad pt-0 mb-0">Für dieses Turnier sind noch keine Teilnehmer angemeldet.</p>
+  {% endif %}
+</section>
+<p class="small text-secondary mt-3">Stand vom {{ now[:10]|turnierdatum }} um {{ now[11:16] }} Uhr</p>
+{% endblock %}
+{% block scripts %}
+<script defer src="{{ url_for('static', filename='js/standings.js') }}"></script>
 {% endblock %}

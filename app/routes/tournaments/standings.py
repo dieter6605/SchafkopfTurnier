@@ -1,6 +1,7 @@
 # app/routes/tournaments/standings.py
 from __future__ import annotations
 
+from collections import Counter
 from contextlib import closing
 from flask import flash, redirect, render_template, url_for
 
@@ -48,6 +49,7 @@ def tournament_standings_overall(tournament_id: int):
 
         rows = overall_standings(con, tournament_id, sort_by_town=True)
         places = rank_places(rows)
+        place_counts = Counter(places.values())
         per_round = db.q(
             con,
             "SELECT tp_id, round_no, points, soli FROM tournament_scores WHERE tournament_id=?",
@@ -61,6 +63,7 @@ def tournament_standings_overall(tournament_id: int):
 
         for row in rows:
             row["place"] = places.get(row["tp_id"])
+            row["shared_place"] = place_counts[row["place"]] > 1
             row["rounds"] = rounds_by_tp.get(row["tp_id"], {})
 
     return render_template(

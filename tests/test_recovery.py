@@ -126,7 +126,9 @@ class RecoveryTests(unittest.TestCase):
         page = html.fromstring(self.client.get(standings).get_data(as_text=True))
         self.assertIn(issue, page.text_content())
         self.assertFalse(page.xpath("//span[normalize-space()='Vollständig']"))
+        self.assertIn("Vorläufiger Endstand", page.text_content())
         self.assertIn("Vorläufige Rangliste", page.text_content())
+        self.assertFalse(page.xpath("//span[contains(@class, 'sk-first-place')]"))
         self.assertEqual(page.xpath("//tbody/tr/td[1]/span/text()"), ["#1", "#2", "#2", "#2"])
         csv_rows = records(self.client.get("/tournaments/1/export.csv").data)
         self.assertEqual([row["platz"] for row in csv_rows], ["1", "2", "2", "2"])
@@ -165,7 +167,8 @@ class RecoveryTests(unittest.TestCase):
                 self.assertIn(issue, view.text_content())
                 cells = view.xpath("//tr[td//a[@href='/tournaments/1/players/1']]/td")
                 self.assertEqual(cells[0].text_content().strip(), "#" + anna_place if anna_place else "–")
-                self.assertIn("nicht berechenbar", cells[3].text_content())
+                self.assertEqual([cell.text_content().strip() for cell in cells[3:5]],
+                                 [value or "nicht berechenbar" for value in totals])
                 for rn in (1, 2):
                     page = self.client.get(f"{base}/rounds/{rn}/results/standings").get_data(as_text=True)
                     if rn == 1:

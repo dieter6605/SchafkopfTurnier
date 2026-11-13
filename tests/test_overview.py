@@ -20,9 +20,11 @@ class OverviewTests(unittest.TestCase):
         app.testing = True
         self.client = form_client(app)
 
-    def tournament(self, title="Herbstturnier", days=0):
+    def tournament(self, title="Herbstturnier", days=0, marker_suffix=""):
+        event_date = date.today() + timedelta(days=days)
         response = self.client.post("/tournaments/new", data={
-            "title": title, "event_date": (date.today() + timedelta(days=days)).isoformat(),
+            "title": title, "event_date": event_date.isoformat(),
+            "marker": event_date.strftime("%y%m%d") + marker_suffix if marker_suffix else "",
             "start_time": "19:00", "location": "Vereinsheim",
         })
         self.assertEqual(response.status_code, 302)
@@ -141,6 +143,55 @@ class OverviewTests(unittest.TestCase):
         closed = self.page(hub)
         self.assertFalse(closed.xpath("//form"))
         self.assertEqual(self.button(closed, "Gesamtwertung öffnen"), "/tournaments/1/standings")
+
+    def test_overall_standings_tracks_missing_and_saved_round_scores(self):
+        self.tournament()
+        base = "/tournaments/1"
+        path = base + "/standings"
+        self.assertIn("noch keine Teilnehmer angemeldet", self.page(path).text_content())
+        self.register(4)
+        initial = self.page(path)
+        self.assertIn("Bisher wurden keine Ergebnisse erfasst.", initial.text_content())
+        self.assertFalse(initial.xpath("//details"))
+
+        self.draw(1)
+        table = base + "/rounds/1/results/1"
+        form = self.page(table).get_element_by_id("skResultsForm")
+        values = dict(form.fields)
+        for player in range(1, 5):
+            values[f"points_{player}"] = values[f"soli_{player}"] = "0"
+        self.client.post(table, data=values)
+        self.draw(2)
+        standings = self.page(path)
+        self.assertEqual(standings.xpath("//nav[@aria-label='Turniernavigation']/a[@aria-current]/text()"), ["Gesamtwertung"])
+        self.assertIn("Runde 2, Tisch 1", standings.text_content())
+        self.assertIn("Zwischenstand", standings.text_content())
+        player, = standings.xpath("//tr[@data-number='1']")
+        self.assertEqual(player.xpath(".//details//li/span/text()"), ["0 Punkte · 0 Soli", "Kein Ergebnis"])
+        self.assertEqual(player.xpath(".//a/@href"), [base + "/players/1"])
+
+    def test_closed_overall_standings_shows_shared_places_and_keeps_player_links(self):
+        self.tournament(marker_suffix="PROB")
+        self.register(4)
+        self.draw(1)
+        table = "/tournaments/1/rounds/1/results/1"
+        form = self.page(table).get_element_by_id("skResultsForm")
+        values = dict(form.fields)
+        for player, points, soli in ((1, 10, 2), (2, 10, 2), (3, -10, 1), (4, -10, 0)):
+            values[f"points_{player}"] = str(points)
+            values[f"soli_{player}"] = str(soli)
+        self.client.post(table, data=values)
+        self.client.post("/tournaments/1/close")
+
+        page = self.page("/tournaments/1/standings")
+        self.assertTrue(page.xpath("//span[text()='Endstand']"))
+        rows = page.xpath("//tbody/tr")
+        self.assertEqual([r.xpath("td[1]/span/text()")[0] for r in rows], ["#1", "#1", "#3", "#4"])
+        self.assertEqual([r.get("data-number") for r in rows if r.xpath("td[1]/small[text()='geteilt']")], ["1", "2"])
+        self.assertEqual([(r[3].text_content(), r[4].text_content()) for r in rows],
+                         [("10", "2"), ("10", "2"), ("-10", "1"), ("-10", "0")])
+        self.assertEqual([r.xpath(".//a/@href")[0] for r in rows],
+                         [f"/tournaments/1/players/{n}" for n in range(1, 5)])
 
     def test_start_selection_empty_and_filtered_lists_and_navigation(self):
         self.assertIn("Erstes Turnier anlegen", self.page("/").text_content())

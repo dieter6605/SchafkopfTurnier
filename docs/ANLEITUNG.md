@@ -137,12 +137,9 @@ Rundenwertung
 - Punkte & Soli nur dieser Runde
 - Sortierung nach Platzierung
 
-Gesamtwertung
-- Summe aller Runden
-- Sortierung:
-	1.	Punkte
-	2.	Soli
-	3.	Name
+**Gesamtwertung**
+
+Im Turnier **Gesamtwertung** öffnen. Die Rangliste zeigt Startnummer, Name und Wohnort, Gesamtpunkte und Soli. Über das Suchfeld findest du einen Spieler nach Startnummer, Name oder Wohnort. **Rundenwerte** zeigt die Punkte und Soli der einzelnen Runden, auch auf dem Handy.
 
 Bei gleicher Punktzahl entscheiden die Soli. Stimmen auch die Soli überein, teilen sich die Spieler den Platz. Bei einem geteilten ersten Platz führt die Zusammenfassung im Turnierleitungs-ZIP alle Erstplatzierten auf.
 
@@ -150,12 +147,7 @@ Bei einer fehlerhaften Tischwertung zeigen die Gesamtwertung und die Exporte die
 
 Ist ein Punkte- oder Soliwert unlesbar, bleibt der gespeicherte Einzelwert in der Rundenwertung sichtbar. Für die betroffene Summe zeigt die Gesamtwertung „nicht berechenbar“, im CSV bleibt das Feld leer. Ein Platz setzt eine berechenbare Punktzahl voraus. Bei Punktgleichheit müssen zusätzlich die Soli aller punktgleichen Spieler lesbar sein.
 
-Druckausgabe
-- Zwei Spalten (A4)
-- Format:
-```text
-Platz | Name | Punkte (Soli)
-```
+Mit **Gesamtwertung drucken** erhältst du die vollständige Rangliste mit Gesamtpunkten und Soli, auch wenn die Suche gerade nur einzelne Spieler zeigt. Auf dem Ausdruck stehen der Stand der Wertung und gegebenenfalls der Prüfhinweis.
 
 **Spielerkarte als PDF**
 
