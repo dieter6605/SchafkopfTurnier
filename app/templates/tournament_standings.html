@@ -144,25 +144,32 @@
       </div>
 
       <div class="text-end">
-        {% if exp <= 0 %}
+        {% if not rounds_count %}
           <span class="badge text-bg-secondary">Noch keine Runden ausgelost</span>
         {% else %}
-          {% if act >= exp %}
+          {% if not score_issue %}
             <span class="badge text-bg-success">Vollständig</span>
-          {% else %}
+          {% elif act < exp %}
             <span class="badge text-bg-warning">Unvollständig</span>
+          {% else %}
+            <span class="badge text-bg-warning">Wertung prüfen</span>
           {% endif %}
+          {% if exp > 0 %}
           <div class="small sk-muted mt-1">
             erfasst: <span class="sk-mono">{{ act }}</span>/<span class="sk-mono">{{ exp }}</span> ({{ pct }}%)
           </div>
+          {% endif %}
         {% endif %}
       </div>
     </div>
 
     {% if exp > 0 %}
       <div class="sk-progress mt-2" aria-label="Fortschritt Ergebniserfassung">
-        <div class="{% if act >= exp %}bg-success{% else %}bg-warning{% endif %}" style="width: {{ pct }}%;"></div>
+        <div class="{% if score_issue %}bg-warning{% else %}bg-success{% endif %}" style="width: {{ pct }}%;"></div>
       </div>
+    {% endif %}
+    {% if score_issue and (rounds_count or t.closed_at) %}
+      <p class="mt-2 mb-0"><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>
     {% endif %}
   </div>
 </div>
@@ -170,7 +177,7 @@
 <div class="card sk-card">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-      <div class="fw-semibold">Ranking</div>
+      <div class="fw-semibold">{{ "Vorläufige Rangliste" if score_issue else "Rangliste" }}</div>
       <div class="small sk-muted">
         Sortierung: Punkte ↓ · Soli ↓ · Name
       </div>
@@ -189,7 +196,7 @@
         </thead>
         <tbody>
           {% for r in rows %}
-            {% set p = (r.place|int) %}
+            {% set p = r.place %}
             {% set rowcls = "" %}
             {% if p == 1 %}{% set rowcls = "sk-row-top1" %}{% endif %}
             {% if p == 2 %}{% set rowcls = "sk-row-top2" %}{% endif %}
@@ -200,7 +207,9 @@
 
             <tr class="{{ rowcls }}">
               <td>
-                {% if p == 1 %}
+                {% if r.place is none %}
+                  <span class="text-muted">–</span>
+                {% elif p == 1 %}
                   <span class="sk-place sk-place-1">#1</span>
                 {% elif p == 2 %}
                   <span class="sk-place sk-place-2">#2</span>
@@ -234,8 +243,8 @@
 
               <td class="text-end">
                 <div class="sk-score">
-                  <span class="sk-points sk-mono">{{ r.points }}</span>
-                  <span class="sk-soli sk-mono">· S {{ r.soli }}</span>
+                  <span class="sk-points sk-mono">{{ r.points if r.points is not none else "nicht berechenbar" }}</span>
+                  <span class="sk-soli sk-mono">· S {{ r.soli if r.soli is not none else "nicht berechenbar" }}</span>
                 </div>
               </td>
 

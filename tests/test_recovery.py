@@ -7,12 +7,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from lxml import html
 
 from app import db
 from app.web import create_app
 from tests.form_client import form_client
+from tests.test_helper_exports import records
 
 
 class RecoveryTests(unittest.TestCase):
@@ -63,11 +65,11 @@ class RecoveryTests(unittest.TestCase):
             con.execute("UPDATE tournament_scores SET points=points+1 WHERE tp_id=1")
         return saved
 
-    def warning_form(self, response):
+    def warning_form(self, response, expected="Die Punktesumme beträgt 1 und muss 0 sein."):
         self.assertEqual(response.status_code, 200)
         page = html.fromstring(response.get_data(as_text=True))
         self.assertIn("Turnier 1 · Freitagsturnier: Runde 1, Tisch 1", page.text_content())
-        self.assertIn("Die Punktesumme beträgt 1 und muss 0 sein.", page.text_content())
+        self.assertIn(expected, page.text_content())
         form, = page.xpath("//form[.//input[@name='confirmation']]")
         return form.action, dict(form.fields)
 
@@ -90,6 +92,102 @@ class RecoveryTests(unittest.TestCase):
         safety, = self.directory.glob("*.before-restore-*")
         with closing(sqlite3.connect(safety)) as con:
             self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 0)
+
+    def test_confirmed_invalid_total_is_flagged_in_standings_and_export(self):
+        saved = self.closed_score_backup()
+        standings = "/tournaments/1/standings"
+        archive = "/tournaments/1/export.zip"
+        valid = html.fromstring(self.client.get(standings).get_data(as_text=True))
+        self.assertTrue(valid.xpath("//span[normalize-space()='Vollständig']"))
+        with ZipFile(BytesIO(self.client.get(archive).data)) as result:
+            self.assertIn("Sieger:", result.read("README.txt").decode())
+            self.assertNotIn("wertungsstatus", records(result.read("01_gesamtwertung.csv"))[0])
+
+        target, fields = self.warning_form(self.client.post("/restore/" + saved.name))
+        self.client.post(target, data={**fields, "decision": "restore"})
+        issue = "Runde 1, Tisch 1: Die Punktesumme beträgt 1 und muss 0 sein."
+        page = html.fromstring(self.client.get(standings).get_data(as_text=True))
+        self.assertIn(issue, page.text_content())
+        self.assertFalse(page.xpath("//span[normalize-space()='Vollständig']"))
+        self.assertIn("Vorläufige Rangliste", page.text_content())
+        self.assertEqual(page.xpath("//tbody/tr/td[1]/span/text()"), ["#1", "#2", "#2", "#2"])
+        csv_rows = records(self.client.get("/tournaments/1/export.csv").data)
+        self.assertEqual([row["platz"] for row in csv_rows], ["1", "2", "2", "2"])
+        self.assertTrue(all((row["wertungsstatus"], row["pruefhinweis"]) == ("vorläufig", issue) for row in csv_rows))
+        with ZipFile(BytesIO(self.client.get(archive).data)) as result:
+            info = result.read("README.txt").decode()
+            self.assertIn(issue, info)
+            self.assertNotIn("Sieger:", info)
+            self.assertEqual(records(result.read("01_gesamtwertung.csv")), csv_rows)
+        with closing(db.connect()) as con:
+            self.assertEqual(con.execute("SELECT points FROM tournament_scores WHERE tp_id=1").fetchone()[0], 31)
+
+    def test_unreadable_values_after_restore_keep_other_totals_and_rounds_usable(self):
+        saved = self.closed_score_backup()
+        with closing(sqlite3.connect(saved)) as con, con:
+            con.execute("INSERT INTO tournament_rounds(tournament_id,round_no) VALUES(1,2)")
+            con.execute("INSERT INTO tournament_seats(tournament_id,round_no,table_no,seat,tp_id)"
+                        " SELECT tournament_id,2,table_no,seat,tp_id FROM tournament_seats WHERE round_no=1")
+            con.execute("INSERT INTO tournament_scores(tournament_id,round_no,table_no,tp_id,points,soli)"
+                        " SELECT tournament_id,2,table_no,tp_id,0,1 FROM tournament_scores WHERE round_no=1")
+        base = "/tournaments/1"
+        cases = [
+            ("unlesbar", 2, "punkte", "Die Punkte müssen ganze Zahlen sein.", ("", "3"), ["1", "1", "1", ""], ""),
+            (30, "unlesbar", "soli", "Soli müssen nichtnegative ganze Zahlen sein.", ("30", ""), ["1", "2", "2", "2"], "1"),
+            (-10, "unlesbar", "soli", "Soli müssen nichtnegative ganze Zahlen sein.", ("-10", ""), ["", "", "", ""], ""),
+        ]
+        for points, soli, column, reason, totals, places, anna_place in cases:
+            with self.subTest(points=points, soli=soli):
+                with closing(sqlite3.connect(saved)) as con, con:
+                    con.execute("UPDATE tournament_scores SET points=?, soli=? WHERE round_no=1 AND tp_id=1",
+                                (points, soli))
+                target, fields = self.warning_form(self.client.post("/restore/" + saved.name), reason)
+                self.assertEqual(self.client.post(target, data={**fields, "decision": "restore"}).status_code, 302)
+                issue = "Runde 1, Tisch 1: " + reason
+                view = html.fromstring(self.client.get(base + "/standings").get_data(as_text=True))
+                self.assertIn(issue, view.text_content())
+                cells = view.xpath("//tr[td//a[@href='/tournaments/1/players/1']]/td")
+                self.assertEqual(cells[0].text_content().strip(), "#" + anna_place if anna_place else "–")
+                self.assertIn("nicht berechenbar", cells[3].text_content())
+                for rn in (1, 2):
+                    page = self.client.get(f"{base}/rounds/{rn}/results/standings").get_data(as_text=True)
+                    if rn == 1:
+                        self.assertIn(issue, page)
+                        self.assertIn("unlesbar", page)
+                    else:
+                        self.assertNotIn("Vorläufige Platzierungen", page)
+
+                direct = records(self.client.get(base + "/export.csv").data)
+                for endpoint in ("/export.zip", "/helfer.zip"):
+                    with ZipFile(BytesIO(self.client.get(base + endpoint).data)) as archive:
+                        overall = records(archive.read("01_gesamtwertung.csv"))
+                        self.assertEqual([r["platz"] for r in overall], places)
+                        self.assertTrue(all(r["pruefhinweis"] == issue and r["wertungsstatus"] == "vorläufig"
+                                            for r in overall))
+                        anna = next(r for r in overall if r["vorname"] == "Anna")
+                        self.assertEqual((anna["punkte"], anna["soli"]), totals)
+                        first = records(archive.read("rundenwertung/R01.csv"))
+                        anna_first = next(r for r in first if r["vorname"] == "Anna")
+                        self.assertEqual((anna_first[column], anna_first["platz"], anna_first["pruefhinweis"]),
+                                         ("unlesbar", anna_place, issue))
+                        second = records(archive.read("rundenwertung/R02.csv"))
+                        self.assertTrue(all(r["platz"] == "1" and "wertungsstatus" not in r for r in second))
+                        if endpoint == "/export.zip":
+                            self.assertEqual(direct, overall)
+                            overview = records(archive.read("03_gesamtuebersicht.csv"))[0]
+                            self.assertEqual((overview["platz_gesamt"], overview[column + "_gesamt"],
+                                              overview[column + "_r1"], overview["pruefhinweis"]),
+                                             (anna_place, "", "unlesbar", issue))
+                            for entry in ("04_scores_komplett.csv", "05_pivot_vorlage_scores.csv", "tische/R01_T01.csv"):
+                                raw = next(r for r in records(archive.read(entry)) if r["nr"] == "1" and r["runde"] == "1")
+                                self.assertEqual(raw[column], "unlesbar")
+                            summary = archive.read("README.txt").decode()
+                            self.assertIn(issue, summary)
+                            self.assertNotIn("Sieger:", summary)
+                            self.assertIn("Summe " + column.capitalize() + ": nicht berechenbar", summary)
+                with closing(db.connect()) as con:
+                    actual = con.execute("SELECT points,soli FROM tournament_scores WHERE round_no=1 AND tp_id=1")
+                    self.assertEqual(tuple(actual.fetchone()), (points, soli))
 
     def test_uploaded_warning_is_bound_to_session_file_and_its_checked_contents(self):
         saved = self.closed_score_backup()

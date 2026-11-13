@@ -90,6 +90,8 @@
   </div>
 </div>
 
+{% if score_issue %}<p><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>{% endif %}
+
 <div class="card shadow-sm no-print">
   <div class="card-body">
     {% if not rows %}
@@ -111,7 +113,7 @@
           <tbody>
             {% for r in rows %}
               <tr>
-                <td class="sk-mono fw-bold">{{ r.place }}</td>
+                <td class="sk-mono fw-bold">{{ r.place if r.place is not none else "–" }}</td>
                 <td><strong>{{ r.nachname }}</strong></td>
                 <td>{{ r.vorname }}</td>
                 <td><span class="text-muted">{{ r.wohnort }}</span></td>
@@ -139,7 +141,7 @@
   {% if rows and rows|length > 0 %}
     {% for r in rows %}
       <div class="sk-line">
-        <div class="sk-place sk-mono">{{ r.place }}</div>
+        <div class="sk-place sk-mono">{{ r.place if r.place is not none else "–" }}</div>
 
         <div class="sk-name">
           <strong>{{ r.nachname }}</strong>, {{ r.vorname }}

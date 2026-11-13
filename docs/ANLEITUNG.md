@@ -161,6 +161,10 @@ Gesamtwertung
 	2.	Soli
 	3.	Name
 
+Bei einer fehlerhaften Tischwertung zeigen die Gesamtwertung und die Exporte die berechenbaren Plätze als vorläufig an. Der Hinweis nennt den ersten betroffenen Tisch und den Grund. Die Turnierleitung erhält im ZIP keine Siegerangabe.
+
+Ist ein Punkte- oder Soliwert unlesbar, bleibt der gespeicherte Einzelwert in der Rundenwertung sichtbar. Für die betroffene Summe zeigt die Gesamtwertung „nicht berechenbar“, im CSV bleibt das Feld leer. Ein Platz setzt eine berechenbare Punktzahl voraus. Bei Punktgleichheit müssen zusätzlich die Soli aller punktgleichen Spieler lesbar sein.
+
 Druckausgabe
 - Zwei Spalten (A4)
 - Format:

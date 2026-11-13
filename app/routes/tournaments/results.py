@@ -9,6 +9,7 @@ from typing import Any
 from flask import flash, g, redirect, render_template, request, url_for
 
 from ... import db
+from ...scoring import first_score_issue, rank_places, round_standings
 from ...wlan import check_result_access
 from . import bp
 from .helpers import MAX_SOLI_PER_TABLE, _get_tournament, _guard_closed_redirect, _now_local_iso, _soli_total_issue
@@ -95,6 +96,7 @@ def tournament_round_results_overview(tournament_id: int, round_no: int):
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results/standings")
 def tournament_round_results_standings(tournament_id: int, round_no: int):
     with closing(db.connect()) as con, con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -123,64 +125,18 @@ def tournament_round_results_standings(tournament_id: int, round_no: int):
         )
         scores_count = int(scores_count_row["c"] or 0) if scores_count_row else 0
 
-        rows = db.q(
-            con,
-            """
-            SELECT
-                a.nachname, a.vorname, a.wohnort,
-                tp.player_no,
-                sc.points, sc.soli,
-                sc.table_no,
-                s.seat
-            FROM tournament_scores sc
-            JOIN tournament_participants tp ON tp.id=sc.tp_id
-            JOIN addresses a ON a.id=tp.address_id
-            LEFT JOIN tournament_seats s
-              ON s.tournament_id=sc.tournament_id
-             AND s.round_no=sc.round_no
-             AND s.tp_id=sc.tp_id
-            WHERE sc.tournament_id=? AND sc.round_no=?
-            ORDER BY
-                sc.points DESC,
-                sc.soli DESC,
-                a.nachname COLLATE NOCASE ASC,
-                a.vorname COLLATE NOCASE ASC,
-                tp.player_no ASC
-            """,
-            (tournament_id, round_no),
-        )
-
-        ranked: list[dict[str, Any]] = []
-        last_key: tuple[int, int] | None = None
-        place = 0
-        shown = 0
-
-        for r in rows:
-            shown += 1
-            key = (int(r["points"]), int(r["soli"]))
-            if key != last_key:
-                place = shown
-                last_key = key
-
-            ranked.append(
-                {
-                    "place": place,
-                    "nachname": r["nachname"],
-                    "vorname": r["vorname"],
-                    "wohnort": r["wohnort"],
-                    "player_no": int(r["player_no"]),
-                    "points": int(r["points"]),
-                    "soli": int(r["soli"]),
-                    "table_no": int(r["table_no"]),
-                    "seat": (r["seat"] or ""),
-                }
-            )
+        rows = round_standings(con, tournament_id, round_no)
+        places = rank_places(rows)
+        for row in rows:
+            row["place"] = places.get(row["tp_id"])
+        score_issue = first_score_issue(con, tournament_id, round_only=round_no)
 
     return render_template(
         "tournament_round_standings.html",
         t=t,
         round_no=round_no,
-        rows=ranked,
+        rows=rows,
+        score_issue=score_issue,
         total_tables=total_tables,
         scores_count=scores_count,
         expected_scores=expected_scores,
