@@ -132,7 +132,7 @@ def tournament_participants(tournament_id: int):
             return redirect(url_for("tournaments.tournaments_list"))
 
         counts = _tournament_counts(con, tournament_id)
-        cap_ok = _cap_ok(t, counts["participants"])
+        cap_ok = _cap_ok(t, counts["active"])
 
         hits = _search_addresses(con, qtxt) if qtxt else []
         already = db.q(con, "SELECT address_id FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
@@ -211,10 +211,10 @@ def tournament_participants_swap_search(tournament_id: int):
 
         rows = db.q(
             con,
-            "SELECT id, address_id, player_no FROM tournament_participants WHERE tournament_id=?",
+            "SELECT id, address_id, player_no, withdrawn_at FROM tournament_participants WHERE tournament_id=?",
             (tournament_id,),
         )
-        by_aid = {int(r["address_id"]): {"tp_id": int(r["id"]), "player_no": int(r["player_no"] or 0)} for r in rows}
+        by_aid = {r["address_id"]: r for r in rows}
 
         _, scored_ids = _participant_usage(con, tournament_id)
         out = []
@@ -226,7 +226,7 @@ def tournament_participants_swap_search(tournament_id: int):
                 continue
 
             info = by_aid.get(aid)
-            if info and info["tp_id"] in scored_ids:
+            if info and (info["withdrawn_at"] is not None or info["id"] in scored_ids):
                 continue
             out.append(
                 {
@@ -240,7 +240,7 @@ def tournament_participants_swap_search(tournament_id: int):
                     "status": str(status or ""),
                     "in_tournament": bool(info),
                     "player_no": (info["player_no"] if info else None),
-                    "tp_id": (info["tp_id"] if info else None),
+                    "tp_id": (info["id"] if info else None),
                 }
             )
             if len(out) >= limit:
@@ -270,7 +270,7 @@ def tournament_participant_add(tournament_id: int, address_id: int):
             return resp
 
         counts = _tournament_counts(con, tournament_id)
-        if not _cap_ok(t, counts["participants"]):
+        if not _cap_ok(t, counts["active"]):
             flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
@@ -348,7 +348,7 @@ def tournament_participant_quickadd(tournament_id: int):
             return resp
 
         counts = _tournament_counts(con, tournament_id)
-        if not _cap_ok(t, counts["participants"]):
+        if not _cap_ok(t, counts["active"]):
             flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
@@ -494,6 +494,42 @@ def tournament_close_participations(tournament_id: int):
 
     flash(f"Turnier abgeschlossen: Marker {marker} gepflegt ({affected} Teilnehmer).", "ok")
     return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+
+
+@bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/withdraw")
+def tournament_participant_withdraw(tournament_id: int, tp_id: int):
+    roster_url = url_for("tournaments.tournament_participants", tournament_id=tournament_id,
+                         q=request.form.get("q") or None, _anchor=f"tp{tp_id}")
+    with closing(db.connect()) as con, con:
+        con.execute("BEGIN IMMEDIATE")
+        t = _get_tournament(con, tournament_id)
+        if not t:
+            flash("Turnier nicht gefunden.", "error")
+            return redirect(url_for("tournaments.tournaments_list"))
+        if _is_closed(t):
+            flash("Das Turnier ist abgeschlossen.", "warning")
+            return redirect(roster_url)
+
+        player = db.one(con, """
+            SELECT player_no, address_id, withdrawn_at FROM tournament_participants
+            WHERE tournament_id=? AND id=?
+        """, (tournament_id, tp_id))
+        if not player or request.form.get("expected_address_id") != str(player["address_id"]):
+            flash("Die Anmeldung hat sich geändert. Bitte die Teilnehmerliste erneut prüfen.", "warning")
+            return redirect(roster_url)
+        if player["withdrawn_at"] is not None:
+            flash("Der Spieler ist bereits abgemeldet.", "info")
+            return redirect(roster_url)
+
+        con.execute("""
+            UPDATE tournament_participants SET withdrawn_at=datetime('now'), updated_at=datetime('now')
+            WHERE tournament_id=? AND id=?
+        """, (tournament_id, tp_id))
+        note = f"Startnummer {player['player_no']} für weitere Auslosungen abgemeldet."
+        _audit_log(con, tournament_id=tournament_id, action="withdraw", tp_id=tp_id,
+                   address_id_old=player["address_id"], note=note)
+    flash(note, "ok")
+    return redirect(roster_url)
 
 
 @bp.post("/tournaments/<int:tournament_id>/participants/<int:tp_id>/remove")
@@ -655,7 +691,7 @@ def tournament_participant_swap(tournament_id: int):
         tp = db.one(
             con,
             """
-            SELECT id, address_id, player_no, display_name
+            SELECT id, address_id, player_no, display_name, withdrawn_at
             FROM tournament_participants
             WHERE id=? AND tournament_id=?
             """,
@@ -686,7 +722,7 @@ def tournament_participant_swap(tournament_id: int):
         other = db.one(
             con,
             """
-            SELECT id, address_id, player_no, display_name
+            SELECT id, address_id, player_no, display_name, withdrawn_at
             FROM tournament_participants
             WHERE tournament_id=? AND address_id=?
             LIMIT 1
@@ -698,6 +734,9 @@ def tournament_participant_swap(tournament_id: int):
         other_id = str(other["id"] if other else 0)
         if expected_address != str(old_address_id) or request.form.get("expected_other_tp", other_id) != other_id:
             flash("Die Personenzuordnung hat sich geändert. Bitte den Tausch erneut prüfen.", "warning")
+            return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
+        if tp["withdrawn_at"] is not None or (other and other["withdrawn_at"] is not None):
+            flash("Tausch gesperrt. Eine der beiden Personen ist abgemeldet.", "warning")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
         _, scored = _participant_usage(con, tournament_id)
         if tp_id in scored or (other and other["id"] in scored):

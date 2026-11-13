@@ -63,6 +63,105 @@ class ParticipantIntegrityTests(unittest.TestCase):
             "tournament_seats", "tournament_scores", "audit_log", "tournaments",
         )]
 
+    def test_withdraw_after_scoring_keeps_ranking_and_excludes_from_all_draws(self):
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET max_participants=4 WHERE id=1")
+        self.draw()
+        values = self.form()
+        values.update(points_1="30", points_2="-10", points_3="-10", points_4="-10", soli_1="3")
+        self.client.post(self.table, data=values)
+        previous = self.snapshot()
+        roster = html.fromstring(self.client.get(self.participants).get_data(as_text=True))
+        form, = roster.get_element_by_id("tp1").xpath(".//form[contains(@action,'/withdraw')]")
+        for _ in range(2):
+            self.client.post(form.action, data=dict(form.fields))
+        roster = html.fromstring(self.client.get(self.participants).get_data(as_text=True))
+        self.assertIn("Abgemeldet", roster.get_element_by_id("tp1").text_content())
+        self.assertFalse(roster.get_element_by_id("tp1").xpath(".//form[contains(@action,'/withdraw')]"))
+        self.assertEqual(self.query("SELECT tp_id FROM audit_log WHERE action='withdraw'"), [(1,)])
+        second = self.tournament + "/rounds/2"
+        blocked = self.client.post(second + "/draw", follow_redirects=True)
+        self.assertIn("3 aktive Teilnehmer", blocked.get_data(as_text=True))
+        self.assertEqual(self.query("SELECT round_no FROM tournament_rounds"), [(1,)])
+
+        self.add_player("Ersatz")
+        self.assertEqual(self.query("SELECT player_no FROM tournament_participants ORDER BY id"), [(1,), (2,), (3,), (4,), (5,)])
+        for mode in ("random", "seeding"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.client.post(second + "/draw", data={"draw_mode": mode}).location, second)
+                self.assertEqual(self.query("SELECT tp_id FROM tournament_seats WHERE round_no=2 ORDER BY tp_id"),
+                                 [(2,), (3,), (4,), (5,)])
+                self.assertNotIn("Reserve (nicht gesetzt)", self.client.get(second).get_data(as_text=True))
+        self.assertEqual(self.query("SELECT draw_attempt FROM tournament_rounds WHERE round_no=2"), [(2,)])
+        self.assertEqual(self.query("SELECT * FROM tournament_seats WHERE round_no=1 ORDER BY id"), previous[3])
+        self.assertEqual(self.query("SELECT * FROM tournament_scores ORDER BY id"), previous[4])
+        standings = html.fromstring(self.client.get(self.tournament + "/standings").get_data(as_text=True))
+        row, = standings.xpath("//a[@href='/tournaments/1/players/1']/ancestor::tr")
+        self.assertEqual(row.xpath(".//span[contains(@class,'sk-points')]/text()"), ["30"])
+        self.assertIn("S 3", row.text_content())
+        csv_data = self.client.get(self.tournament + "/export.csv").data.decode("utf-8-sig")
+        player, = (r for r in csv.DictReader(StringIO(csv_data), delimiter=";") if r["nr"] == "1")
+        self.assertEqual((player["vorname"], player["punkte"], player["soli"]), ("Anna", "30", "3"))
+
+    def test_withdraw_preserves_drawn_table_and_rejects_stale_or_closed_changes(self):
+        self.draw()
+        old_table = self.form()
+        before = self.snapshot()
+        url = self.participants + "/1/withdraw"
+        for target, fields in [(url, {}), (url, {"expected_address_id": "2"}),
+                               (self.participants + "/999/withdraw", {"expected_address_id": "1"})]:
+            self.client.post(target, data=fields)
+        self.assertEqual(self.snapshot(), before)
+        self.client.post(url, data={"expected_address_id": "1"})
+        for source, target in [(1, 2), (2, 1)]:
+            self.client.post(self.participants + "/swap", data={"tp_id": source, "new_address_id": target})
+        hits = self.client.get(self.participants + "/swap-search?q=Probe").get_json()["items"]
+        self.assertNotIn(1, [hit["id"] for hit in hits])
+        self.assertEqual(self.query("SELECT address_id FROM tournament_participants ORDER BY id"), [(1,), (2,), (3,), (4,)])
+        self.client.post(self.tournament + "/rounds/1/draw")
+        self.assertEqual(self.snapshot()[2:5], before[2:5])
+        self.client.post(self.table, data=old_table)
+        self.assertEqual(self.query("SELECT COUNT(*) FROM tournament_scores"), [(4,)])
+        self.client.post(self.tournament + "/close")
+        self.assertEqual(self.query("SELECT closed_at IS NOT NULL FROM tournaments"), [(1,)])
+        closed = self.snapshot()
+        self.client.post(self.participants + "/2/withdraw", data={"expected_address_id": "2"})
+        self.assertEqual(self.snapshot(), closed)
+
+    def test_seeding_fills_two_tables_by_active_rank_and_withdrawal_is_local(self):
+        for name in ("Eva", "Finn", "Gabi", "Hans"):
+            self.add_player(name)
+        self.client.post("/tournaments/new", data={
+            "title": "Anderes Turnier", "event_date": "2026-11-13", "start_time": "18:00",
+        })
+        self.draw()
+        for table in (1, 2):
+            url = f"{self.tournament}/rounds/1/results/{table}"
+            form = html.fromstring(self.client.get(url).get_data(as_text=True)).forms[0]
+            data = dict(form.fields)
+            fields = form.xpath(".//input[@data-skt='points']/@name")
+            data.update(zip(fields, ("30", "10", "-10", "-30")))
+            self.client.post(url, data=data)
+        ranked = self.query("SELECT tp_id FROM tournament_scores ORDER BY points DESC, tp_id")
+        winner = ranked[0][0]
+        self.client.post(f"/tournaments/2/participants/add/{winner}")
+        self.client.post(f"{self.participants}/{winner}/withdraw", data={"expected_address_id": str(winner)})
+        second = self.tournament + "/rounds/2"
+        blocked = self.client.post(second + "/draw", data={"draw_mode": "seeding"}, follow_redirects=True)
+        self.assertIn("7 aktive Teilnehmer", blocked.get_data(as_text=True))
+        self.assertEqual(self.query("SELECT COUNT(*) FROM tournament_rounds WHERE round_no=2"), [(0,)])
+        self.add_player("Iris")
+        replacement, = self.query("SELECT id FROM tournament_participants WHERE tournament_id=1 AND player_no=9")[0]
+        self.client.post(second + "/draw", data={"draw_mode": "seeding"})
+        # Nach zwei positiven Ergebnissen pro Tisch rückt die Ersatzperson mit null Punkten auf.
+        expected_first = ({p for (p,) in ranked[:4]} - {winner}) | {replacement}
+        self.assertEqual({p for (p,) in self.query("SELECT tp_id FROM tournament_seats WHERE round_no=2 AND table_no=1")},
+                         expected_first)
+        self.assertEqual({p for (p,) in self.query("SELECT tp_id FROM tournament_seats WHERE round_no=2 AND table_no=2")},
+                         {p for (p,) in ranked[4:]})
+        self.client.post(f"/tournaments/2/participants/{winner}/withdraw", data={"expected_address_id": str(winner)})
+        self.assertEqual(self.query("SELECT COUNT(*) FROM tournament_participants WHERE tournament_id=2 AND withdrawn_at IS NULL"), [(1,)])
+
     def test_reprints_and_standings_use_corrected_address_after_close(self):
         self.draw()
         self.client.post(self.table, data=self.form())

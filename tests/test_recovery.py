@@ -36,6 +36,29 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(con.execute("SELECT invite FROM addresses").fetchone()[0], 1)
             self.assertEqual(con.execute("PRAGMA foreign_keys").fetchone()[0], 1)
 
+    def test_v7_signup_is_active_and_withdrawal_survives_backup_and_restart(self):
+        self.client.post("/tournaments/new", data={
+            "title": "Vereinsturnier", "event_date": "2026-11-12", "start_time": "18:00",
+        })
+        self.client.post("/tournaments/1/participants/quickadd", data={
+            "vorname": "Anna", "nachname": "Probe", "wohnort": "Testort",
+        })
+        old = db.backup_db(self.backups)
+        with closing(sqlite3.connect(old)) as con, con:
+            con.execute("ALTER TABLE tournament_participants DROP COLUMN withdrawn_at")
+            con.execute("UPDATE meta SET v='7' WHERE k='schema_version'")
+        db.restore_db(old)
+        with closing(db.connect()) as con:
+            self.assertIsNone(con.execute("SELECT withdrawn_at FROM tournament_participants").fetchone()[0])
+        self.client.post("/tournaments/1/participants/1/withdraw", data={"expected_address_id": "1"})
+        saved = db.backup_db(self.backups)
+        db.restore_db(old)
+        db.restore_db(saved)
+        db.init_db(self.live)
+        with closing(db.connect()) as con:
+            self.assertEqual(tuple(con.execute("SELECT player_no, withdrawn_at IS NOT NULL FROM tournament_participants").fetchone()), (1, 1))
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM audit_log WHERE action='withdraw'").fetchone()[0], 1)
+
     def test_legacy_invites_keep_selection_after_upgrade_quickadd_and_restart(self):
         with closing(db.connect()) as con, con:
             con.execute("ALTER TABLE addresses DROP COLUMN invite")

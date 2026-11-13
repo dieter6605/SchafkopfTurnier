@@ -110,6 +110,9 @@
       <div class="card-body">
         <div class="text-muted small">Teilnehmer</div>
         <div class="fs-2 fw-bold">{{ counts.participants }}</div>
+        {% if counts.withdrawn %}
+          <div>{{ counts.active }} aktiv · {{ counts.withdrawn }} abgemeldet</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -117,7 +120,7 @@
   <div class="col-md-4">
     <div class="card shadow-sm">
       <div class="card-body">
-        <div class="text-muted small">Tische (4er)</div>
+        <div class="text-muted small">Vierertische aus aktiven Teilnehmern</div>
         <div class="fs-2 fw-bold">
           {{ counts.tables }}
           {% if counts.rest %}

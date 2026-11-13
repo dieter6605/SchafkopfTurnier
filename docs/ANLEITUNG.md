@@ -68,7 +68,13 @@ Im Bereich „Teilnehmernummern“:
 ***Hinweis:***
 Beim Entfernen eines Teilnehmers bleibt standardmäßig eine Nummernlücke bestehen.
 
-## 5. Teilnehmer entfernen oder tauschen
+## 5. Teilnehmer abmelden, entfernen oder tauschen
+
+**Wenn ein Spieler das Turnier vorzeitig verlässt**
+
+Unter „Teilnehmer erfassen“ in der Zeile des Spielers „Für weitere Auslosungen abmelden“ wählen und bestätigen. Die Teilnehmerliste zeigt dann „Abgemeldet“. Die Startnummer, bereits ausgeloste Sitzplätze und alle erspielten Punkte und Soli bleiben erhalten. Für einen bereits ausgelosten Tisch können die Ergebnisse weiterhin eingetragen werden.
+
+Jede spätere Auslosung berücksichtigt nur aktive Spieler. Das gilt für Zufall, Setzliste und die erneute Auslosung einer Runde ohne Ergebnisse. Fehlt ein Spieler für einen vollständigen Vierertisch, eine Ersatzperson als neuen Teilnehmer mit eigener Startnummer anmelden.
 
 Teilnehmer entfernen
 - Entfernen ist möglich, solange für die Anmeldung kein Sitzplatz und kein Ergebnis vorliegt.
@@ -77,7 +83,7 @@ Teilnehmer entfernen
 
 Teilnehmer ersetzen (Swap)
 - „Swap…“ öffnen und die Zielperson wählen. Bei einem Tausch behalten die Startnummern ihre Sitzplätze. Der neue Name gilt für alle bisherigen Sitzpläne dieser Anmeldung.
-- Sobald eine der beteiligten Anmeldungen ein Ergebnis hat, ist der Tausch gesperrt.
+- Sobald eine der beteiligten Anmeldungen ein Ergebnis hat oder abgemeldet ist, ist der Tausch gesperrt.
 - Vor dem Abschluss zeigt die Turnierübersicht den ersten Tisch mit fehlenden oder fehlerhaften Angaben. Jeder Tisch braucht die Sitze A bis D, vier passende Ergebnisse, eine Punktesumme von null und gültige Soli (ganze Zahlen ab null).
 
 ## 6. Runde auslosen

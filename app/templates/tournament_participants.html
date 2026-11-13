@@ -60,6 +60,9 @@
       <div class="card-body">
         <div class="text-muted small">Teilnehmer</div>
         <div style="font-size:2.2rem;font-weight:900;">{{ counts.participants }}</div>
+        {% if counts.withdrawn %}
+          <div>{{ counts.active }} aktiv · {{ counts.withdrawn }} abgemeldet</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -382,6 +385,9 @@
                 {% endif %}
 
                 <span class="text-muted">· {{ p.wohnort }}</span>
+                {% if p.withdrawn_at %}
+                  <span class="badge text-bg-secondary">Abgemeldet</span>
+                {% endif %}
 
                 <div class="text-muted small">
                   <span class="sk-mono">#{{ p.address_id }}</span>
@@ -411,10 +417,22 @@
                           data-player-no="{{ p.player_no }}"
                           data-current-address-id="{{ p.address_id }}"
                           data-current-label="{{ p.nachname }}, {{ p.vorname }} · {{ p.wohnort }}"
-                          {% if has_score %}disabled{% endif %}
-                          title="{{ 'Bereits gewertet' if has_score else 'Ersetzt oder tauscht Teilnehmer (Nummer bleibt gleich)' }}">
+                          {% if has_score or p.withdrawn_at %}disabled{% endif %}
+                          title="{{ 'Abgemeldet' if p.withdrawn_at else 'Bereits gewertet' if has_score else 'Ersetzt oder tauscht Teilnehmer (Nummer bleibt gleich)' }}">
                     Swap…
                   </button>
+
+                  {% if not p.withdrawn_at %}
+                    <form method="post"
+                          action="{{ url_for('tournaments.tournament_participant_withdraw', tournament_id=t.id, tp_id=p.id) }}"
+                          data-confirm="{{ p.vorname }} {{ p.nachname }} (Nr. {{ p.player_no }}) für alle weiteren Auslosungen abmelden? Bisherige Sitzplätze, Punkte und Soli bleiben erhalten."
+                          onsubmit="return window.confirm(this.dataset.confirm)">
+                      {{ csrf_field() }}
+                      <input type="hidden" name="q" value="{{ q or '' }}">
+                      <input type="hidden" name="expected_address_id" value="{{ p.address_id }}">
+                      <button class="btn btn-sm btn-outline-warning" type="submit">Für weitere Auslosungen abmelden</button>
+                    </form>
+                  {% endif %}
 
                   <form method="post"
                         id="rmForm{{ p.id }}"
@@ -528,7 +546,8 @@
                             'add':'Hinzufügen',
                             'quickadd':'Quick-Add',
                             'edit':'Bearbeiten',
-                            'remove':'Entfernen'
+                            'remove':'Entfernen',
+                            'withdraw':'Abmeldung'
                           }.get(act, act) %}
                           <span class="badge text-bg-light border">{{ label }}</span>
                         </td>
@@ -566,6 +585,8 @@
                               {% if ao and (ao != an) %} (alt #{{ ao }}){% endif %}
                             </div>
 
+                          {% elif act == 'withdraw' %}
+                            <div class="sk-mono">Adresse #{{ ao }}</div>
                           {% elif act == 'remove' %}
                             <div class="sk-mono">
                               Entfernen: tp {{ tp1 }}{% if ao %} · alt #{{ ao }}{% endif %}

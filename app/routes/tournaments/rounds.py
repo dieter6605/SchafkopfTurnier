@@ -23,7 +23,7 @@ from .helpers import (
     _guard_closed_redirect,
     _is_closed,
     _now_local_iso,
-    _overall_standings_tp_ids,
+    _seeding_tp_ids,
 )
 
 
@@ -123,7 +123,7 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             """
             SELECT id, player_no
             FROM tournament_participants
-            WHERE tournament_id=?
+            WHERE tournament_id=? AND withdrawn_at IS NULL
             ORDER BY player_no ASC
             """,
             (tournament_id,),
@@ -131,13 +131,12 @@ def tournament_round_draw(tournament_id: int, round_no: int):
         tps = [{"id": int(r["id"]), "player_no": int(r["player_no"])} for r in rows]
         n = len(tps)
         if n < 4:
-            flash("Zu wenige Teilnehmer zum Auslosen.", "error")
+            flash(f"Nur {n} aktive Teilnehmer. Für die Auslosung braucht es mindestens vier.", "error")
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
 
         if (n % 4) != 0:
             flash(
-                f"Teilnehmerzahl ({n}) ist nicht durch 4 teilbar. "
-                "Bitte erst auf 4er auffüllen, dann auslosen.",
+                f"{n} aktive Teilnehmer. Für vollständige Vierertische fehlen noch {4 - n % 4}.",
                 "error",
             )
             return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
@@ -158,9 +157,9 @@ def tournament_round_draw(tournament_id: int, round_no: int):
             if issue:
                 flash(f"Setzliste für Runde {round_no} gesperrt. {issue}", "warning")
                 return redirect(round_url)
-            ranked = _overall_standings_tp_ids(con, tournament_id, upto_round=round_no - 1)
+            ranked = _seeding_tp_ids(con, tournament_id, upto_round=round_no - 1)
             if set(ranked) != set(tp_ids) or len(ranked) != n:
-                flash("Setzliste gesperrt. Die Gesamtwertung enthält nicht alle angemeldeten Teilnehmer.", "warning")
+                flash("Setzliste gesperrt. Die Gesamtwertung enthält nicht alle aktiven Teilnehmer.", "warning")
                 return redirect(round_url)
             tables = _tables_by_seeding(ranked, 4)
         else:
@@ -311,7 +310,7 @@ def tournament_round_view(tournament_id: int, round_no: int):
             SELECT tp.id AS tp_id, tp.player_no, a.nachname, a.vorname, a.wohnort
             FROM tournament_participants tp
             JOIN addresses a ON a.id=tp.address_id
-            WHERE tp.tournament_id=?
+            WHERE tp.tournament_id=? AND tp.withdrawn_at IS NULL
             ORDER BY tp.player_no ASC
             """,
             (tournament_id,),

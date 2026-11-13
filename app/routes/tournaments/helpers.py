@@ -97,9 +97,12 @@ def _next_free_player_no(con, tournament_id: int) -> int:
 
 
 def _tournament_counts(con, tournament_id: int) -> dict[str, int]:
-    c = db.one(con, "SELECT COUNT(*) AS c FROM tournament_participants WHERE tournament_id=?", (tournament_id,))
-    n = int(c["c"] or 0) if c else 0
-    return {"participants": n, "tables": n // 4, "rest": n % 4}
+    total, withdrawn = con.execute(
+        "SELECT COUNT(*), COUNT(withdrawn_at) FROM tournament_participants WHERE tournament_id=?",
+        (tournament_id,),
+    ).fetchone()
+    active = total - withdrawn
+    return {"participants": total, "active": active, "withdrawn": withdrawn, "tables": active // 4, "rest": active % 4}
 
 
 def _scores_expected_count(con, tournament_id: int) -> int:
@@ -576,9 +579,9 @@ def _repair_addresses_from_tournament_years(
 # ✅ Ranking helper: tp_ids nach Gesamtwertung (für Setzliste / Spielerkarte)
 # =============================================================================
 
-def _overall_standings_tp_ids(con, tournament_id: int, *, upto_round: int) -> list[int]:
+def _seeding_tp_ids(con, tournament_id: int, *, upto_round: int) -> list[int]:
     """
-    Liefert tp_id-Liste sortiert nach Gesamtwertung (bis einschließlich `upto_round`).
+    Aktive Teilnehmer nach Gesamtwertung bis einschließlich `upto_round`.
 
     Sortierung:
     - SUM(points) DESC
@@ -600,7 +603,7 @@ def _overall_standings_tp_ids(con, tournament_id: int, *, upto_round: int) -> li
           ON sc.tournament_id = tp.tournament_id
          AND sc.tp_id = tp.id
          AND sc.round_no <= ?
-        WHERE tp.tournament_id = ?
+        WHERE tp.tournament_id = ? AND tp.withdrawn_at IS NULL
         GROUP BY tp.id, a.nachname, a.vorname, a.wohnort, tp.player_no
         ORDER BY
             points DESC,

@@ -11,7 +11,7 @@ from typing import Optional
 from uuid import uuid4
 
 _DB_PATH: Optional[Path] = None
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 _CREATE_SEATS = """
@@ -680,6 +680,10 @@ def _initialize_schema(con: sqlite3.Connection) -> None:
             for table, seq in sequences.items():
                 con.execute("UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name=?", (seq, table))
             _set_schema_version(con, 7)
+
+        if sv < 8:
+            _ensure_column(con, "tournament_participants", "withdrawn_at", "TEXT")
+            _set_schema_version(con, 8)
 
         # Default-Adressbuch sicherstellen
         ab = one(con, "SELECT id FROM addressbooks WHERE is_default=1 LIMIT 1")
