@@ -16,33 +16,36 @@
     align-items: start;
   }
 
-  /* Accordion optisch kompakter */
-  .sk-acc .accordion-button {
+  .sk-acc .accordion-header {
+    display: flex;
+    align-items: stretch;
+    font-size: 1rem;
+  }
+  .sk-acc .sk-acc-title {
+    flex: 1;
     padding: .6rem .85rem;
+    align-content: center;
+    font-weight: 700;
+  }
+  .sk-acc .accordion-button {
+    width: auto;
+    gap: .5rem;
+    padding: .6rem .85rem;
+    border-radius: 0 var(--bs-accordion-inner-border-radius) 0 0;
   }
   .sk-acc .accordion-body {
     padding: .75rem .85rem;
   }
-  .sk-acc .accordion-button .sk-acc-title {
-    font-weight: 700;
-  }
-
-  /* ✅ Header-Link (Tischname) sauber klickbar + Feinschliff */
-  .sk-acc .accordion-button .sk-acc-title a {
-    color: inherit;
-    text-decoration: none;
-  }
-  .sk-acc .accordion-button .sk-acc-title a:hover {
-    text-decoration: underline;
-  }
-
-  /* ✅ Fertig-Header grün */
-  .sk-acc .accordion-button.sk-done {
+  .sk-acc .sk-done {
     background: var(--bs-success);
     color: #fff;
   }
-  /* Chevron im grünen Header sichtbar machen */
-  .sk-acc .accordion-button.sk-done::after {
+  .sk-acc .sk-done .sk-acc-title,
+  .sk-acc .sk-done .accordion-button {
+    background: transparent;
+    color: inherit;
+  }
+  .sk-acc .sk-done .accordion-button::after {
     filter: invert(1) grayscale(1) brightness(2);
   }
 
@@ -399,31 +402,21 @@
 
       <div class="accordion sk-acc no-break" id="{{ acc_id }}">
         <div class="accordion-item shadow-sm">
-          <h2 class="accordion-header" id="{{ acc_id }}_h">
-            <button class="accordion-button {% if is_done %}collapsed sk-done{% endif %}"
+          <h2 class="accordion-header{% if is_done %} sk-done{% endif %}" id="{{ acc_id }}_h">
+            <a class="sk-acc-title"
+               href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=table_no) }}"
+               title="Ergebnisse für Tisch {{ table_no }} öffnen">
+              Tisch {{ table_no }} <span aria-hidden="true">→</span>
+              {% if is_done %}<span class="ms-2" aria-hidden="true">✓</span><span class="visually-hidden"> – Ergebnisse erfasst</span>{% endif %}
+            </a>
+            <button class="accordion-button{% if is_done %} collapsed{% endif %}"
                     type="button"
                     data-bs-toggle="collapse"
                     data-bs-target="#{{ col_id }}"
+                    aria-label="Sitzliste für Tisch {{ table_no }} ein- oder ausblenden"
                     aria-expanded="{{ 'false' if is_done else 'true' }}"
                     aria-controls="{{ col_id }}">
-              <div class="d-flex justify-content-between align-items-center w-100 pe-2">
-                <div class="sk-acc-title">
-                  <a href="{{ url_for(
-                              'tournaments.tournament_round_results_table',
-                              tournament_id=t.id,
-                              round_no=round_no,
-                              table_no=table_no
-                            ) }}"
-                     title="Ergebnisse für Tisch {{ table_no }} eingeben"
-                     onclick="event.stopPropagation();">
-                    Tisch {{ table_no }} <span class="text-muted">→</span>
-                  </a>
-                  {% if is_done %}<span class="ms-2">✓</span>{% endif %}
-                </div>
-                <div class="small sk-mono {% if is_done %}text-white-50{% else %}text-muted{% endif %}">
-                  R{{ round_no }}
-                </div>
-              </div>
+              <span class="small sk-mono">R{{ round_no }}</span>
             </button>
           </h2>
 

@@ -57,6 +57,25 @@ class RoundDrawTests(unittest.TestCase):
                 for table in ("tournament_rounds", "tournament_seats", "tournament_scores")
             }
 
+    def test_table_link_and_seat_toggle_work_independently(self):
+        result_url = self.round_url + "/results/1"
+        for scored in (False, True):
+            with self.subTest(scored=scored):
+                if scored:
+                    self.client.post(result_url, data=self.result_form())
+                page = self.page(self.round_url)
+                card = page.get_element_by_id("accTable_1_1")
+                link, = card.xpath(".//a[@href=$url]", url=result_url)
+                toggle, = card.xpath(".//button[@data-bs-toggle='collapse']")
+                self.assertFalse(link.xpath("ancestor::button | descendant::button"))
+                self.assertIsNone(link.get("data-bs-toggle"))
+                panel_id = toggle.get("aria-controls")
+                self.assertEqual(toggle.get("data-bs-target"), "#" + panel_id)
+                self.assertEqual(toggle.get("aria-expanded"), "false" if scored else "true")
+                self.assertEqual("show" in card.get_element_by_id(panel_id).classes, not scored)
+                self.assertIn("Tisch 1", toggle.get("aria-label", ""))
+                self.assertIsNotNone(self.page(link.get("href")).get_element_by_id("skResultsForm"))
+
     def test_scored_round_stays_intact_when_drawing_next(self):
         payload = self.result_form()
         self.client.post(self.round_url + "/results/1", data=payload)
