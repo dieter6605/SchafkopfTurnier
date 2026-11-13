@@ -137,6 +137,11 @@
       {% endif %}
     </a>
 
+    {% if g.wlan_request %}
+      {% if session.get('helper_tournament') and config.WLAN_ORIGIN %}
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('wlan.helper', tournament_id=session.helper_tournament) }}">Helferbereich</a>
+      {% endif %}
+    {% else %}
     <div class="d-flex gap-2 align-items-center">
       <a class="btn btn-sm btn-outline-light" href="{{ url_for('addresses.addresses_list') }}">Adressbuch</a>
       <a class="btn btn-sm btn-outline-light" href="{{ url_for('tournaments.tournaments_list') }}">Turniere</a>
@@ -196,6 +201,7 @@
         </ul>
       </div>
     </div>
+    {% endif %}
   </div>
 </nav>
 
@@ -234,7 +240,9 @@
 <script defer src="{{ static_asset('vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
 
 <!-- Gemeinsame JS-Logik: Wohnort-Autocomplete -->
+{% if not g.wlan_request %}
 <script defer src="{{ static_asset('js/wohnort_autocomplete.js') }}"></script>
+{% endif %}
 
 <!-- ✅ Globales UX (Fetch-409 -> Toast etc.) -->
 <script defer src="{{ static_asset('js/skt_ux.js') }}"></script>

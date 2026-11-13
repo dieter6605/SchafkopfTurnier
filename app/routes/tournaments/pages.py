@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from contextlib import closing
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, url_for
 
 from ... import db
 from . import bp
@@ -149,6 +149,7 @@ def tournament_create():
 def tournament_detail(tournament_id: int):
     with closing(db.connect()) as con, con:
         con.execute("BEGIN")
+        wlan_generation = db.wlan_generation(con) if current_app.config["WLAN_ORIGIN"] else None
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
@@ -196,7 +197,7 @@ def tournament_detail(tournament_id: int):
         )
 
     return render_template(
-        "tournament_detail.html",
+        "tournament_detail.html", wlan_generation=wlan_generation,
         t=t,
         counts=counts,
         now=_now_local_iso(),

@@ -56,6 +56,7 @@
       Tischübersicht
     </a>
 
+    {% if not g.wlan_request %}
     <a class="btn btn-outline-primary"
        href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=round_no) }}">
       Rundenwertung
@@ -69,6 +70,7 @@
     {{ tablesheet_download(url_for('tournaments.tournament_round_tablesheet_docx_single',
                                       tournament_id=t.id, round_no=round_no, table_no=table_no)) }}
 
+    {% endif %}
     {% if next_table %}
       <a class="btn btn-outline-secondary"
          href="{{ url_for('tournaments.tournament_round_results_table', tournament_id=t.id, round_no=round_no, table_no=next_table) }}">
@@ -187,10 +189,12 @@
           Speichern & nächster Tisch
         </button>
 
+        {% if not g.wlan_request %}
         <a class="btn btn-outline-secondary"
            href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=round_no) }}">
           Zurück zur Runde
         </a>
+        {% endif %}
       </div>
     </form>
 

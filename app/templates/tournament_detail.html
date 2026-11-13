@@ -26,6 +26,14 @@
   }
 </style>
 
+{% if config.WLAN_ORIGIN and not is_closed %}
+  <section class="alert alert-info no-print" aria-label="Helferzugang">
+    <strong>Helferzugang für dieses Turnier</strong>
+    <div>Adresse für das zweite Gerät: <a href="{{ config.WLAN_ORIGIN }}{{ url_for('wlan.helper', tournament_id=t.id) }}">{{ config.WLAN_ORIGIN }}{{ url_for('wlan.helper', tournament_id=t.id) }}</a></div>
+    <div>Helfercode: <strong class="sk-mono">{{ helper_code(t.id, wlan_generation) }}</strong></div>
+  </section>
+{% endif %}
+
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-3">
   <div>
     <div class="d-flex align-items-center gap-2 flex-wrap">

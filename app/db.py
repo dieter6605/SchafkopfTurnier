@@ -759,6 +759,11 @@ def _prepare_restore(con: sqlite3.Connection) -> None:
         raise ValueError("Die Sicherung enthält ungültige Datenbankverweise.")
 
 
+def wlan_generation(con: sqlite3.Connection) -> str:
+    row = con.execute("SELECT v FROM meta WHERE k='wlan_generation'").fetchone()
+    return row[0] if row else ""
+
+
 def restore_db(backup_file: Path) -> None:
     if _DB_PATH is None:
         raise RuntimeError("DB path not set.")
@@ -773,6 +778,9 @@ def restore_db(backup_file: Path) -> None:
             with closing(sqlite3.connect(backup_file.resolve().as_uri() + "?mode=ro", uri=True)) as source:
                 source.backup(stage)
             _prepare_restore(stage)
+            # Eine eingespielte Sicherung kann dieselben IDs für andere Personen und Turniere enthalten.
+            with stage:
+                stage.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('wlan_generation',?)", (uuid4().hex,))
 
             with closing(sqlite3.connect(live_path)) as live:
                 # SQLite hält diese Sperre bis zum Schließen. Zwischen Sicherung

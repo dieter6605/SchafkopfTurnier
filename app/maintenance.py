@@ -49,11 +49,15 @@ def _is_loopback(address: str | None) -> bool:
     return ip.is_loopback
 
 
-def maintenance_enabled() -> bool:
-    if not current_app.config["SKT_DEV_MODE"] or not _is_loopback(request.remote_addr):
+def local_request() -> bool:
+    if not _is_loopback(request.remote_addr):
         return False
     host = urlsplit(request.host_url).hostname
     return host == "localhost" or _is_loopback(host)
+
+
+def maintenance_enabled() -> bool:
+    return bool(current_app.config["SKT_DEV_MODE"] and local_request())
 
 
 def csrf_token() -> str:

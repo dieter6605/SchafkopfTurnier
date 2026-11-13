@@ -79,10 +79,10 @@ class MaintenanceTests(unittest.TestCase):
             ("http://localhost", "192.0.2.10", False),
         ):
             options = {"base_url":origin, "environ_overrides":{"REMOTE_ADDR":peer}}
-            page = self.page(**options)
-            forms = page.xpath('//form[@action=$action]',action=self.reopen)
-            self.assertEqual(bool(forms), allowed)
-            if not allowed:
+            if allowed:
+                self.assertTrue(self.page(**options).xpath('//form[@action=$action]', action=self.reopen))
+            else:
+                self.assertEqual(self.client.get(self.detail, **options).status_code, 403)
                 for action in (self.reopen,self.global_repair,self.local_repair):
                     self.assertEqual(self.client.post(action,**options).status_code,403)
         self.assertEqual(self.contents(), before)

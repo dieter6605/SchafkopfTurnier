@@ -16,6 +16,8 @@ from flask import (
     current_app,
 )
 
+from itsdangerous import BadData, URLSafeSerializer
+
 from ... import db
 from . import bp
 from .helpers import _get_tournament, _now_local_iso
@@ -79,11 +81,36 @@ def _qr_png(target: str) -> bytes:
     return stream.getvalue()
 
 
-def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
+def _card_signer():
+    return URLSafeSerializer(current_app.secret_key, salt="wlan-spielerkarte-v1")
+
+
+def _card_url(tournament_id, tp_id, address_id, generation):
+    origin = current_app.config["WLAN_ORIGIN"]
+    if origin:
+        token = _card_signer().dumps([tournament_id, tp_id, address_id, generation])
+        return origin + url_for("tournaments.wlan_player_card", token=token)
+    return url_for("tournaments.tournament_player_view", tournament_id=tournament_id, tp_id=tp_id, _external=True)
+
+
+@bp.get("/karte/<token>")
+def wlan_player_card(token):
+    if not current_app.config["WLAN_ORIGIN"]:
+        abort(404)
+    try:
+        tournament_id, tp_id, address_id, generation = _card_signer().loads(token)
+    except BadData:
+        abort(404)
+    return _render_player_card(tournament_id, tp_id, pdf=False, identity=(address_id, generation))
+
+
+def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: tuple[int, str] | None = None):
     with closing(db.connect()) as con:
         con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
         if not t:
+            if identity is not None:
+                abort(404)
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
@@ -94,7 +121,7 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
             SELECT
                 tp.id AS tp_id,
                 tp.player_no,
-                tp.display_name,
+                tp.display_name, tp.address_id,
                 a.nachname, a.vorname, a.wohnort
             FROM tournament_participants tp
             JOIN addresses a ON a.id = tp.address_id
@@ -102,6 +129,9 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
             """,
             (int(tournament_id), int(tp_id)),
         )
+        generation = db.wlan_generation(con) if current_app.config["WLAN_ORIGIN"] else None
+        if identity is not None and (not p or (p["address_id"], generation) != identity):
+            abort(404)
         if not p:
             flash("Spieler im Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournament_standings_overall", tournament_id=tournament_id))
@@ -257,10 +287,8 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
 
         medal = _medal_for_place(place)
 
-    player_url = url_for(
-        "tournaments.tournament_player_view", tournament_id=tournament_id, tp_id=tp_id, _external=True,
-    )
-    if pdf:
+    player_url = _card_url(tournament_id, tp_id, p["address_id"], generation)
+    if pdf or identity is not None:
         qr_url = "data:image/png;base64," + b64encode(_qr_png(player_url)).decode("ascii")
     else:
         qr_url = url_for("tournaments.tournament_player_qr_png", tournament_id=tournament_id, tp_id=tp_id)
@@ -270,7 +298,7 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool):
         sum_points=sum_points, sum_soli=sum_soli, best=best, worst=worst,
         timeline=timeline, now=_now_local_iso(), prev_tp_id=prev_tp_id, next_tp_id=next_tp_id,
         spark=spark, played=played, rounds_total=len(round_numbers),
-        player_url=player_url, qr_url=qr_url, pdf_mode=pdf,
+        player_url=player_url, qr_url=qr_url, pdf_mode=pdf, personal_card=identity is not None,
         pdf_url=url_for("tournaments.tournament_player_pdf", tournament_id=tournament_id, tp_id=tp_id),
     )
 
@@ -282,8 +310,15 @@ def tournament_player_view(tournament_id: int, tp_id: int):
 
 @bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>/qr.png")
 def tournament_player_qr_png(tournament_id: int, tp_id: int):
-    target = url_for("tournaments.tournament_player_view", tournament_id=tournament_id, tp_id=tp_id, _external=True)
-    return send_file(BytesIO(_qr_png(target)), mimetype="image/png", max_age=3600)
+    with closing(db.connect()) as con:
+        con.execute("BEGIN")
+        generation = db.wlan_generation(con) if current_app.config["WLAN_ORIGIN"] else None
+        p = db.one(con, "SELECT address_id FROM tournament_participants WHERE tournament_id=? AND id=?",
+                   (tournament_id, tp_id))
+    if not p:
+        abort(404)
+    target = _card_url(tournament_id, tp_id, p["address_id"], generation)
+    return send_file(BytesIO(_qr_png(target)), mimetype="image/png", max_age=0)
 
 
 @bp.get("/tournaments/<int:tournament_id>/players/<int:tp_id>/pdf")

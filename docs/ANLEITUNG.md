@@ -166,7 +166,15 @@ Platz | Name | Punkte (Soli)
 
 **Spielerkarte als PDF**
 
-In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Der QR-Code und der anklickbare Link auf der Karte führen zur Spieleransicht unter der Adresse, mit der die Turnierverwaltung geöffnet wurde. Bei `127.0.0.1` oder `localhost` lässt sich die Ansicht auf dem Turnier-Mac öffnen, solange die Anwendung läuft. Ein Handy kann den Code lesen. Für den Aufruf auf dem Handy ist eine vom Handy erreichbare Adresse erforderlich.
+In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Im Einzelplatzbetrieb öffnet der QR-Code die Karte am Turnierrechner. Im WLAN-Betrieb enthält eine neu angezeigte oder gedruckte Karte einen persönlichen Link für das Handy. Wer diesen Link hat, kann die betreffende Karte lesen. Die Turnierleitung gibt jede Karte an den zugehörigen Spieler. Nach der Berichtigung einer falschen Anmeldung eine neue Karte ausgeben.
+
+### Ergebnisse durch Helfer im Vereins-WLAN
+
+Den WLAN-Start für Mac oder Windows beschreibt die Installationsanleitung. Auf dem Turnierrechner die lokale Turnierliste öffnen und das offene Turnier wählen. Im Abschnitt **Helferzugang für dieses Turnier** stehen die Adresse und der Helfercode. Beides nur den Helfern dieses Turniers geben.
+
+Am Helfergerät dasselbe Vereins-WLAN verwenden, die Adresse öffnen, den Code eingeben und Runde und Tisch wählen. Für jeden Spieler Punkte und Soli eintragen und speichern. Ein bereits erfasster Tisch lässt sich korrigieren. Die Punktesumme muss null sein, die vier Spieler dürfen zusammen höchstens 40 Soli haben. Hat jemand den Tisch inzwischen geändert, die aktuellen Werte vergleichen und die Korrektur erneut bestätigen.
+
+Über **Helferbereich → Abmelden** endet die Sitzung auf dem Gerät. Mit dem Beenden der Anwendung endet der WLAN-Zugriff. Beim nächsten WLAN-Start bekommt jedes Turnier einen neuen Helfercode. Nach dem Wiederherstellen einer Sicherung den neuen Helfercode und neue Spielerkarten ausgeben.
 
 ## 10. Tastatur-Shortcuts (wichtig!)
 

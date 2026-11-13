@@ -17,6 +17,7 @@ from flask import (
 from werkzeug.routing import BuildError
 
 from . import db
+from .wlan import setup_wlan
 from .maintenance import csrf_token, guard_write_requests, local_session_key, maintenance_enabled
 from .routes.home import bp as home_bp
 from .routes.addresses import bp as addresses_bp
@@ -25,11 +26,13 @@ from .routes.api import bp as api_bp
 from .routes.help import bp as help_bp
 
 
-def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
+def create_app(*, db_path: Path, backup_dir: Optional[Path] = None,
+               wlan_ip: str | None = None, port: int = 8000) -> Flask:
     app = Flask(__name__)
     app.config["SKT_DEV_MODE"] = (os.environ.get("SKT_DEV_MODE", "").strip() == "1")
     app.secret_key = local_session_key(Path(db_path).parent)
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    setup_wlan(app, wlan_ip, port)
     app.before_request(guard_write_requests)
     app.add_template_global(csrf_token)
 
@@ -209,6 +212,8 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None) -> Flask:
             abort(400, "Ungültige Turnier-ID")
 
         if _tournament_is_closed(tid):
+            if g.wlan_request:
+                abort(403, description="Dieses Turnier ist für die Ergebniseingabe geschlossen.")
             abort(
                 409,
                 description="Dieses Turnier ist abgeschlossen und darf nicht mehr geändert werden.",

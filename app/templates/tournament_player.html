@@ -163,6 +163,7 @@
     </div>
 
     <div class="sk-actions">
+      {% if not personal_card %}
       <a class="btn btn-outline-secondary"
          href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
         Gesamtwertung
@@ -181,9 +182,10 @@
         </a>
       {% endif %}
 
+      {% endif %}
       <button class="btn btn-outline-secondary" type="button" onclick="window.print()">Drucken</button>
 
-      {% if pdf_url %}
+      {% if pdf_url and not personal_card %}
         <a class="btn btn-outline-primary" href="{{ pdf_url }}">PDF</a>
       {% endif %}
     </div>
@@ -325,7 +327,7 @@
 
   {# Druck-Fußzeile (optional kompakt) #}
   <div class="small sk-muted mt-3">
-    <a class="sk-mono" href="{{ player_url }}">{{ player_url }}</a>
+    <a class="sk-mono text-break" href="{{ player_url }}">{{ player_url }}</a>
   </div>
 
 </div>

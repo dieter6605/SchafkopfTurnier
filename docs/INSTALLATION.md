@@ -150,3 +150,29 @@ PORT=8050 python run_waitress.py
 ❌ Python-Version zu alt
 
 ➡ Python ≥ 3.11 installieren
+
+## Optionaler Start im Vereins-WLAN
+
+Turnierrechner und Helfergerät mit demselben privaten Vereins-WLAN verbinden. Die Verbindung verwendet HTTP. Sie ist für ein vertrauenswürdiges lokales Netz vorgesehen. Eine Internetverbindung oder Portweiterleitung ist dafür nicht erforderlich. Die IPv4-Adresse am Mac in **Systemeinstellungen → WLAN → Details → TCP/IP** ablesen, unter Windows mit `ipconfig` beim WLAN-Adapter. In den Beispielen `192.168.1.37` durch diese Adresse ersetzen.
+
+Im entpackten **Mac-Offline-Paket** im Terminal starten:
+
+```bash
+SKT_WLAN_IP=192.168.1.37 /bin/zsh ./Turnier-starten.command
+```
+
+Im entpackten **Windows-Offline-Paket** in der Eingabeaufforderung starten:
+
+```bat
+cmd /c "set SKT_WLAN_IP=192.168.1.37&& Turnier-starten.cmd"
+```
+
+Im **Mac-Projektordner** mit installierter Umgebung lautet der Startbefehl:
+
+```bash
+SKT_WLAN_IP=192.168.1.37 PORT=8051 .venv/bin/python run_waitress.py
+```
+
+Die Turnierleitung öffnet auf dem Turnierrechner `http://127.0.0.1:8051/tournaments`. In jedem offenen Turnier stehen der Helferlink und der für diesen Start gültige Code. Eine persönliche Spielerkarte kann über ihren QR-Code gelesen werden. Helfer melden sich mit dem Code an, wählen eine ausgeloste Runde und einen Tisch. Turnierverwaltung und Adressbuch werden am Turnierrechner bedient.
+
+Falls ein zweites Gerät die Adresse nicht erreicht, die WLAN-Adresse und das private Netzwerkprofil kontrollieren. Die Geräte müssen einander im WLAN erreichen dürfen. Eine lokale Firewall-Freigabe bei Bedarf auf das private Vereinsnetz beschränken. Mit Strg+C beenden. Der übliche Start ohne die WLAN-Variable führt wieder zum Einzelplatzbetrieb.

@@ -6,9 +6,10 @@ import json
 from contextlib import closing
 from typing import Any
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, g, redirect, render_template, request, url_for
 
 from ... import db
+from ...wlan import check_result_access
 from . import bp
 from .helpers import MAX_SOLI_PER_TABLE, _get_tournament, _guard_closed_redirect, _now_local_iso, _soli_total_issue
 
@@ -27,8 +28,10 @@ def _to_int(v: Any, *, default: int | None = None) -> int | None:
 
 @bp.get("/tournaments/<int:tournament_id>/rounds/<int:round_no>/results")
 def tournament_round_results_overview(tournament_id: int, round_no: int):
-    with closing(db.connect()) as con, con:
+    with closing(db.connect()) as con:
+        con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
+        check_result_access(con, t)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
@@ -230,12 +233,15 @@ def tournament_round_results_table(tournament_id: int, round_no: int, table_no: 
     with closing(db.connect()) as con:
         con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
+        check_result_access(con, t)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
         players = _table_players(con, tournament_id, round_no, table_no)
         if len(players) != 4:
             flash("Tisch nicht gefunden oder unvollständig (nicht genau 4 Spieler).", "error")
+            if g.wlan_request:
+                return redirect(url_for("wlan.helper", tournament_id=tournament_id))
             return redirect(url_for("tournaments.tournament_round_view", tournament_id=tournament_id, round_no=round_no))
         next_table = _next_table(con, tournament_id, round_no, table_no)
     return _table_form(t, round_no, table_no, players, next_table)
@@ -248,6 +254,7 @@ def tournament_round_results_table_post(tournament_id: int, round_no: int, table
     with closing(db.connect()) as con, con:
         con.execute("BEGIN IMMEDIATE")
         t = _get_tournament(con, tournament_id)
+        check_result_access(con, t)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
