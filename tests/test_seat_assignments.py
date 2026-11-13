@@ -108,3 +108,52 @@ class SeatAssignmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Verknüpfung"):
             db.restore_db(backup)
         self.assertEqual(self.path.read_bytes(), before)
+
+    def test_restore_requires_unconditional_score_key_and_accepts_equivalent_index(self):
+        backup = db.backup_db(self.path.parent / "backups")
+        with closing(sqlite3.connect(backup)) as old, old:
+            old.execute("DROP TABLE tournament_scores")
+            old.execute(db._CREATE_SCORES.replace("UNIQUE(tournament_id, round_no, tp_id),", ""))
+            old.execute("INSERT INTO tournament_scores(tournament_id,round_no,table_no,tp_id,points) "
+                        "VALUES(1,1,1,1,30)")
+        active = self.path.read_bytes()
+        for index in ("", "CREATE UNIQUE INDEX by_player ON tournament_scores(tp_id,tp_id,round_no,tournament_id)",
+                      "CREATE INDEX by_player ON tournament_scores(tournament_id,round_no,tp_id)",
+                      "CREATE UNIQUE INDEX by_player ON tournament_scores(tournament_id,round_no,tp_id) WHERE round_no=1"):
+            with self.subTest(index=index):
+                with closing(sqlite3.connect(backup)) as old, old:
+                    old.execute("DROP INDEX IF EXISTS by_player")
+                    if index:
+                        old.execute(index)
+                    self.assertEqual(old.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                    self.assertEqual(old.execute("PRAGMA foreign_key_check").fetchall(), [])
+                before = backup.read_bytes()
+                with self.assertRaisesRegex(ValueError, "eindeutige Zuordnung der Tischergebnisse"):
+                    db.restore_db(backup)
+                self.assertEqual(self.path.read_bytes(), active)
+                self.assertEqual(backup.read_bytes(), before)
+                self.assertFalse(list(self.path.parent.glob("*.before-restore-*.sqlite3")))
+
+        with closing(sqlite3.connect(backup)) as old, old:
+            old.execute("DROP INDEX by_player")
+            old.execute("CREATE UNIQUE INDEX anderer_name ON tournament_scores(tp_id,round_no,tournament_id)")
+        db.restore_db(backup)
+        with self.con:
+            self.assertEqual(self.con.execute("SELECT points FROM tournament_scores").fetchone()[0], 30)
+            self.con.execute("INSERT INTO tournament_scores(tournament_id,round_no,table_no,tp_id,points) "
+                             "VALUES(1,1,1,1,20) ON CONFLICT(tournament_id,round_no,tp_id) "
+                             "DO UPDATE SET points=excluded.points")
+        self.assertEqual([row[0] for row in self.con.execute("SELECT points FROM tournament_scores")], [20])
+
+    def test_restore_rejects_missing_unique_table_seat(self):
+        backup = db.backup_db(self.path.parent / "backups")
+        with closing(sqlite3.connect(backup)) as old, old:
+            old.execute("DROP TABLE tournament_seats")
+            old.execute(db._CREATE_SEATS.replace("UNIQUE(tournament_id, round_no, table_no, seat),", ""))
+            self.assertEqual(old.execute("PRAGMA foreign_key_check").fetchall(), [])
+        active = self.path.read_bytes()
+        before = backup.read_bytes()
+        with self.assertRaisesRegex(ValueError, "eindeutige Zuordnung der Sitzplätze"):
+            db.restore_db(backup)
+        self.assertEqual(self.path.read_bytes(), active)
+        self.assertEqual(backup.read_bytes(), before)

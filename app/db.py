@@ -112,6 +112,18 @@ def _foreign_keys(con: sqlite3.Connection, table: str) -> set[tuple]:
     return {tuple(row[1:] for row in columns) for _, columns in groupby(rows, key=lambda row: row[0])}
 
 
+def _unique_keys(con: sqlite3.Connection, table: str) -> set[tuple]:
+    rows = con.execute("""
+        SELECT i.name, c.name, lower(c.coll)
+        FROM pragma_index_list(?) AS i, pragma_index_xinfo(i.name) AS c
+        WHERE i."unique" = 1 AND i.partial = 0 AND c."key" = 1
+        ORDER BY i.name, c.name, lower(c.coll)
+    """, (table,))
+    # Indexname und Spaltenreihenfolge ändern die Eindeutigkeit nicht.
+    return {tuple((row[1], row[2]) for row in columns)
+            for _, columns in groupby(rows, key=lambda row: row[0])}
+
+
 def _ensure_column(con: sqlite3.Connection, table: str, column: str, coldef: str) -> None:
     """
     Fügt eine Spalte per ALTER TABLE hinzu, falls sie in einer Bestands-DB fehlt.
@@ -755,6 +767,9 @@ def _prepare_restore(con: sqlite3.Connection) -> None:
                 required = _foreign_keys(reference, table)
                 if not required.issubset(_foreign_keys(con, table)):
                     raise ValueError(f"Unvollständige Sicherung: In {table} fehlt die Verknüpfung zum Sitzplan.")
+                if not _unique_keys(reference, table).issubset(_unique_keys(con, table)):
+                    bereich = "Sitzplätze" if table == "tournament_seats" else "Tischergebnisse"
+                    raise ValueError(f"Unvollständige Sicherung: Die eindeutige Zuordnung der {bereich} fehlt.")
     if con.execute("PRAGMA foreign_key_check").fetchone():
         raise ValueError("Die Sicherung enthält ungültige Datenbankverweise.")
 
