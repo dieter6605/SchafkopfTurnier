@@ -21,7 +21,7 @@ class HelpTests(unittest.TestCase):
         return html.fromstring(response.get_data(as_text=True))
 
     def test_help_menu_and_overview_reach_every_section(self):
-        sections = {"/hilfe/anleitung", "/hilfe/installation", "/hilfe/readme", "/hilfe/tarifrechner"}
+        sections = {"/hilfe/spielregeln", "/hilfe/anleitung", "/hilfe/installation", "/hilfe/readme", "/hilfe/tarifrechner"}
         overview = self.page("/hilfe")
         self.assertEqual(set(overview.xpath("//main//a/@href")), sections)
         menu = self.page("/").xpath('//button[normalize-space(.)="Hilfe"]/following-sibling::ul')[0]

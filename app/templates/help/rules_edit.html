@@ -1,0 +1,26 @@
+{% extends "help/_layout.html" %}
+{% block help_content %}
+<form method="post" class="sk-panel sk-pad sk-rules">
+  {{ csrf_field() }}
+  <input type="hidden" name="revision" value="{{ revision }}">
+  {% if error %}<p class="alert alert-warning" role="alert">{{ error }}</p>{% endif %}
+  <label for="rules-title" class="form-label fw-semibold">Titel des Regelblatts</label>
+  <input id="rules-title" name="title" class="form-control mb-3" value="{{ rules.title }}" required>
+  <p class="text-secondary">Schreibe die Regeln als normalen Text. Für einen neuen Absatz drücke die Eingabetaste. Einen Abschnitt entfernst du, indem du beide Felder leerst.</p>
+  {% for heading, text in rules.sections + [['', '']] %}
+  <fieldset class="border-top pt-3 mb-3">
+    <legend class="h6">{{ 'Weiteren Abschnitt hinzufügen (optional)' if loop.last else 'Abschnitt ' ~ loop.index }}</legend>
+    <label class="form-label" for="heading-{{ loop.index }}">Überschrift</label>
+    <input class="form-control mb-2" id="heading-{{ loop.index }}" name="heading" value="{{ heading }}">
+    <label class="form-label" for="text-{{ loop.index }}">Regeltext</label>
+    <textarea class="form-control" id="text-{{ loop.index }}" name="text" rows="{{ 3 if loop.last else 4 }}">{{ text }}</textarea>
+  </fieldset>{% endfor %}
+  <label class="form-label" for="closing">Schlusswort (optional)</label>
+  <textarea class="form-control mb-3" id="closing" name="closing" rows="2">{{ rules.closing }}</textarea>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if conflict %}<a class="btn btn-primary" href="{{ url_for('rules.edit') }}">Aktuelle Fassung öffnen</a>
+    {% else %}<button type="submit" class="btn btn-primary">Spielregeln speichern</button>{% endif %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('rules.view') }}">Abbrechen</a>
+  </div>
+</form>
+{% endblock %}

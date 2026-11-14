@@ -8,11 +8,15 @@
   </section>
   <section class="sk-panel sk-support">
     <h2>Tarifrechner</h2>
-    <p class="text-secondary mb-1">Den Spieltarif und den Betrag je Gewinner und Verlierer berechnen.</p>
+    <p class="text-secondary mb-1">Geldtarif in Euro und Auszahlung je Spieler berechnen.</p>
     <a class="btn btn-outline-secondary mt-auto" href="{{ url_for('home.help_tarif') }}">Tarif berechnen</a>
   </section>
 </div>
 <div class="sk-event-grid">
+  <a class="sk-panel sk-event" href="{{ url_for('rules.view') }}">
+    <span><strong>Spielregeln</strong><small>Das Regelblatt lesen, als PDF herunterladen oder bearbeiten.</small></span>
+    <span class="ms-auto" aria-hidden="true">→</span>
+  </a>
   {% for doc, label, description in [
       ('installation', 'Installation', 'Anwendung einrichten, offline starten und das Vereins-WLAN nutzen.'),
       ('readme', 'Lies mich', 'Funktionen, Voraussetzungen und Aufbau der Turnierverwaltung nachschlagen.')] %}

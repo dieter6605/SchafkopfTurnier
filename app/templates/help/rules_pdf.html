@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><title>{{ rules.title }}</title>
+<style>
+@page { size: A4; margin: 15mm 18mm 16mm; @bottom-right { content: counter(page) " / " counter(pages); font: 9pt sans-serif; color: #56636c; } }
+body { margin: 0; color: #192c38; font: 11pt/1.35 sans-serif; overflow-wrap: anywhere; }
+h1 { font-size: 20pt; margin: 0 0 4mm; line-height: 1.12; }
+footer { margin-top: 4mm; }
+h2 { font-size: 12pt; margin: 3mm 0 1mm; break-after: avoid; }
+p { margin: 0 0 1mm; orphans: 2; widows: 2; }
+</style></head><body><h1>{{ rules.title }}</h1>{% include 'help/_rule_sections.html' %}</body></html>

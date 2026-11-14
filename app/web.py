@@ -24,6 +24,7 @@ from .routes.addresses import bp as addresses_bp
 from .routes.tournaments import bp as tournaments_bp
 from .routes.api import bp as api_bp
 from .routes.help import bp as help_bp
+from .routes.rules import bp as rules_bp
 
 
 def create_app(*, db_path: Path, backup_dir: Optional[Path] = None,
@@ -325,5 +326,6 @@ def create_app(*, db_path: Path, backup_dir: Optional[Path] = None,
     app.register_blueprint(tournaments_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(help_bp)
+    app.register_blueprint(rules_bp)
 
     return app

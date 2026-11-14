@@ -1,0 +1,9 @@
+{% extends "help/_layout.html" %}
+{% block screen_styles %}{% if g.wlan_request %}<link href="{{ url_for('static', filename='turnier.css') }}" rel="stylesheet">{% else %}{{ super() }}{% endif %}{% endblock %}
+{% block help_content %}
+<div class="d-flex gap-2 flex-wrap mb-3 no-print">
+  <a class="btn btn-primary" href="{{ url_for('rules.pdf') }}">PDF herunterladen</a>
+  {% if not g.wlan_request %}<a class="btn btn-outline-secondary" href="{{ url_for('rules.edit') }}">Spielregeln bearbeiten</a>{% endif %}
+</div>
+<article class="sk-panel sk-pad sk-help-text sk-rules">{% include 'help/_rule_sections.html' %}</article>
+{% endblock %}

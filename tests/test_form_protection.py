@@ -53,7 +53,7 @@ class FormProtectionTests(unittest.TestCase):
         self.assertEqual(self.client.post("/backup", data={"csrf_token": token}).status_code, 302)
         router = self.app.url_map.bind("localhost")
         covered = set()
-        for path in ("/", "/addresses?view=all", "/addresses/new", "/addresses/1/edit", "/addresses/import",
+        for path in ("/", "/hilfe/spielregeln/bearbeiten", "/addresses?view=all", "/addresses/new", "/addresses/1/edit", "/addresses/import",
                      "/tournaments", "/tournaments/new", "/tournaments/1", "/tournaments/2",
                      "/tournaments/1/edit", "/tournaments/1/participants?q=Probe", "/tournaments/1/rounds/1",
                      "/tournaments/1/rounds/1/results/1", "/tournaments/1/participants/1/correct"):

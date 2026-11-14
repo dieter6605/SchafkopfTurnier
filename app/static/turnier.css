@@ -341,6 +341,9 @@
 .sk-help-chapters li a { display: block; padding: .35rem 0; line-height: 1.35; }
 .sk-help-text { overflow-wrap: anywhere; line-height: 1.6; }
 .sk-help-text > :first-child { margin-top: 0; }
+.sk-rules { max-width: 56rem; }
+.sk-rules section:first-child > h2 { margin-top: 0; }
+.sk-rules section > p { margin-bottom: .45rem; }
 .sk-help-text :is(h2, h3, h4) { margin: 1.5em 0 .6em; color: var(--sk-navy); scroll-margin-top: 1rem; }
 .sk-help-text h2 { font-size: 1.45rem; }
 .sk-help-text h3 { font-size: 1.2rem; }

@@ -1,6 +1,7 @@
 {% macro help_links(section='', menu=false) %}
   {% for key, label, href in [
       ('overview', 'Hilfeübersicht', url_for('home.help_readme')),
+      ('regeln', 'Spielregeln', url_for('rules.view')),
       ('anleitung', 'Anleitung', url_for('home.help_docs', doc='anleitung')),
       ('installation', 'Installation', url_for('home.help_docs', doc='installation')),
       ('readme', 'Lies mich', url_for('home.help_docs', doc='readme')),

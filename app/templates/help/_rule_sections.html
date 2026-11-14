@@ -1,0 +1,7 @@
+{% for heading, text in rules.sections %}
+<section>
+  <h2>{{ heading }}</h2>
+  {% for line in text.splitlines() if line.strip() %}<p>{{ line }}</p>{% endfor %}
+</section>
+{% endfor %}
+{% if rules.closing %}<footer class="mt-4">{% for line in rules.closing.splitlines() if line.strip() %}<p>{{ line }}</p>{% endfor %}</footer>{% endif %}

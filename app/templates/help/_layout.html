@@ -4,7 +4,7 @@
 {% block main_class %}sk-workspace sk-help{% endblock %}
 {% block content %}
   <div class="sk-heading"><h1>{{ title }}</h1></div>
-  {% if section != 'overview' %}
+  {% if section != 'overview' and not g.wlan_request %}
     <nav class="turnier-nav sk-help-nav no-print" aria-label="Hilfebereiche">{{ help_links(section) }}</nav>
   {% endif %}
   {% block help_content %}{% endblock %}

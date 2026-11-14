@@ -70,6 +70,8 @@ def guard_access():
     endpoint = request.endpoint
     if endpoint == "static" and request.view_args["filename"] in PUBLIC_ASSETS:
         return
+    if endpoint in {"rules.view", "rules.pdf"} and request.method in {"GET", "HEAD"}:
+        return
     if endpoint == "home.home":
         return render_template("wlan.html")
     if endpoint in {"wlan.helper", "wlan.logout", "tournaments.wlan_player_card"}:

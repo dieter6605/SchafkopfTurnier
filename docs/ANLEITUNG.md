@@ -13,6 +13,14 @@ Unter **Hilfe → Hilfeübersicht** findest du diese Anleitung, die Installation
 - Auf „Start“ das aktuelle Turnier und den nächsten Schritt prüfen. „Turnier öffnen“ führt zur Übersicht mit dem Stand der einzelnen Tische.
 - Unter „Turniere“ nach Name oder Ort suchen und offene oder abgeschlossene Turniere auswählen. **Zur Trefferliste** führt von einem geöffneten Treffer zur gleichen Suche und Statusauswahl zurück. Wird **Neues Turnier** oder **Bearbeiten** direkt aus dieser Liste geöffnet, führt auch **Abbrechen** dorthin.
 
+**Spielregeln lesen und ändern**
+
+Unter **Hilfe → Spielregeln** steht das aktuelle Regelblatt für alle Turniere. **PDF herunterladen** speichert eine druckbare Fassung. Im Vereins-WLAN führt **Spielregeln lesen** auf der Helferseite zum gleichen Blatt.
+
+Am Turnierrechner **Spielregeln bearbeiten** wählen. Titel, Überschriften und Regeltexte lassen sich direkt eintippen. Das leere Feldpaar am Ende fügt einen Abschnitt hinzu. Zum Entfernen eines Abschnitts beide Felder leeren. **Spielregeln speichern** aktualisiert die Anzeige und das PDF. **Abbrechen** verwirft den Entwurf. Eine Textänderung verändert die Berechnung der Turnierwertung oder die Grenzen der Ergebniseingabe nicht.
+
+Die bearbeiteten Regeln gehören zur Datenbanksicherung. Beim Wiederherstellen gilt die Fassung aus der Sicherung. Bei einer älteren Sicherung ohne eigenen Regeltext erscheint das mitgelieferte Regelblatt.
+
 **Sicherung erstellen**
 
 Unter **Datensicherung** auf **Sicherung erstellen** klicken. Die Meldung nennt die neue Datei. Unter **Gespeicherte Sicherungen** steht die zuletzt gespeicherte Datei oben. Bei hochgeladenen Dateien bezeichnet das Datum den Speicherzeitpunkt auf diesem Rechner. Über **Herunterladen** lässt sich eine Kopie auf einem weiteren Datenträger ablegen.
