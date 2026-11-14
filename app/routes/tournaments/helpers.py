@@ -274,20 +274,20 @@ def _read_tournament_form() -> dict[str, Any]:
     }
 
 
-def _validate_tournament_form(data: dict[str, Any]) -> str | None:
-    """Gibt Fehlermeldung zurück oder None wenn ok."""
+def _validate_tournament_form(data: dict[str, Any]) -> tuple[str, str] | None:
+    """Liefert Feld und Meldung für die Korrektur im Turnierformular."""
     if not data["title"]:
-        return "Turniername fehlt."
+        return "title", "Bitte einen Turniernamen eintragen."
     if not data["event_date"]:
-        return "Datum ist Pflicht."
+        return "event_date", "Bitte das Turnierdatum eintragen."
     if not data["start_time"]:
-        return "Beginn ist Pflicht."
+        return "start_time", "Bitte die Startzeit eintragen."
 
     marker = data.get("marker")
     if marker:
         msg = _validate_marker_for_event_date(marker, data.get("event_date") or "")
         if msg:
-            return msg
+            return "marker", msg
 
     return None
 

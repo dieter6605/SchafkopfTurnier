@@ -1,105 +1,68 @@
 {% extends "layout.html" %}
-{% block content %}
+{% set heading = 'Neues Turnier' if mode == 'new' else 'Turnier bearbeiten' %}
+{% set invalid = 'marker' if marker_owner else (field_error[0] if field_error else '') %}
+{% block title %}{{ heading }} · SchafkopfTurnier{% endblock %}
+{% block main_class %}sk-workspace{% endblock %}
 
-<style>
-  .sk-kbd { font-size: .95rem; color: rgba(0,0,0,.55); }
-  .sk-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-</style>
-
-<div class="d-flex justify-content-between align-items-start mb-3">
-  <div>
-    <h3 class="mb-0">
-      {% if mode=='new' %}Neues Turnier{% else %}Turnier bearbeiten{% endif %}
-    </h3>
-    <div class="sk-kbd mt-1">
-      Tastatur: Esc = Zurück · Ctrl+S / Cmd+S = Speichern
+{% macro field(name, label, type='text', required=false, hint='') %}
+  {% set descriptions = ([name ~ '-error'] if invalid == name else []) + ([name ~ '-help'] if hint else []) %}
+  <label class="form-label" for="{{ name }}">{{ label }}{% if required %} *{% endif %}</label>
+  <input class="form-control{% if invalid == name %} is-invalid{% endif %}{% if name == 'marker' %} font-monospace{% endif %}"
+         id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ t[name] if t[name] is not none else '' }}"
+         {% if required %}required{% endif %}
+         {% if type == 'number' %}min="0" step="1"{% endif %}
+         {% if name == 'marker' %}autocomplete="off" placeholder="z. B. 261112ABCD"{% endif %}
+         {% if invalid == name or (not invalid and name == 'title') %}autofocus{% endif %}
+         {% if invalid == name %}aria-invalid="true"{% endif %}
+         {% if descriptions %}aria-describedby="{{ descriptions|join(' ') }}"{% endif %}>
+  {% if invalid == name %}
+    <div class="invalid-feedback" id="{{ name }}-error" role="alert">
+      {% if marker_owner %}
+        Der Marker {{ t.marker }} ist bereits vergeben an
+        <a href="{{ url_for('tournaments.tournament_detail', tournament_id=marker_owner.id) }}">Turnier Nr. {{ marker_owner.id }} „{{ marker_owner.title }}“</a>.
+        Bitte einen anderen Marker wählen.
+      {% else %}{{ field_error[1] }}{% endif %}
     </div>
-  </div>
-  <div>
-    <a class="btn btn-outline-secondary"
-       id="btnBack"
-       href="{{ back_url }}">
-      Zurück
-    </a>
-  </div>
-</div>
+  {% endif %}
+  {% if hint %}<div class="form-text" id="{{ name }}-help">{{ hint }}</div>{% endif %}
+{% endmacro %}
 
-<div class="card shadow-sm">
-  <div class="card-body">
-    <form method="post" class="row g-2" id="tForm">
-      {{ csrf_field() }}
-
-      <div class="col-md-6">
-        <label class="form-label">Turniername *</label>
-        <input class="form-control" name="title" required value="{{ t.title }}" {% if not marker_owner %}autofocus{% endif %}>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label">Datum *</label>
-        <input class="form-control" type="date" name="event_date" required value="{{ t.event_date }}">
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label">Beginn *</label>
-        <input class="form-control" type="time" name="start_time" required value="{{ t.start_time }}">
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">Ort</label>
-        <input class="form-control" name="location" value="{{ t.location or '' }}">
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label" for="marker">Marker</label>
-        <input class="form-control sk-mono{% if marker_owner %} is-invalid{% endif %}"
-               id="marker"
-               name="marker"
-               value="{{ t.marker or '' }}"
-               placeholder="z. B. 261112ABCD"
-               aria-describedby="marker-help{% if marker_owner %} marker-error{% endif %}"
-               {% if marker_owner %}aria-invalid="true" autofocus{% endif %}
-               autocomplete="off"
-               inputmode="text">
-        {% if marker_owner %}
-          <div id="marker-error" class="invalid-feedback" role="alert">
-            Der Marker {{ t.marker }} ist bereits vergeben an
-            <a href="{{ url_for('tournaments.tournament_detail', tournament_id=marker_owner.id) }}">Turnier Nr. {{ marker_owner.id }} „{{ marker_owner.title }}“</a>.
-            Bitte einen anderen Marker wählen.
-          </div>
-        {% endif %}
-        <div id="marker-help" class="form-text">Datum als JJMMTT, gefolgt von vier Buchstaben oder Ziffern. Beim Anlegen optional, zum Abschluss erforderlich.</div>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label">Veranstalter</label>
-        <input class="form-control" name="organizer" value="{{ t.organizer or '' }}">
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">Min. Teilnehmer</label>
-        <input class="form-control" type="number" min="0" step="1" name="min_participants" value="{{ t.min_participants }}">
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">Max. Teilnehmer</label>
-        <input class="form-control" type="number" min="0" step="1" name="max_participants" value="{{ t.max_participants }}">
-        <div class="form-text">0 oder leer = unbegrenzt</div>
-      </div>
-
+{% block content %}
+<a class="sk-back" id="btnBack" href="{{ back_url }}">{{ '← Zur Turnierliste' if mode == 'new' else '← Zur Turnierübersicht' }}</a>
+<div class="sk-heading"><h1>{{ heading }}</h1></div>
+<form id="tForm" method="post" class="sk-event-form">
+  {{ csrf_field() }}
+  <section class="sk-panel sk-pad" aria-labelledby="veranstaltung">
+    <h2 id="veranstaltung">Veranstaltung</h2>
+    <p class="form-text mb-3">Felder mit * sind Pflichtfelder.</p>
+    <div class="row g-3">
+      <div class="col-12">{{ field('title', 'Turniername', required=true) }}</div>
+      <div class="col-sm-6">{{ field('event_date', 'Datum', 'date', required=true) }}</div>
+      <div class="col-sm-6">{{ field('start_time', 'Beginn', 'time', required=true) }}</div>
+      <div class="col-sm-6">{{ field('location', 'Ort') }}</div>
+      <div class="col-sm-6">{{ field('organizer', 'Veranstalter') }}</div>
       <div class="col-12">
-        <label class="form-label">Beschreibung</label>
-        <textarea class="form-control" name="description" rows="3">{{ t.description or '' }}</textarea>
+        <label class="form-label" for="description">Beschreibung</label>
+        <textarea class="form-control" id="description" name="description" rows="3">{{ t.description or '' }}</textarea>
       </div>
-
-      <div class="col-12 mt-2 d-flex gap-2">
-        <button class="btn btn-primary" id="btnSave">Speichern</button>
-        <a class="btn btn-outline-secondary" href="{{ back_url }}">Abbrechen</a>
-      </div>
-
-    </form>
+    </div>
+  </section>
+  <section class="sk-panel sk-pad" aria-labelledby="turnierrahmen">
+    <h2 class="mb-3" id="turnierrahmen">Teilnehmerzahl und Marker</h2>
+    <div class="row g-3">
+      <div class="col-sm-6">{{ field('min_participants', 'Mindestzahl', 'number') }}</div>
+      <div class="col-sm-6">{{ field('max_participants', 'Höchstzahl', 'number', hint='0 oder leer bedeutet unbegrenzt.') }}</div>
+      <div class="col-12">{{ field('marker', 'Turniermarker', hint='Datum als JJMMTT und vier weitere Buchstaben oder Ziffern. Der Marker wird für den Turnierabschluss benötigt.') }}</div>
+    </div>
+  </section>
+  <div class="sk-panel sk-toolbar sk-event-form-actions">
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="btn btn-primary" id="btnSave" type="submit">Speichern</button>
+      <a class="btn btn-outline-secondary" href="{{ back_url }}">Abbrechen</a>
+    </div>
+    <span class="text-secondary small">Esc zum Abbrechen · Strg+S oder ⌘S zum Speichern</span>
   </div>
-</div>
-
+</form>
 {% endblock %}
 
 {% block scripts %}

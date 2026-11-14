@@ -83,12 +83,12 @@ def _marker_owner(con, marker: str | None, tournament_id: int | None = None):
     return None
 
 
-def _tournament_form(values, tournament_id: int | None = None, *, marker_owner=None):
+def _tournament_form(values, tournament_id: int | None = None, *, marker_owner=None, field_error=None):
     back_url = (url_for("tournaments.tournaments_list") if tournament_id is None
                 else url_for("tournaments.tournament_detail", tournament_id=tournament_id))
     return render_template(
         "tournament_form.html", t=values, mode="new" if tournament_id is None else "edit",
-        back_url=back_url, marker_owner=marker_owner,
+        back_url=back_url, marker_owner=marker_owner, field_error=field_error,
     )
 
 
@@ -121,8 +121,7 @@ def tournament_create():
 
         err = _validate_tournament_form(data)
         if err:
-            flash(err, "error")
-            return redirect(url_for("tournaments.tournament_new"))
+            return _tournament_form(data, field_error=err), 422
 
         con.execute(
             """
@@ -266,12 +265,11 @@ def tournament_update(tournament_id: int):
 
         owner = _marker_owner(con, data["marker"], tournament_id)
         if owner is not None:
-            return _tournament_form(dict(data, id=tournament_id), tournament_id, marker_owner=owner), 409
+            return _tournament_form(data, tournament_id, marker_owner=owner), 409
 
         err = _validate_tournament_form(data)
         if err:
-            flash(err, "error")
-            return redirect(url_for("tournaments.tournament_edit", tournament_id=tournament_id))
+            return _tournament_form(data, tournament_id, field_error=err), 422
 
         con.execute(
             """

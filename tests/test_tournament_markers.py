@@ -39,6 +39,58 @@ class TournamentMarkerTests(unittest.TestCase):
         with closing(db.connect()) as con:
             return list(map(tuple, con.execute("SELECT title, marker FROM tournaments ORDER BY id")))
 
+    def test_new_and_edit_have_named_controls_and_contextual_cancel(self):
+        detail = self.create("Vereinsabend", "")
+        for path, heading, back in ((self.new, "Neues Turnier", "/tournaments"),
+                                    (detail + "/edit", "Turnier bearbeiten", detail)):
+            with self.subTest(path=path):
+                page = html.fromstring(self.client.get(path).get_data(as_text=True))
+                self.assertEqual(page.xpath("//main//h1/text()"), [heading])
+                form = page.get_element_by_id("tForm")
+                for field in form.xpath(".//input[not(@type='hidden')] | .//textarea"):
+                    self.assertEqual(len(form.xpath(".//label[@for=$id]", id=field.get("id"))), 1)
+                self.assertEqual(form.xpath(".//*[@required]/@name"), ["title", "event_date", "start_time"])
+                self.assertEqual(form.xpath(".//*[@autofocus]/@name"), ["title"])
+                self.assertEqual(page.get_element_by_id("btnBack").get("href"), back)
+                self.assertEqual(form.xpath('.//a[.="Abbrechen"]/@href'), [back])
+
+    def test_invalid_marker_preserves_draft_on_create_and_edit_until_corrected(self):
+        detail = self.create("Vorhandenes Turnier", "")
+        for path, expected in ((self.new, "/tournaments/2"), (detail + "/edit", detail)):
+            with self.subTest(path=path):
+                drafts = dict(self.fields(self.client, path), title="Probe " + expected,
+                              event_date="2026-11-14", start_time="18:30", marker="X",
+                              location="Vereinssaal", organizer="Verein", description="Herbstturnier",
+                              min_participants="4", max_participants="16")
+                before = self.rows()
+                response = self.client.post(path, data=drafts)
+                self.assertEqual(response.status_code, 422)
+                page = html.fromstring(response.get_data(as_text=True))
+                form = page.get_element_by_id("tForm")
+                self.assertEqual(dict(form.fields), drafts)
+                self.assertEqual(form.xpath(".//*[@autofocus and @aria-invalid='true']/@name"), ["marker"])
+                self.assertIn("marker-error", form.get_element_by_id("marker").get("aria-describedby").split())
+                self.assertIn("10 Zeichen", form.get_element_by_id("marker-error").text_content())
+                self.assertEqual(self.rows(), before)
+                retry = dict(form.fields, marker="261114TEST" if path == self.new else "")
+                self.assertEqual(self.client.post(path, data=retry).location, expected)
+                saved = self.fields(self.client, expected + "/edit")
+                for field in retry.keys() - {"csrf_token"}:
+                    self.assertEqual(saved[field], retry[field])
+
+    def test_missing_required_values_are_identified_on_the_returned_form(self):
+        fields = dict(self.fields(self.client, self.new), title="Probe", event_date="2026-11-14", location="Saal")
+        for key in ("title", "event_date", "start_time"):
+            with self.subTest(field=key):
+                response = self.client.post(self.new, data=dict(fields, **{key: ""}))
+                self.assertEqual(response.status_code, 422)
+                form = html.fromstring(response.get_data(as_text=True)).get_element_by_id("tForm")
+                self.assertEqual(form.xpath(".//*[@autofocus and @aria-invalid='true']/@name"), [key])
+                self.assertEqual(form.get_element_by_id(key).get("aria-describedby"), key + "-error")
+                self.assertEqual(form.get_element_by_id(key + "-error").get("role"), "alert")
+                self.assertEqual(form.fields["location"], "Saal")
+        self.assertEqual(self.rows(), [])
+
     def test_duplicate_create_names_closed_owner_and_preserves_form_for_retry(self):
         owner_title = 'Herbst <Finale> & Freunde'
         owner = self.create(owner_title, "261112ABCD")

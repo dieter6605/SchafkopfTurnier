@@ -377,3 +377,10 @@
   .sk-diagnostic-counts { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .sk-diagnostic-details { padding-inline: 1rem; }
 }
+
+.sk-event-form { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; gap: 1rem; }
+.sk-event-form .form-label { font-weight: 550; }
+.sk-event-form-actions { grid-column: 1 / -1; }
+@media (max-width: 767px) {
+  .sk-event-form { grid-template-columns: minmax(0, 1fr); }
+}
