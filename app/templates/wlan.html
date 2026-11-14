@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block content %}
-<h1 class="h3">Tischergebnisse eingeben</h1>
+<h1 class="h3">{{ 'Teilnehmer erfassen' if registering else 'Tischergebnisse eingeben' }}</h1>
 {% if tournament %}
   <h2 class="h5 mt-3">{{ tournament.title }}</h2>
   <div class="list-group mb-3">
@@ -16,9 +16,9 @@
   </form>
 {% elif tournament_id %}
   {% if error %}<p class="alert alert-danger" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="{{ url_for('wlan.helper', tournament_id=tournament_id) }}">
+  <form method="post" action="{{ url_for('wlan.signup' if registering else 'wlan.helper', tournament_id=tournament_id) }}">
     {{ csrf_field() }}
-    <label class="form-label" for="code">Helfercode der Turnierleitung</label>
+    <label class="form-label" for="code">{{ 'Anmeldecode' if registering else 'Helfercode der Turnierleitung' }}</label>
     <input class="form-control mb-3" style="max-width: 22rem" id="code" name="code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
     <button class="btn btn-primary">Anmelden</button>
   </form>

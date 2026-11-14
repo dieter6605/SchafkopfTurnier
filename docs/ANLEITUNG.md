@@ -181,6 +181,14 @@ In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Im Einzelpl
 
 Die Spielerkarte zeigt am Rechner, am Handy und im PDF denselben Platz wie die Gesamtwertung. Bei einer vorläufigen Platzierung nennt sie den Prüfhinweis und lässt die Medaille weg. In der Rundenübersicht bleiben auch beanstandete Einzelwerte sichtbar.
 
+### Teilnehmer durch Helfer im Vereins-WLAN anmelden
+
+Im offenen Turnier unter **Helferzugang · Teilnehmererfassung** stehen der Anmeldelink und der eigene Anmeldecode. Den Helfern am Anmeldetisch beides geben. Sie öffnen den Link im Vereins-WLAN und geben den Code ein.
+
+Am Handy nach Name oder Wohnort suchen. Den Treffer anhand von Vorname, Nachname und Wohnort prüfen und **Anmelden** wählen. Bereits erfasste Personen zeigen ihre Startnummer. Für eine neue Person **Neue Person anlegen** öffnen, Vorname, Nachname und Wohnort eintragen und **Anlegen und anmelden** wählen. Die Bestätigung nennt die Startnummer. Die Turnierleitung sieht die Buchung am Mac unter **Teilnehmer** nach dem Aktualisieren der Seite.
+
+Die Helfer am Ergebnistisch verwenden weiterhin ihren Ergebnislink und Helfercode. Nach einem Neustart oder einer Wiederherstellung die aktuellen Codes am Turnierrechner ablesen.
+
 ### Ergebnisse durch Helfer im Vereins-WLAN
 
 Den WLAN-Start für Mac oder Windows beschreibt die Installationsanleitung. Auf dem Turnierrechner die lokale Turnierliste öffnen und das offene Turnier wählen. Im Abschnitt **Helferzugang für dieses Turnier** stehen die Adresse und der Helfercode. Beides nur den Helfern dieses Turniers geben.

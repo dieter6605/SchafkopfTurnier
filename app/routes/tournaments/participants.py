@@ -253,6 +253,38 @@ def tournament_participants_swap_search(tournament_id: int):
     return jsonify({"ok": True, "items": out})
 
 
+def create_registration_address(con, nachname, vorname, wohnort, details=None):
+    details = details or {}
+
+    def optional(name):
+        return (details.get(name) or "").strip() or None
+
+    plz, ort = optional("plz"), optional("ort")
+    _upsert_wohnort_safe(con, wohnort, plz, ort)
+    cur = con.execute("""
+        INSERT INTO addresses(addressbook_id, nachname, vorname, wohnort, plz, ort, strasse, hausnummer,
+                              telefon, email, status, notizen, invite, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'aktiv',?,1,datetime('now'),datetime('now'))
+    """, (_default_ab_id(con), nachname, vorname, wohnort, plz, ort, optional("strasse"),
+          optional("hausnummer"), optional("telefon"), optional("email"), optional("notizen")))
+    return cur.lastrowid
+
+
+def register_participant(con, tournament_id, address, *, new=False, helper=False):
+    """Startnummer und Protokoll im selben Schreibvorgang wie die Anmeldung anlegen."""
+    pno = _next_free_player_no(con, tournament_id)
+    cur = con.execute("""
+        INSERT INTO tournament_participants(tournament_id, player_no, address_id, display_name, created_at, updated_at)
+        VALUES (?,?,?,?,datetime('now'),datetime('now'))
+    """, (tournament_id, pno, address["id"], _display_name(address)))
+    note = "Adresse neu angelegt + übernommen" if new else "Teilnehmer übernommen"
+    if helper:
+        note += " durch Anmeldehelfer"
+    _audit_log(con, tournament_id=tournament_id, action="quickadd" if new else "add",
+               tp_id=cur.lastrowid, address_id_new=address["id"], note=f"{note} (Nr {pno}).", required=helper)
+    return pno
+
+
 @bp.post("/tournaments/<int:tournament_id>/participants/add/<int:address_id>")
 def tournament_participant_add(tournament_id: int, address_id: int):
     q = (request.args.get("q") or request.form.get("q") or "").strip()
@@ -292,27 +324,7 @@ def tournament_participant_add(tournament_id: int, address_id: int):
             flash("Adresse nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-        pno = _next_free_player_no(con, tournament_id)
-
-        cur = con.execute(
-            """
-            INSERT INTO tournament_participants
-              (tournament_id, player_no, address_id, display_name, created_at, updated_at)
-            VALUES (?,?,?, ?, datetime('now'), datetime('now'))
-            """,
-            (tournament_id, pno, address_id, _display_name(a)),
-        )
-        tp_id = int(cur.lastrowid or 0) if cur else 0
-
-        _audit_log(
-            con,
-            tournament_id=tournament_id,
-            action="add",
-            tp_id=(tp_id if tp_id > 0 else None),
-            address_id_new=address_id,
-            note=f"Teilnehmer übernommen (Nr {pno}).",
-        )
-
+        pno = register_participant(con, tournament_id, a)
         con.commit()
 
     flash(f"Teilnehmer übernommen (Nr {pno}).", "ok")
@@ -331,9 +343,6 @@ def tournament_participant_quickadd(tournament_id: int):
     if not nachname or not vorname or not wohnort:
         flash("Pflichtfelder fehlen (Nachname, Vorname, Wohnort).", "error")
         return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
-
-    plz = (f.get("plz") or "").strip() or None
-    ort = (f.get("ort") or "").strip() or None
 
     with closing(db.connect()) as con, con:
         con.execute("BEGIN IMMEDIATE")
@@ -356,57 +365,9 @@ def tournament_participant_quickadd(tournament_id: int):
             flash("Maximale Teilnehmerzahl erreicht – keine weitere Erfassung möglich.", "error")
             return redirect(url_for("tournaments.tournament_participants", tournament_id=tournament_id, q=q))
 
-        _upsert_wohnort_safe(con, wohnort, plz, ort)
-        ab_id = _default_ab_id(con)
-
-        cur = con.execute(
-            """
-            INSERT INTO addresses(
-              addressbook_id, nachname, vorname, wohnort,
-              plz, ort, strasse, hausnummer,
-              telefon, email, status, notizen,
-              invite, created_at, updated_at
-            )
-            VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?, 1, datetime('now'), datetime('now'))
-            """,
-            (
-                ab_id,
-                nachname,
-                vorname,
-                wohnort,
-                plz,
-                ort,
-                (f.get("strasse") or "").strip() or None,
-                (f.get("hausnummer") or "").strip() or None,
-                (f.get("telefon") or "").strip() or None,
-                (f.get("email") or "").strip() or None,
-                "aktiv",
-                (f.get("notizen") or "").strip() or None,
-            ),
-        )
-
-        address_id = int(cur.lastrowid)
-        pno = _next_free_player_no(con, tournament_id)
-
-        cur2 = con.execute(
-            """
-            INSERT INTO tournament_participants
-              (tournament_id, player_no, address_id, display_name, created_at, updated_at)
-            VALUES (?,?,?, ?, datetime('now'), datetime('now'))
-            """,
-            (tournament_id, pno, address_id, f"{nachname}, {vorname} · {wohnort}"),
-        )
-        tp_id = int(cur2.lastrowid or 0) if cur2 else 0
-
-        _audit_log(
-            con,
-            tournament_id=tournament_id,
-            action="quickadd",
-            tp_id=(tp_id if tp_id > 0 else None),
-            address_id_new=address_id,
-            note=f"Adresse neu angelegt + übernommen (Nr {pno}).",
-        )
-
+        address_id = create_registration_address(con, nachname, vorname, wohnort, f)
+        address = {"id": address_id, "nachname": nachname, "vorname": vorname, "wohnort": wohnort}
+        pno = register_participant(con, tournament_id, address, new=True)
         con.commit()
 
     flash(f"Teilnehmer neu angelegt und übernommen (Nr {pno}).", "ok")

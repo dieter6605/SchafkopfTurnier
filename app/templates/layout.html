@@ -94,7 +94,7 @@
     {% if skt_debug %}<span class="badge text-bg-info">DEBUG</span>{% endif %}
     {% if g.wlan_request %}
       {% if session.get('helper_tournament') and config.WLAN_ORIGIN %}
-        <a class="btn btn-outline-secondary" href="{{ url_for('wlan.helper', tournament_id=session.helper_tournament) }}">Helferbereich</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('wlan.signup' if session.get('helper_role') == 'registration' else 'wlan.helper', tournament_id=session.helper_tournament) }}">Helferbereich</a>
       {% endif %}
     {% else %}
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#hauptmenue" aria-controls="hauptmenue" aria-expanded="false">Menü</button>

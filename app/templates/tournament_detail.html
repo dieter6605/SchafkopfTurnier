@@ -20,10 +20,17 @@
 {% include '_tournament_nav.html' %}
 {% if config.WLAN_ORIGIN and not is_closed %}
   <section class="alert alert-info no-print" aria-label="Helferzugang">
-    <strong>Helferzugang für dieses Turnier</strong>
+    <strong>Helferzugang für dieses Turnier · Tischergebnisse</strong>
     <div>Adresse für das zweite Gerät: <a href="{{ config.WLAN_ORIGIN }}{{ url_for('wlan.helper', tournament_id=t.id) }}">{{ config.WLAN_ORIGIN }}{{ url_for('wlan.helper', tournament_id=t.id) }}</a></div>
     <div>Helfercode: <strong class="sk-mono">{{ helper_code(t.id, wlan_generation) }}</strong></div>
   </section>
+  {% if registration_enabled %}
+  <section class="alert alert-info no-print" aria-label="Teilnehmererfassung im WLAN">
+    <strong>Helferzugang · Teilnehmererfassung</strong>
+    <div>Anmeldelink: <a href="{{ config.WLAN_ORIGIN }}{{ url_for('wlan.signup', tournament_id=t.id) }}">{{ config.WLAN_ORIGIN }}{{ url_for('wlan.signup', tournament_id=t.id) }}</a></div>
+    <div>Anmeldecode: <strong class="sk-mono">{{ helper_code(t.id, wlan_generation, 'registration') }}</strong></div>
+  </section>
+  {% endif %}
 {% endif %}
 
 
