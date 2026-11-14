@@ -5,7 +5,7 @@
 {% block content %}
 <div class="sk-heading">
   <h1>Turniere</h1>
-  <a class="btn btn-primary" id="btnNewTournament" href="{{ url_for('tournaments.tournament_new') }}">Neues Turnier</a>
+  <a class="btn btn-primary" id="btnNewTournament" href="{{ url_for('tournaments.tournament_new', **list_filters) }}">Neues Turnier</a>
 </div>
 <div class="sk-panel">
   <div class="sk-toolbar">
@@ -41,9 +41,11 @@
               {% set expected_scores = (t.expected_scores if t.expected_scores is defined else 0) %}
               {% set scores_complete = (t.scores_complete if t.scores_complete is defined else 0) %}
 
+              {% set open_url = url_for('tournaments.tournament_detail', tournament_id=t.id, **list_filters) %}
+              {% set edit_url = url_for('tournaments.tournament_edit', tournament_id=t.id, aus_liste=1 if list_filters else none, **list_filters) %}
               <tr class="sk-row"
-                  data-open-url="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}"
-                  data-edit-url="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
+                  data-open-url="{{ open_url }}"
+                  data-edit-url="{{ edit_url }}"
                   data-delete-form-id="delForm{{ t.id }}">
                 <td class="text-nowrap">
                   {{ t.event_date|turnierdatum }}<br>
@@ -89,18 +91,18 @@
                   <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
 
                     <a class="btn btn-sm btn-outline-primary"
-                       href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">
+                       href="{{ open_url }}">
                       Öffnen
                     </a>
 
                     <a class="btn btn-sm btn-outline-secondary"
-                       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}">
+                       href="{{ edit_url }}">
                       Bearbeiten
                     </a>
 
                     <form method="post"
                           id="delForm{{ t.id }}"
-                          action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
+                          action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id, **list_filters) }}"
                           class="d-inline"
                           data-confirm="Turnier „{{ t.title or '' }}“ wirklich löschen?&#10;&#10;Anmeldungen, Runden, Ergebnisse und Teilnehmerprotokoll dieses Turniers werden gelöscht."
                           onsubmit="return window.confirm(this.dataset.confirm)">

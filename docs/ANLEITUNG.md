@@ -11,7 +11,7 @@ Unter **Hilfe → Hilfeübersicht** findest du diese Anleitung, die Installation
 - Anwendung im Browser öffnen
 (z. B. http://127.0.0.1:8000)
 - Auf „Start“ das aktuelle Turnier und den nächsten Schritt prüfen. „Turnier öffnen“ führt zur Übersicht mit dem Stand der einzelnen Tische.
-- Unter „Turniere“ nach Name oder Ort suchen und offene oder abgeschlossene Turniere auswählen.
+- Unter „Turniere“ nach Name oder Ort suchen und offene oder abgeschlossene Turniere auswählen. **Zur Trefferliste** führt von einem geöffneten Treffer zur gleichen Suche und Statusauswahl zurück. Wird **Neues Turnier** oder **Bearbeiten** direkt aus dieser Liste geöffnet, führt auch **Abbrechen** dorthin.
 
 **Sicherung erstellen**
 

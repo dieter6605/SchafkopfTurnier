@@ -19,7 +19,7 @@
     <div class="invalid-feedback" id="{{ name }}-error" role="alert">
       {% if marker_owner %}
         Der Marker {{ t.marker }} ist bereits vergeben an
-        <a href="{{ url_for('tournaments.tournament_detail', tournament_id=marker_owner.id) }}">Turnier Nr. {{ marker_owner.id }} „{{ marker_owner.title }}“</a>.
+        <a href="{{ url_for('tournaments.tournament_detail', tournament_id=marker_owner.id, **list_filters) }}">Turnier Nr. {{ marker_owner.id }} „{{ marker_owner.title }}“</a>.
         Bitte einen anderen Marker wählen.
       {% else %}{{ field_error[1] }}{% endif %}
     </div>
@@ -28,7 +28,7 @@
 {% endmacro %}
 
 {% block content %}
-<a class="sk-back" id="btnBack" href="{{ back_url }}">{{ '← Zur Turnierliste' if mode == 'new' else '← Zur Turnierübersicht' }}</a>
+<a class="sk-back" id="btnBack" href="{{ back_url }}">← {{ back_label }}</a>
 <div class="sk-heading"><h1>{{ heading }}</h1></div>
 <form id="tForm" method="post" class="sk-event-form">
   {{ csrf_field() }}

@@ -10,12 +10,12 @@
 {% set is_closed = (closed_at or '')|trim != '' %}
 {% set marker_disp = t.marker or '–' %}
 {% set next_rn = current.number + 1 if current else 1 %}
-<a class="sk-back" id="btnBackToList" href="{{ url_for('tournaments.tournaments_list') }}">← Alle Turniere</a>
+<a class="sk-back" id="btnBackToList" href="{{ url_for('tournaments.tournaments_list', **list_filters) }}">← {{ 'Zur Trefferliste' if list_filters else 'Alle Turniere' }}</a>
 <div class="sk-heading">
   <div><div class="d-flex align-items-center gap-3 flex-wrap"><h1>{{ t.title }}</h1>
     <span class="sk-badge {{ 'closed' if is_closed else 'done' if current else 'open' }}">{{ 'Abgeschlossen' if is_closed else 'Läuft' if current else 'Anmeldung' }}</span>
   </div><p class="text-secondary mt-2 mb-0">{{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr{% if t.location %} · {{ t.location }}{% endif %}</p></div>
-  <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='details') }}">Turnierdetails</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='details', **list_filters) }}">Turnierdetails</a>
 </div>
 {% include '_tournament_nav.html' %}
 {% if config.WLAN_ORIGIN and not is_closed %}
@@ -126,13 +126,13 @@
     {% if closed_at %}<p>Abgeschlossen am {{ closed_at }}</p>{% endif %}
     <div class="d-flex gap-2 mb-3">
     <a class="btn btn-outline-secondary" id="btnEditTournament"
-       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id) }}"
+       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id, **list_filters) }}"
        {% if is_closed %}aria-disabled="true"{% endif %}>
       Bearbeiten
     </a>
 
     <form method="post"
-          action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id) }}"
+          action="{{ url_for('tournaments.tournament_delete', tournament_id=t.id, **list_filters) }}"
           class="d-inline" data-confirm="Turnier „{{ t.title or '' }}“ wirklich löschen?&#10;&#10;Anmeldungen, Runden, Ergebnisse und Teilnehmerprotokoll dieses Turniers werden gelöscht."
           onsubmit="return window.confirm(this.dataset.confirm)">
       {{ csrf_field() }}

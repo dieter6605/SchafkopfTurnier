@@ -22,12 +22,23 @@ from .helpers import (
 )
 
 
+def _list_filters():
+    """Nur die gesetzten Listenfilter in lokale Rückwege übernehmen."""
+    filters = {}
+    status = request.args.get("status")
+    if status in ("offen", "abgeschlossen"):
+        filters["status"] = status
+    query = request.args.get("q", "").strip()
+    if query:
+        filters["q"] = query
+    return filters
+
+
 @bp.get("/tournaments")
 def tournaments_list():
-    search = request.args.get("q", "").strip()
-    status = request.args.get("status", "alle")
-    if status not in ("offen", "abgeschlossen"):
-        status = "alle"
+    filters = _list_filters()
+    search = filters.get("q", "")
+    status = filters.get("status", "alle")
     with closing(db.connect()) as con, con:
         con.execute("BEGIN")
         rows = db.q(
@@ -70,7 +81,7 @@ def tournaments_list():
                 and _first_score_issue(con, row["id"]) is None
             )
             tournaments.append(tournament)
-    return render_template("tournaments.html", tournaments=tournaments, search=search, status=status)
+    return render_template("tournaments.html", tournaments=tournaments, search=search, status=status, list_filters=filters)
 
 
 def _marker_owner(con, marker: str | None, tournament_id: int | None = None):
@@ -84,11 +95,18 @@ def _marker_owner(con, marker: str | None, tournament_id: int | None = None):
 
 
 def _tournament_form(values, tournament_id: int | None = None, *, marker_owner=None, field_error=None):
-    back_url = (url_for("tournaments.tournaments_list") if tournament_id is None
-                else url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+    filters = _list_filters()
+    back_to_list = tournament_id is None or request.args.get("aus_liste") == "1"
+    if back_to_list:
+        back_url = url_for("tournaments.tournaments_list", **filters)
+        back_label = "Zur Trefferliste" if filters else "Zur Turnierliste"
+    else:
+        back_url = url_for("tournaments.tournament_detail", tournament_id=tournament_id, **filters)
+        back_label = "Zur Turnierübersicht"
     return render_template(
         "tournament_form.html", t=values, mode="new" if tournament_id is None else "edit",
-        back_url=back_url, marker_owner=marker_owner, field_error=field_error,
+        back_url=back_url, back_label=back_label, list_filters=filters,
+        marker_owner=marker_owner, field_error=field_error,
     )
 
 
@@ -150,7 +168,7 @@ def tournament_create():
         tid = int(con.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     flash("Turnier angelegt.", "ok")
-    return redirect(url_for("tournaments.tournament_detail", tournament_id=tid))
+    return redirect(url_for("tournaments.tournament_detail", tournament_id=tid, **_list_filters()))
 
 
 @bp.get("/tournaments/<int:tournament_id>")
@@ -160,7 +178,7 @@ def tournament_detail(tournament_id: int):
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
+            return redirect(url_for("tournaments.tournaments_list", **_list_filters()))
 
         section = request.args.get("bereich")
         if section == "druck":
@@ -219,7 +237,7 @@ def tournament_detail(tournament_id: int):
         t=t,
         overview=overview,
         section=section,
-        safe=safe,
+        safe=safe, list_filters=_list_filters(),
     )
 
 
@@ -229,13 +247,13 @@ def tournament_edit(tournament_id: int):
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
+            return redirect(url_for("tournaments.tournaments_list", **_list_filters()))
 
         resp = _guard_closed_redirect(
             t,
             action="Bearbeiten",
             endpoint="tournaments.tournament_detail",
-            endpoint_kwargs={"tournament_id": tournament_id},
+            endpoint_kwargs={"tournament_id": tournament_id, **_list_filters()},
         )
         if resp:
             return resp
@@ -252,13 +270,13 @@ def tournament_update(tournament_id: int):
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
+            return redirect(url_for("tournaments.tournaments_list", **_list_filters()))
 
         resp = _guard_closed_redirect(
             t,
             action="Speichern",
             endpoint="tournaments.tournament_detail",
-            endpoint_kwargs={"tournament_id": tournament_id},
+            endpoint_kwargs={"tournament_id": tournament_id, **_list_filters()},
         )
         if resp:
             return resp
@@ -302,7 +320,7 @@ def tournament_update(tournament_id: int):
         con.commit()
 
     flash("Turnier gespeichert.", "ok")
-    return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id))
+    return redirect(url_for("tournaments.tournament_detail", tournament_id=tournament_id, **_list_filters()))
 
 
 @bp.get("/tournaments/diagnostics")
@@ -344,13 +362,13 @@ def tournament_delete(tournament_id: int):
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournaments_list"))
+            return redirect(url_for("tournaments.tournaments_list", **_list_filters()))
 
         resp = _guard_closed_redirect(
             t,
             action="Löschen",
             endpoint="tournaments.tournament_detail",
-            endpoint_kwargs={"tournament_id": tournament_id},
+            endpoint_kwargs={"tournament_id": tournament_id, **_list_filters()},
         )
         if resp:
             return resp
@@ -359,4 +377,4 @@ def tournament_delete(tournament_id: int):
         con.commit()
 
     flash("Turnier gelöscht.", "ok")
-    return redirect(url_for("tournaments.tournaments_list"))
+    return redirect(url_for("tournaments.tournaments_list", **_list_filters()))

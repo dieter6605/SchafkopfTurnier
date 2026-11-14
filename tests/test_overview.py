@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urlencode
 from zipfile import ZipFile
 
 from lxml import html
@@ -256,6 +257,63 @@ class OverviewTests(unittest.TestCase):
         self.assertFalse(missing.xpath("//a[contains(@href,'docx')]"))
         self.assertIn("kein vollständiger Vierertisch", missing.text_content())
         self.assertEqual(self.button(missing, "Sitzplan für Runde 1"), "/tournaments/1/rounds/1")
+
+    def test_filtered_list_returns_from_detail_and_forms_with_both_filters(self):
+        title = "Grün & Weiß"
+        self.tournament(title)
+        self.tournament("Herbstturnier")
+        self.tournament(title)
+        with closing(db.connect()) as con, con:
+            con.execute("UPDATE tournaments SET closed_at='2026-11-14' WHERE id=3")
+
+        unfiltered = self.page("/tournaments").xpath("//tr[@data-open-url='/tournaments/1']")[0]
+        plain_edit, = unfiltered.xpath(".//a[normalize-space(.)='Bearbeiten']/@href")
+        self.assertEqual(self.button(self.page(plain_edit), "Abbrechen"), "/tournaments/1")
+        initial = "/tournaments?" + urlencode({"status": "offen", "q": title})
+        listing = self.page(initial)
+        row, = listing.xpath("//tr[@data-open-url]")
+        view, = row.xpath(".//a[normalize-space(.)='Öffnen']/@href")
+        edit, = row.xpath(".//a[normalize-space(.)='Bearbeiten']/@href")
+        self.assertEqual(row.get("data-open-url"), view)
+        self.assertEqual(row.get("data-edit-url"), edit)
+        overview = self.page(view)
+        return_link = overview.get_element_by_id("btnBackToList").get("href")
+        returned = self.page(return_link)
+        self.assertEqual(returned.xpath("//input[@name='q']/@value"), [title])
+        self.assertEqual(returned.xpath("//nav[@aria-label='Turniere filtern']/a[@aria-current]/text()"), ["Offen"])
+        self.assertEqual(returned.xpath("//tr[@data-open-url]/td[2]/strong/text()"), [title])
+
+        new = listing.get_element_by_id("btnNewTournament").get("href")
+        for path in (new, edit):
+            page = self.page(path)
+            self.assertEqual(page.get_element_by_id("btnBack").get("href"), return_link)
+            self.assertEqual(self.button(page, "Abbrechen"), return_link)
+            fields = dict(page.get_element_by_id("tForm").fields, title=title, event_date="2026-11-14", marker="X")
+            invalid = self.client.post(path, data=fields)
+            self.assertEqual(invalid.status_code, 422)
+            retry = html.fromstring(invalid.get_data(as_text=True))
+            self.assertEqual(self.button(retry, "Abbrechen"), return_link)
+            saved = self.client.post(path, data=dict(retry.get_element_by_id("tForm").fields, marker=""))
+            self.assertEqual(saved.status_code, 302)
+            self.assertEqual(self.page(saved.location).get_element_by_id("btnBackToList").get("href"), return_link)
+
+        details = self.page(self.button(overview, "Turnierdetails"))
+        edit_from_detail = self.page(details.get_element_by_id("btnEditTournament").get("href"))
+        self.assertEqual(self.button(edit_from_detail, "Abbrechen"), view)
+        delete = row.xpath(".//form")[0]
+        self.assertEqual(self.client.post(delete.get("action"), data=dict(delete.fields)).location, return_link)
+
+    def test_lists_in_two_tabs_keep_independent_filters_even_with_no_matches(self):
+        views = []
+        for status, term in (("abgeschlossen", "Sommer"), ("offen", "Winter")):
+            page = self.page("/tournaments?" + urlencode({"status": status, "q": term}))
+            self.assertIn("Keine passenden Turniere gefunden.", page.text_content())
+            views.append((page.get_element_by_id("btnNewTournament").get("href"), status, term))
+        for new, status, term in views:
+            returned = self.page(self.button(self.page(new), "Abbrechen"))
+            self.assertEqual(returned.xpath("//input[@name='q']/@value"), [term])
+            self.assertEqual(returned.xpath("//input[@name='status']/@value"), [status])
+        self.assertEqual(self.button(self.page("/tournaments/new"), "Abbrechen"), "/tournaments")
 
     def test_start_selection_empty_and_filtered_lists_and_navigation(self):
         self.assertIn("Erstes Turnier anlegen", self.page("/").text_content())
