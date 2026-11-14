@@ -1,6 +1,6 @@
 # Inbetriebnahme (lokal)
 
-Für einen Mac mit Apple-Chip gibt es ein vollständiges Offline-Paket. Das kleinere Software-ZIP und der Projektordner lassen sich auf macOS und Windows mit einer eigenen Python-Umgebung einrichten.
+Für Macs mit Apple-Chip und Windows 10/11 mit Intel- oder AMD-Prozessor (x64) gibt es jeweils ein vollständiges Offline-Paket. Das kleinere Software-ZIP und der Projektordner lassen sich auf macOS und Windows mit einer eigenen Python-Umgebung einrichten.
 
 ## Offline-ZIP für Macs mit Apple-Chip
 
@@ -11,6 +11,12 @@ Für einen Mac mit Apple-Chip gibt es ein vollständiges Offline-Paket. Das klei
 Das Paket bringt Python, Pango, die Schriftbibliotheken und sämtliche Python-Pakete mit. Zur Einrichtung genügen die macOS-Systemwerkzeuge. Die Datenbank und ihre Sicherungen liegen im Unterordner `data`. Zum Übernehmen vorhandener Daten die Wiederherstellung einer Sicherung in der Anwendung verwenden. Jedes neue Offline-ZIP in einem eigenen Ordner entpacken.
 
 Die geprüften Python-Versionen und die Prüfsummen der conda-forge-Pakete stehen im ZIP unter `offline/` und im Projekt unter `offline-mac/`. Das Projekt enthält auch die Vorlage für das Startprogramm.
+
+## Offline-ZIP für Windows 10/11 (x64)
+
+1. Im Explorer bei `SchafkopfTurnier-Offline-Windows-x64.zip` **Alle extrahieren** wählen. Als Ziel einen neuen, beschreibbaren Ordner im eigenen Benutzerordner verwenden.
+2. Für die Offline-Probe die Internetverbindung trennen und im entpackten Ordner `Windows-Probe.cmd` öffnen. Die Probe verwendet vier fiktive Anmeldungen. Am Ende erscheint **BESTANDEN**.
+3. `Turnier-starten.cmd` öffnen und im Browser [die Turnierliste öffnen](http://127.0.0.1:8051/tournaments). Zum Beenden im Terminal **Strg+C** drücken. Beim nächsten Start dasselbe Startprogramm öffnen.
 
 ## Installation aus dem Software-ZIP oder Projektordner
 

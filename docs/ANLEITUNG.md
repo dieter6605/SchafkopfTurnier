@@ -3,6 +3,8 @@
 
 Kurzanleitung für den Turniertag
 
+Unter **Hilfe → Hilfeübersicht** findest du diese Anleitung, die Installation und den Tarifrechner. Mit **Kapitel wählen** springst du direkt zum gewünschten Arbeitsschritt. Der Tarifrechner zeigt den Betrag je Gewinner und Verlierer.
+
 ## 1. Vorbereitung vor Turnierbeginn
 
 **Anwendung starten**

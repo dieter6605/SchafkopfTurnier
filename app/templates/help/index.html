@@ -1,0 +1,25 @@
+{% extends "help/_layout.html" %}
+{% block help_content %}
+<div class="sk-feature-grid">
+  <section class="sk-panel sk-feature">
+    <h2 class="mt-0">Anleitung für den Turniertag</h2>
+    <p>Von der Anmeldung über die Auslosung und die Tischeingabe bis zur Gesamtwertung.</p>
+    <a class="btn btn-light mt-2" href="{{ url_for('home.help_docs', doc='anleitung') }}">Anleitung öffnen</a>
+  </section>
+  <section class="sk-panel sk-support">
+    <h2>Tarifrechner</h2>
+    <p class="text-secondary mb-1">Den Spieltarif und den Betrag je Gewinner und Verlierer berechnen.</p>
+    <a class="btn btn-outline-secondary mt-auto" href="{{ url_for('home.help_tarif') }}">Tarif berechnen</a>
+  </section>
+</div>
+<div class="sk-event-grid">
+  {% for doc, label, description in [
+      ('installation', 'Installation', 'Anwendung einrichten, offline starten und das Vereins-WLAN nutzen.'),
+      ('readme', 'Lies mich', 'Funktionen, Voraussetzungen und Aufbau der Turnierverwaltung nachschlagen.')] %}
+    <a class="sk-panel sk-event" href="{{ url_for('home.help_docs', doc=doc) }}">
+      <span><strong>{{ label }}</strong><small>{{ description }}</small></span>
+      <span class="ms-auto" aria-hidden="true">→</span>
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -47,30 +47,6 @@
     /* Global: print helper */
     .print-only { display: none; }
 
-    /* Markdown-Styling (Hilfe/README) */
-    .markdown-body h1, .markdown-body h2, .markdown-body h3 {
-      margin-top: 1.4em;
-    }
-    .markdown-body pre {
-      background: #f6f8fa;
-      padding: 12px;
-      border-radius: 6px;
-      overflow-x: auto;
-    }
-    .markdown-body code {
-      background: #f0f0f0;
-      padding: 2px 4px;
-      border-radius: 4px;
-    }
-    .markdown-body table {
-      border-collapse: collapse;
-    }
-    .markdown-body th, .markdown-body td {
-      border: 1px solid #ddd;
-      padding: 6px 10px;
-      vertical-align: top;
-    }
-
     @media print {
       nav, .btn, .alert, .no-print { display: none !important; }
       body { background: #fff !important; }
@@ -135,10 +111,8 @@
           <li class="nav-item dropdown">
             <button class="nav-link dropdown-toggle" {% if ep.startswith('home.help') %}aria-current="true"{% endif %} data-bs-toggle="dropdown" aria-expanded="false">Hilfe</button>
             <ul class="dropdown-menu dropdown-menu-end">
-              {% for doc, label in [('readme','Lies mich'), ('anleitung','Anleitung'), ('installation','Installation')] %}
-                <li><a class="dropdown-item" href="{{ url_for('home.help_docs', doc=doc) }}">{{ label }}</a></li>
-              {% endfor %}
-              <li><a class="dropdown-item" href="{{ url_for('home.help_tarif') }}">Tarifrechner</a></li>
+              {% from "help/_links.html" import help_links with context %}
+              {{ help_links(menu=true) }}
               <li><hr class="dropdown-divider"></li>
               <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics') }}">DB-Diagnose</a></li>
               {% if skt_tournament_id %}

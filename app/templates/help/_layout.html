@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% from "help/_links.html" import help_links %}
+{% block title %}{{ title }} · SchafkopfTurnier{% endblock %}
+{% block main_class %}sk-workspace sk-help{% endblock %}
+{% block content %}
+  <div class="sk-heading"><h1>{{ title }}</h1></div>
+  {% if section != 'overview' %}
+    <nav class="turnier-nav sk-help-nav no-print" aria-label="Hilfebereiche">{{ help_links(section) }}</nav>
+  {% endif %}
+  {% block help_content %}{% endblock %}
+{% endblock %}

@@ -331,3 +331,35 @@
   .sk-backup-time, .sk-backup-size { color: var(--sk-muted); font-size: .9rem; }
   .sk-backup-tools { grid-column: 1 / -1; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1rem; }
 }
+
+.sk-help-nav { flex-wrap: wrap; gap: 0 1.5rem; }
+.sk-help-document, .sk-tariff-grid { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(0, 2.55fr); gap: 1.25rem; align-items: start; }
+.sk-help-chapters { position: sticky; top: 1rem; }
+.sk-help-chapters nav { padding: 0 1.5rem 1rem; max-height: 65vh; overflow-y: auto; }
+.sk-help-chapters ul { list-style: none; margin: 0; padding: 0; }
+.sk-help-chapters ul ul { padding-left: .85rem; border-left: 2px solid var(--sk-line); }
+.sk-help-chapters li a { display: block; padding: .35rem 0; line-height: 1.35; }
+.sk-help-text { overflow-wrap: anywhere; line-height: 1.6; }
+.sk-help-text > :first-child { margin-top: 0; }
+.sk-help-text :is(h2, h3, h4) { margin: 1.5em 0 .6em; color: var(--sk-navy); scroll-margin-top: 1rem; }
+.sk-help-text h2 { font-size: 1.45rem; }
+.sk-help-text h3 { font-size: 1.2rem; }
+.sk-help-text h4 { font-size: 1.05rem; }
+.sk-help-text pre, .sk-tariff-breakdown { padding: .85rem 1rem; background: #f3f6f8; border-radius: 8px; }
+.sk-help-text table { display: block; max-width: 100%; overflow-x: auto; }
+.sk-help-text :is(th, td) { border: 1px solid var(--sk-line); padding: .35rem .65rem; }
+.sk-tariff-grid { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); }
+.sk-tariff-form, .sk-tariff-results { display: grid; gap: 1rem; min-width: 0; }
+.sk-tariff-values { margin: 1rem 0 0; }
+.sk-tariff-values div { display: flex; justify-content: space-between; gap: .5rem; padding: .6rem 0; border-top: 1px solid var(--sk-line); }
+.sk-tariff-values dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sk-tariff-breakdown { margin: 0 1rem 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .sk-help-document, .sk-tariff-grid { grid-template-columns: minmax(0, 1fr); }
+  .sk-help-chapters { position: static; }
+  .sk-help-nav { gap: 0 1rem; }
+}
+@media print {
+  .sk-help-document { display: block; }
+  .sk-help-text { border: 0; padding: 0; }
+}

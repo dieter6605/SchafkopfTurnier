@@ -1,23 +1,30 @@
-{% extends "layout.html" %}
-{% block content %}
-
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-  <div>
-    <h3 class="mb-0">{{ title }}</h3>
-    <div class="text-muted small">
-      Anzeige der README.md aus dem Projektverzeichnis.
-    </div>
-  </div>
-
-  <a class="btn btn-outline-secondary" href="{{ url_for('home.home') }}">Start</a>
+{% extends "help/_layout.html" %}
+{% block help_content %}
+<div class="sk-help-document">
+  <details class="sk-panel sk-fold sk-help-chapters no-print" id="kapitelwahl" open>
+    <summary>Kapitel wählen</summary>
+    <nav aria-label="Kapitel">
+      <ul>
+        {% for chapter in chapters recursive %}
+          <li><a href="#{{ chapter.id }}">{{ chapter.name|striptags }}</a>
+            {% if chapter.children %}<ul>{{ loop(chapter.children) }}</ul>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+  </details>
+  <article class="sk-panel sk-pad sk-help-text">
+    {{ content | safe }}
+    <a class="sk-back no-print mb-0 mt-3" href="#kapitelwahl">Zur Kapitelwahl ↑</a>
+  </article>
 </div>
-
-<div class="card shadow-sm">
-  <div class="card-body">
-    <div class="markdown-body">
-      {{ content | safe }}
-    </div>
-  </div>
-</div>
-
+{% endblock %}
+{% block scripts %}
+<script>
+  const chapters = document.getElementById("kapitelwahl");
+  const narrow = window.matchMedia("(max-width: 767px)");
+  function fitChapters() { chapters.open = !narrow.matches; }
+  fitChapters();
+  narrow.addEventListener("change", fitChapters);
+</script>
 {% endblock %}

@@ -47,12 +47,17 @@ def _docs_dir() -> Path:
     return _project_root() / "docs"
 
 
-def _render_markdown_file(md_path: Path) -> str:
-    md_text = md_path.read_text(encoding="utf-8")
-    return markdown.markdown(
-        md_text,
-        extensions=["fenced_code", "tables", "toc", "sane_lists"],
-    )
+class _HelpLinks(markdown.treeprocessors.Treeprocessor):
+    """In der Webansicht führen Dokumentverweise zu den lokalen Hilfeseiten."""
+
+    def run(self, root):
+        destinations = {cfg["file"]: url_for("home.help_docs", doc=doc)
+                        for doc, cfg in _DOCS_MAP.items()}
+        destinations["http://127.0.0.1:8051/tournaments"] = url_for("tournaments.tournaments_list")
+        for link in root.iter("a"):
+            target, separator, fragment = link.get("href", "").partition("#")
+            if target in destinations:
+                link.set("href", destinations[target] + separator + fragment)
 
 
 # -----------------------------------------------------------------------------
@@ -160,7 +165,7 @@ def home():
 # -----------------------------------------------------------------------------
 @bp.get("/hilfe")
 def help_readme():
-    return redirect(url_for("home.help_docs", doc="readme"))
+    return render_template("help/index.html", title="Hilfe", section="overview")
 
 
 @bp.get("/hilfe/<doc>")
@@ -173,9 +178,18 @@ def help_docs(doc: str):
     if not md_path.exists():
         abort(404)
 
-    html = _render_markdown_file(md_path)
-
-    return render_template("help_readme.html", title=cfg["title"], content=html)
+    document = markdown.Markdown(
+        extensions=["fenced_code", "tables", "toc", "sane_lists"],
+        extension_configs={"toc": {"baselevel": 2}},
+    )
+    document.treeprocessors.register(_HelpLinks(document), "help_links", 1)
+    content = document.convert(md_path.read_text(encoding="utf-8"))
+    # Das erste Kapitel ist die Dokumentüberschrift. Seine Unterkapitel und alle
+    # weiteren Hauptkapitel sollen direkt von der Kapitelwahl erreichbar sein.
+    headings = document.toc_tokens
+    chapters = headings[0]["children"] + headings[1:] if headings else []
+    return render_template("help_readme.html", title=cfg["title"], section=doc,
+                           content=content, chapters=chapters)
 
 
 # -----------------------------------------------------------------------------
@@ -183,7 +197,7 @@ def help_docs(doc: str):
 # -----------------------------------------------------------------------------
 @bp.get("/hilfe/tarifrechner")
 def help_tarif():
-    return render_template("help/tarifrechner.html")
+    return render_template("help/tarifrechner.html", title="Tarifrechner", section="tarif")
 
 
 # -----------------------------------------------------------------------------

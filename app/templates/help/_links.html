@@ -1,0 +1,12 @@
+{% macro help_links(section='', menu=false) %}
+  {% for key, label, href in [
+      ('overview', 'Hilfeübersicht', url_for('home.help_readme')),
+      ('anleitung', 'Anleitung', url_for('home.help_docs', doc='anleitung')),
+      ('installation', 'Installation', url_for('home.help_docs', doc='installation')),
+      ('readme', 'Lies mich', url_for('home.help_docs', doc='readme')),
+      ('tarif', 'Tarifrechner', url_for('home.help_tarif'))] %}
+    {% if menu %}<li>{% endif %}
+    <a href="{{ href }}"{% if menu %} class="dropdown-item"{% endif %}{% if section == key %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% if menu %}</li>{% endif %}
+  {% endfor %}
+{% endmacro %}
