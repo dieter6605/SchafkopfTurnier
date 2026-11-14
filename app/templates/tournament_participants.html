@@ -3,6 +3,8 @@
 {% block main_class %}sk-workspace sk-participants{% endblock %}
 {% block tournament_navigation %}{% endblock %}
 {% block content %}
+{% set roster_search = request.args.get('suche', '') %}
+{% set roster_status = request.args.get('status') if request.args.get('status') in ('active', 'withdrawn') else 'all' %}
 {% set is_closed = (t.closed_at or '')|trim != '' %}
 <a class="sk-back" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">← {{ t.title }}</a>
 <div class="sk-heading">
@@ -86,9 +88,13 @@
     {% if is_closed %}<p class="text-secondary mt-2 mb-0">Abgeschlossen am {{ t.closed_at }}. Die Teilnehmerliste ist zur Ansicht geöffnet.</p>{% endif %}
     {% if participants %}
     <div class="sk-roster-filters mt-3" id="rosterFilters" hidden>
-      <label><span class="visually-hidden">Teilnehmerliste durchsuchen</span><input class="form-control" type="search" id="rosterQuery" placeholder="Startnummer, Name oder Wohnort"></label>
+      <label><span class="visually-hidden">Teilnehmerliste durchsuchen</span><input class="form-control" type="search" id="rosterQuery" data-card-filter="suche" value="{{ roster_search }}" placeholder="Startnummer, Name oder Wohnort"></label>
       <label><span class="visually-hidden">Teilnahmestatus</span>
-        <select class="form-select" id="rosterStatus"><option value="all">Alle Teilnehmer</option><option value="active">Aktive</option><option value="withdrawn">Abgemeldete</option></select>
+        <select class="form-select" id="rosterStatus" data-card-filter="status">
+          {% for value, label in [('all', 'Alle Teilnehmer'), ('active', 'Aktive'), ('withdrawn', 'Abgemeldete')] %}
+            <option value="{{ value }}"{% if value == roster_status %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
       </label>
     </div>
     {% endif %}
@@ -102,12 +108,14 @@
         {% set has_score = p.id in scored_ids %}
         {% set has_seat = p.id in seated_ids %}
         {% set status = 'withdrawn' if p.withdrawn_at else 'active' %}
-        <tr id="tp{{ p.id }}" class="sk-part" data-number="{{ p.player_no }}" data-status="{{ status }}"
+        {% set card_href = url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=p.id, von='teilnehmer',
+                                  q=q or none, suche=roster_search or none, status=roster_status if roster_status != 'all' else none) %}
+          <tr id="tp{{ p.id }}" class="sk-part" data-number="{{ p.player_no }}" data-status="{{ status }}"
             data-person="{{ p.vorname }} {{ p.nachname }} {{ p.wohnort }}" data-delete-form-id="rmForm{{ p.id }}">
           <td><strong class="sk-player-no">{{ p.player_no }}</strong></td>
           <td>
             {% if is_closed %}
-              <a href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=p.id) }}"><strong>{{ p.vorname }} {{ p.nachname }}</strong></a>
+              <a data-player-card href="{{ card_href }}"><strong>{{ p.vorname }} {{ p.nachname }}</strong></a>
             {% else %}<strong>{{ p.vorname }} {{ p.nachname }}</strong>{% endif %}
             <small class="sk-person-meta">{{ p.wohnort }}{% if addr_locked %} · Adresse gesperrt{% endif %}</small>
             {% if is_closed %}<small class="sk-person-meta">#{{ p.address_id }}{% if p.email %} · {{ p.email }}{% endif %}</small>{% endif %}
@@ -118,7 +126,7 @@
             <details class="sk-person-actions">
               <summary>Aktionen<span class="visually-hidden"> für Nr. {{ p.player_no }}, {{ p.vorname }} {{ p.nachname }}</span></summary>
               <div class="sk-person-options">
-                <a href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=p.id) }}">Spielerkarte öffnen</a>
+                <a data-player-card href="{{ card_href }}">Spielerkarte öffnen</a>
                 <small class="text-secondary">Adresse #{{ p.address_id }}{% if p.email %} · {{ p.email }}{% endif %}</small>
                   {% if not addr_locked %}
                     <a class="btn btn-sm btn-outline-secondary"
@@ -686,4 +694,5 @@
 </script>
 
 <script defer src="{{ url_for('static', filename='js/participants_keys.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/player_card_links.js') }}"></script>
 {% endblock %}

@@ -11,6 +11,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    request,
     url_for,
     send_file,
     current_app,
@@ -106,6 +107,19 @@ def wlan_player_card(token):
 
 
 def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: tuple[int, str] | None = None):
+    from_roster = not pdf and identity is None and request.args.get("von") == "teilnehmer"
+    filters = {}
+    if not pdf and identity is None:
+        if request.args.get("suche"):
+            filters["suche"] = request.args["suche"]
+        if from_roster:
+            if request.args.get("status") in ("active", "withdrawn"):
+                filters["status"] = request.args["status"]
+            if request.args.get("q"):
+                filters["q"] = request.args["q"]
+    list_endpoint = "tournaments.tournament_participants" if from_roster else "tournaments.tournament_standings_overall"
+    list_url = url_for(list_endpoint, tournament_id=tournament_id, **filters)
+    card_params = dict(filters, von="teilnehmer") if from_roster else filters
     with closing(db.connect()) as con:
         con.execute("BEGIN")
         t = _get_tournament(con, tournament_id)
@@ -135,7 +149,7 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: 
             abort(404)
         if not p:
             flash("Spieler im Turnier nicht gefunden.", "error")
-            return redirect(url_for("tournaments.tournament_standings_overall", tournament_id=tournament_id))
+            return redirect(list_url)
 
         # Rundenliste
         rounds = db.q(
@@ -219,6 +233,7 @@ def _render_player_card(tournament_id: int, tp_id: int, *, pdf: bool, identity: 
 
     return render_template(
         "tournament_player.html", t=t, p=p, place=place, medal=medal,
+        card_list_url=list_url, card_from_roster=from_roster, card_params=card_params,
         score_issue=score_issue, sum_points=current["points"], sum_soli=current["soli"], best=best, worst=worst,
         timeline=timeline, now=_now_local_iso(), prev_tp_id=prev_tp_id, next_tp_id=next_tp_id,
         points_curve=points_curve, cumulative_curve=cumulative_curve, played=len(scores), rounds_total=len(round_numbers),

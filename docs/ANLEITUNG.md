@@ -163,6 +163,10 @@ Ist ein Punkte- oder Soliwert unlesbar, bleibt der gespeicherte Einzelwert in de
 
 Mit **Gesamtwertung drucken** erhältst du die vollständige Rangliste mit Gesamtpunkten und Soli, auch wenn die Suche gerade nur einzelne Spieler zeigt. Auf dem Ausdruck stehen der Stand der Wertung und gegebenenfalls der Prüfhinweis.
 
+**Spielerkarte öffnen und zurückkehren**
+
+In der Gesamtwertung den Spielernamen anklicken. In der Teilnehmerliste eines offenen Turniers **Aktionen → Spielerkarte öffnen** wählen, bei einem abgeschlossenen Turnier den Namen anklicken. Auf der Karte führt **Zur Gesamtwertung** oder **Zur Teilnehmerliste** zur vorherigen Auswahl. Der Suchbegriff bleibt erhalten, in der Teilnehmerliste auch die Auswahl **Aktive** oder **Abgemeldete**. Das gilt ebenfalls nach dem Wechsel zur nächsten oder vorherigen Spielerkarte.
+
 **Spielerkarte als PDF**
 
 In der Gesamtwertung den Spielernamen öffnen und „PDF“ wählen. Im Einzelplatzbetrieb öffnet der QR-Code die Karte am Turnierrechner. Im WLAN-Betrieb enthält eine neu angezeigte oder gedruckte Karte einen persönlichen Link für das Handy. Wer diesen Link hat, kann die betreffende Karte lesen. Die Turnierleitung gibt jede Karte an den zugehörigen Spieler. Nach der Berichtigung einer falschen Anmeldung eine neue Karte ausgeben.

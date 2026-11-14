@@ -45,7 +45,7 @@
   {% if rows %}
   <div id="standingsFilter" class="sk-overall-filter no-print" hidden>
     <label for="standingsQuery" class="visually-hidden">Rangliste durchsuchen</label>
-    <input id="standingsQuery" type="search" class="form-control" placeholder="Startnummer, Name oder Wohnort" aria-controls="standingsTable">
+    <input id="standingsQuery" data-card-filter="suche" value="{{ request.args.get('suche', '') }}" type="search" class="form-control" placeholder="Startnummer, Name oder Wohnort" aria-controls="standingsTable">
     <span id="standingsMatches" class="small text-secondary" role="status"></span>
   </div>
   <table id="standingsTable" class="table sk-list sk-overall-table mb-0" aria-labelledby="rankingHeading">
@@ -58,7 +58,7 @@
         </td>
         <td class="sk-overall-number">{{ r.player_no }}</td>
         <td class="sk-overall-person">
-          <a href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=r.tp_id) }}"><strong>{{ r.vorname }} {{ r.nachname }}</strong></a>
+          <a data-player-card href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=r.tp_id, suche=request.args.get('suche') or none) }}"><strong>{{ r.vorname }} {{ r.nachname }}</strong></a>
           <small class="sk-person-meta"><span class="sk-mobile-number">Nr. {{ r.player_no }}{% if r.wohnort %} · {% endif %}</span>{{ r.wohnort }}</small>
           {% if round_numbers %}
           <details class="sk-overall-rounds no-print">
@@ -84,4 +84,5 @@
 {% endblock %}
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/standings.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/player_card_links.js') }}"></script>
 {% endblock %}

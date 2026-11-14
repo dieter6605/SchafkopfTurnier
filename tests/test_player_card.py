@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from lxml import html
 from weasyprint import HTML
@@ -51,6 +51,45 @@ class PlayerCardTests(unittest.TestCase):
         self.assertTrue(page.xpath("//img[@src='/verein/static/branding/logo.png']"))
         self.assertTrue(page.xpath("//a[@href='/verein"+self.card_path+"/pdf']"))
         self.assertIn("Müller, Anna", page.text_content())
+
+    def test_card_returns_to_filtered_list_through_adjacent_cards(self):
+        for section, label, filters in (
+            ("standings", "Gesamtwertung", {"suche": "#1"}),
+            ("participants", "Teilnehmer", {"suche": "Müller & A", "status": "active", "q": "Äußere Straße"}),
+        ):
+            with self.subTest(section=section):
+                list_path = "/tournaments/1/" + section
+                listing = html.fromstring(self.client.get(list_path + "?" + urlencode(filters)).data.decode())
+                card_link, = listing.xpath("//a[@data-player-card and contains(@href,'/players/1?')]/@href")
+                card = html.fromstring(self.client.get(card_link).data.decode())
+                forward, = card.xpath("//a[normalize-space(.)='Nächster →']/@href")
+                adjacent = html.fromstring(self.client.get(forward).data.decode())
+                previous, = adjacent.xpath("//a[normalize-space(.)='← Vorheriger']/@href")
+                self.assertEqual(urlsplit(previous).path, self.card_path)
+                self.assertEqual(parse_qs(urlsplit(previous).query), parse_qs(urlsplit(card_link).query))
+                for page in (card, adjacent):
+                    active, = page.xpath("//nav[@aria-label='Turniernavigation']/a[@aria-current]")
+                    self.assertEqual(active.text, label)
+                    back, = page.xpath("//a[starts-with(normalize-space(.),'← Zur')]/@href")
+                    self.assertEqual(active.get("href"), back)
+                    self.assertEqual(urlsplit(back).path, list_path)
+                    self.assertEqual(parse_qs(urlsplit(back).query), {k: [v] for k, v in filters.items()})
+                    self.assertFalse(page.xpath("//a[contains(@href,'/pdf?')] | //img[contains(@src,'qr.png?')]"))
+                    shared, = page.xpath("//a[starts-with(@href,'http')]/@href")
+                    self.assertEqual(urlsplit(shared).query, "")
+                returned = html.fromstring(self.client.get(back).data.decode())
+                self.assertEqual(returned.xpath("//*[@data-card-filter='suche']/@value"), [filters["suche"]])
+                if section == "participants":
+                    self.assertEqual(returned.get_element_by_id("rosterStatus").value, "active")
+                    self.assertEqual(returned.get_element_by_id("qInput").value, filters["q"])
+
+    def test_direct_card_and_missing_player_return_to_local_lists(self):
+        page = html.fromstring(self.client.get(self.card_path + "?von=fremd&status=active").data.decode())
+        active, = page.xpath("//nav[@aria-label='Turniernavigation']/a[@aria-current]")
+        self.assertEqual((active.text, active.get("href")), ("Gesamtwertung", "/tournaments/1/standings"))
+        response = self.client.get("/tournaments/1/players/999?von=teilnehmer&status=withdrawn&suche=%23999")
+        self.assertEqual(urlsplit(response.location).path, "/tournaments/1/participants")
+        self.assertEqual(parse_qs(urlsplit(response.location).query), {"status": ["withdrawn"], "suche": ["#999"]})
 
     def test_pdf_uses_embedded_qr_and_local_files_with_network_unavailable(self):
         origin = "http://127.0.0.1:8051/verein/"

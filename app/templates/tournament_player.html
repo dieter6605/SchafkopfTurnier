@@ -1,5 +1,6 @@
 {# app/templates/tournament_player.html #}
 {% extends "layout.html" %}
+{% block title %}Spielerkarte · Nr. {{ p.player_no }} · {{ p.vorname }} {{ p.nachname }}{% endblock %}
 {% block content %}
 
 <style>
@@ -155,7 +156,7 @@
 
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 no-print">
     <div>
-      <h3 class="sk-headline mb-0">Spielerkarte</h3>
+      <h1 class="h3 sk-headline mb-0">Spielerkarte</h1>
       <div class="text-muted small">
         {{ t.title }} · {{ t.event_date }} · {{ t.start_time }}
         {% if now %}· Stand: <span class="sk-mono">{{ now }}</span>{% endif %}
@@ -163,21 +164,20 @@
     </div>
 
     <div class="sk-actions">
-      {% if not personal_card %}
-      <a class="btn btn-outline-secondary"
-         href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">
-        Gesamtwertung
+      {% if not personal_card and not pdf_mode %}
+      <a class="btn btn-outline-secondary" href="{{ card_list_url }}">
+        {{ '← Zur Teilnehmerliste' if card_from_roster else '← Zur Gesamtwertung' }}
       </a>
 
       {% if prev_tp_id %}
         <a class="btn btn-outline-secondary"
-           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=prev_tp_id) }}">
+           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=prev_tp_id, **card_params) }}">
           ← Vorheriger
         </a>
       {% endif %}
       {% if next_tp_id %}
         <a class="btn btn-outline-secondary"
-           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=next_tp_id) }}">
+           href="{{ url_for('tournaments.tournament_player_view', tournament_id=t.id, tp_id=next_tp_id, **card_params) }}">
           Nächster →
         </a>
       {% endif %}

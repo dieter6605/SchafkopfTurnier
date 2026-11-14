@@ -95,7 +95,7 @@ class ParticipantIntegrityTests(unittest.TestCase):
             con.execute("UPDATE tournaments SET closed_at='2026-11-12 21:00:00' WHERE id=1")
         closed = page()
         self.assertFalse(closed.xpath("//form[@method='post']"))
-        self.assertTrue(closed.xpath("//*[@id='tp1']//a[@href='/tournaments/1/players/1']"))
+        self.assertTrue(closed.xpath("//*[@id='tp1']//a[@href='/tournaments/1/players/1?von=teilnehmer&q=Huber']"))
         self.assertTrue(closed.xpath("//*[@id='participantLog']//*[@data-audit-action='withdraw']"))
 
     def test_number_check_opens_the_result_with_the_missing_start_number(self):
