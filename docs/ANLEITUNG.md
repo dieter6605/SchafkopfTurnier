@@ -27,6 +27,10 @@ Für eine externe `.sqlite3`-Datei **Sicherungsdatei vom Rechner verwenden** öf
 
 Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
 
+**Datenbank prüfen**
+
+Unter **Hilfe → DB-Diagnose** stehen die Prüfungen zur Datenbankstruktur und zu den Verknüpfungen aller Turniere. Im geöffneten Turnier zeigt **Hilfe → DB-Diagnose (dieses Turnier)** zusätzlich dessen Teilnehmer, Runden, Sitzplätze und Einzelergebnisse. Bei einem auffälligen Prüfstatus sind die **Technischen Details** bereits geöffnet.
+
 **Adressen pflegen**
 
 Im **Adressbuch** führen die Reiter **Adressen**, **Statistik** und **CSV-Import** zu den drei Ansichten des Standardadressbuchs. Die Adressliste startet mit den höchstens 80 zuletzt bearbeiteten Adressen. Für die alphabetische Liste **Alle Adressen** wählen und **Suchen** drücken.

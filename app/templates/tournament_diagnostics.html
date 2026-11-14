@@ -1,58 +1,58 @@
-<!doctype html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DB-Diagnose</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; padding: 16px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 6px; }
-    th { text-align: left; background: #f6f6f6; }
-    .ok { color: #0a7; }
-    .bad { color: #c00; }
-    .muted { color: #666; }
-  </style>
-</head>
-<body>
-  <h2>DB-Diagnose – {% if tournament_id is not none %}Turnier #{{ tournament_id }}{% else %}Turniere{% endif %}</h2>
-  <p><a href="{{ url_for('tournaments.tournament_detail', tournament_id=tournament_id) if tournament else url_for('tournaments.tournaments_list') }}">← Zurück</a></p>
-
-  <h3>Prüfstatus</h3>
-  <ul>
-    <li>PRAGMA foreign_keys: <b class="{{ 'ok' if fk_on == 1 else 'bad' }}">{{ fk_on }}</b></li>
-    <li>PRAGMA integrity_check: <b class="{{ 'ok' if integrity|lower == 'ok' else 'bad' }}">{{ integrity }}</b></li>
-    <li>foreign_key_check Probleme: <b class="{{ 'bad' if issues else 'ok' }}">{{ issues|length }}</b></li>
-  </ul>
-
-  {% if tournament_id is not none %}
-    <h3>Turnier</h3>
-    {% if tournament %}
-      <p><b>{{ tournament.title }}</b> · {{ tournament.event_date }} {{ tournament.start_time }}
-        <span class="muted">(marker: {{ tournament.marker or '-' }})</span></p>
-      <ul>
-        <li>Teilnehmer: <b>{{ counts.participants }}</b></li>
-        <li>Runden: <b>{{ counts.rounds }}</b></li>
-        <li>Sitzplan-Zeilen: <b>{{ counts.seats }}</b></li>
-        <li>Ergebnis-Zeilen: <b>{{ counts.scores }}</b></li>
-      </ul>
-    {% else %}
-      <p class="bad">Turnier nicht gefunden.</p>
+{% extends "layout.html" %}
+{% block title %}Datenbankdiagnose{% if tournament %} · {{ tournament.title }}{% endif %} · SchafkopfTurnier{% endblock %}
+{% block main_class %}sk-workspace sk-diagnostics{% endblock %}
+{% block tournament_navigation %}{% if tournament %}{{ super() }}{% endif %}{% endblock %}
+{% block content %}
+{% set structure_ok = integrity|lower == 'ok' %}
+{% set checks_ok = structure_ok and fk_on == 1 and not issues %}
+<a class="sk-back no-print" href="{{ url_for('tournaments.tournament_detail', tournament_id=tournament_id) if tournament else url_for('tournaments.tournaments_list') }}">
+  {{ '← Zur Turnierübersicht' if tournament else '← Zur Turnierliste' }}
+</a>
+<div class="sk-heading"><h1>Datenbankdiagnose</h1></div>
+<section class="sk-panel sk-pad" aria-labelledby="datenbankpruefung">
+  <div class="sk-section-heading">
+    <h2 id="datenbankpruefung">Gesamte Datenbank</h2>
+    <span class="sk-badge {{ 'done' if checks_ok else 'open' }}">{{ 'Ohne Befund' if checks_ok else 'Prüfung auffällig' }}</span>
+  </div>
+  <dl class="sk-diagnostic-checks mb-0">
+    <div><dt>Datenbankstruktur</dt><dd>{{ 'In Ordnung' if structure_ok else 'Fehler gemeldet' }}</dd></div>
+    <div><dt>Schutz vor ungültigen Verknüpfungen</dt><dd>{{ 'Aktiv' if fk_on == 1 else 'Inaktiv' }}</dd></div>
+    <div><dt>Ungültige Verknüpfungen</dt><dd>{{ issues|length }}</dd></div>
+  </dl>
+</section>
+{% if tournament %}
+<section class="sk-panel sk-pad" aria-labelledby="turnierbestand">
+  <div class="sk-section-heading"><div>
+    <h2 id="turnierbestand">{{ tournament.title }}</h2>
+    <p class="text-secondary mt-2 mb-0">Turnier Nr. {{ tournament_id }} · {{ tournament.event_date|turnierdatum }} · {{ tournament.start_time }} Uhr</p>
+    {% if tournament.marker %}<p class="text-secondary small mb-0">Marker <code>{{ tournament.marker }}</code></p>{% endif %}
+  </div></div>
+  <dl class="sk-diagnostic-counts">
+    {% for label, count in [('Teilnehmer', counts.participants), ('Runden', counts.rounds), ('Sitzplätze', counts.seats), ('Einzelergebnisse', counts.scores)] %}
+      <div><dt>{{ label }}</dt><dd>{{ count }}</dd></div>
+    {% endfor %}
+  </dl>
+</section>
+{% elif tournament_id is not none %}
+<p class="alert alert-warning mt-3">Turnier Nr. {{ tournament_id }} wurde nicht gefunden. Die angezeigte Prüfung gilt für die gesamte Datenbank.</p>
+{% endif %}
+<details class="sk-panel sk-fold" {% if not checks_ok %}open{% endif %}>
+  <summary>Technische Details</summary>
+  <div class="sk-diagnostic-details">
+    <dl class="sk-diagnostic-checks">
+      <div><dt><code>PRAGMA integrity_check</code></dt><dd>{{ integrity }}</dd></div>
+      <div><dt><code>PRAGMA foreign_keys</code></dt><dd>{{ fk_on }}</dd></div>
+      <div><dt><code>PRAGMA foreign_key_check</code></dt><dd>{{ issues|length }} {{ 'Befund' if issues|length == 1 else 'Befunde' }}</dd></div>
+    </dl>
+    {% if issues %}
+    <div class="table-responsive" role="region" aria-label="Ungültige Verknüpfungen" tabindex="0">
+      <table class="table sk-list mb-0">
+        <caption class="caption-top">Betroffene Datenbankeinträge</caption>
+        <thead><tr><th scope="col">Tabelle</th><th scope="col">Zeile (rowid)</th><th scope="col">Zieltabelle</th><th scope="col">Schlüssel (fkid)</th></tr></thead>
+        <tbody>{% for issue in issues %}<tr><td>{{ issue.table }}</td><td>{{ issue.rowid }}</td><td>{{ issue.parent }}</td><td>{{ issue.fkid }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
     {% endif %}
-  {% endif %}
-
-  {% if issues %}
-    <h3>foreign_key_check – Details</h3>
-    <table>
-      <thead><tr><th>Tabelle</th><th>rowid</th><th>Parent</th><th>fkid</th></tr></thead>
-      <tbody>
-        {% for issue in issues %}
-          <tr><td>{{ issue.table }}</td><td>{{ issue.rowid }}</td><td>{{ issue.parent }}</td><td>{{ issue.fkid }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="ok"><b>Keine FK-Probleme gefunden.</b></p>
-  {% endif %}
-</body>
-</html>
+  </div>
+</details>
+{% endblock %}

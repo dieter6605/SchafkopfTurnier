@@ -101,22 +101,23 @@
       <div class="collapse navbar-collapse justify-content-end" id="hauptmenue">
         <ul class="navbar-nav gap-1">
           {% set ep = request.endpoint or '' %}
+          {% set in_diagnostics = ep == 'tournaments.tournaments_diagnostics' %}
           {% for label, endpoint, active in [
             ('Start', 'home.home', ep == 'home.home'),
-            ('Turniere', 'tournaments.tournaments_list', request.blueprint == 'tournaments'),
+            ('Turniere', 'tournaments.tournaments_list', request.blueprint == 'tournaments' and not in_diagnostics),
             ('Adressbuch', 'addresses.addresses_list', request.blueprint == 'addresses'),
             ('Datensicherung', 'home.backups_page', ep in ('home.backups_page', 'home.restore', 'home.restore_upload'))] %}
             <li><a class="nav-link" href="{{ url_for(endpoint) }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a></li>
           {% endfor %}
           <li class="nav-item dropdown">
-            <button class="nav-link dropdown-toggle" {% if ep.startswith('home.help') %}aria-current="true"{% endif %} data-bs-toggle="dropdown" aria-expanded="false">Hilfe</button>
+            <button class="nav-link dropdown-toggle" {% if ep.startswith('home.help') or in_diagnostics %}aria-current="true"{% endif %} data-bs-toggle="dropdown" aria-expanded="false">Hilfe</button>
             <ul class="dropdown-menu dropdown-menu-end">
               {% from "help/_links.html" import help_links with context %}
               {{ help_links(menu=true) }}
               <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics') }}">DB-Diagnose</a></li>
-              {% if skt_tournament_id %}
-                <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics', tournament_id=skt_tournament_id) }}">DB-Diagnose (dieses Turnier)</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics') }}" {% if in_diagnostics and tournament_id is none %}aria-current="page"{% endif %}>DB-Diagnose</a></li>
+              {% if skt_tournament_id and (not in_diagnostics or tournament) %}
+                <li><a class="dropdown-item" href="{{ url_for('tournaments.tournaments_diagnostics', tournament_id=skt_tournament_id) }}" {% if in_diagnostics %}aria-current="page"{% endif %}>DB-Diagnose (dieses Turnier)</a></li>
               {% endif %}
             </ul>
           </li>

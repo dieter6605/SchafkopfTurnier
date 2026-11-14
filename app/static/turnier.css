@@ -363,3 +363,17 @@
   .sk-help-document { display: block; }
   .sk-help-text { border: 0; padding: 0; }
 }
+
+.sk-diagnostics .sk-panel + .sk-panel { margin-top: 1rem; }
+.sk-diagnostics .sk-panel { overflow-wrap: anywhere; }
+.sk-diagnostic-checks > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--sk-line); padding: .65rem 0; }
+.sk-diagnostic-checks dt, .sk-diagnostic-counts dt { color: var(--sk-muted); font-weight: 500; }
+.sk-diagnostic-checks dd { margin: 0; text-align: end; font-weight: 600; }
+.sk-diagnostic-counts { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1rem; margin: 0; }
+.sk-diagnostic-counts > div { border-top: 1px solid var(--sk-line); padding-top: .65rem; }
+.sk-diagnostic-counts dd { margin: .15rem 0 0; font-size: 1.4rem; font-weight: 650; }
+.sk-diagnostic-details { padding: 0 1.5rem 1rem; }
+@media (max-width: 767px) {
+  .sk-diagnostic-counts { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .sk-diagnostic-details { padding-inline: 1rem; }
+}
