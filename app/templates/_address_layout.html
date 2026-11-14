@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block main_class %}sk-workspace sk-addressbook{% endblock %}
+{% block title %}{{ self.address_title() }} · SchafkopfTurnier{% endblock %}
+{% block content %}
+{% block address_back %}{% endblock %}
+<div class="sk-heading">
+  <div>
+    <h1>{% block address_title %}Adressbuch{% endblock %}</h1>
+    {% block address_subtitle %}{% endblock %}
+  </div>
+  {% block address_actions %}{% endblock %}
+</div>
+{% set ep = request.endpoint %}
+<nav class="turnier-nav no-print" aria-label="Adressbuchnavigation">
+  <a href="{{ url_for('addresses.addresses_list') }}" {% if ep == 'addresses.addresses_list' %}aria-current="page"{% elif ep in ['addresses.address_new','addresses.address_edit'] %}aria-current="location"{% endif %}>Adressen</a>
+  <a id="btnAddrStats" href="{{ url_for('addresses.addresses_stats') }}" {% if ep == 'addresses.addresses_stats' %}aria-current="page"{% endif %}>Statistik</a>
+  <a id="btnAddrImport" href="{{ url_for('addresses.addresses_import') }}" {% if ep in ['addresses.addresses_import','addresses.addresses_import_post'] %}aria-current="page"{% endif %}>CSV-Import</a>
+</nav>
+{% block address_body %}{% endblock %}
+{% endblock %}

@@ -23,6 +23,12 @@ Unter „Datensicherung“ bei der gewünschten Sicherung „Wiederherstellen“
 
 **Adressen pflegen**
 
+Im **Adressbuch** führen die Reiter **Adressen**, **Statistik** und **CSV-Import** zu den drei Ansichten des Standardadressbuchs. Die Adressliste startet mit den höchstens 80 zuletzt bearbeiteten Adressen. Für die alphabetische Liste **Alle Adressen** wählen und **Suchen** drücken.
+
+- Über die Suche findest du Personen nach Name, Wohnort, Kontaktdaten oder Adressnummer mit vorangestelltem `#`. **Weitere Filter** öffnet unter anderem die Auswahl für fehlende Telefonnummern und E-Mail-Adressen.
+- Den Namen anklicken, um eine Adresse zu bearbeiten. **Speichern** und **Abbrechen** führen zur vorherigen Liste oder Turnieransicht. **Einladung an/aus** lässt sich direkt in der Liste umschalten.
+- **CSV herunterladen** bietet den Export aller Treffer der aktuellen Suche und den Export des gesamten Standardadressbuchs für Tabellen. In der **Statistik** öffnen die Zahlen unter **Einladungen** und **Datenpflege** die passenden Trefferlisten.
+
 - Tischblätter, Wertungen und Turnierexporte verwenden Namen und Wohnort aus dem aktuellen Adressbuch. Eine Korrektur gilt auch für Nachdrucke abgeschlossener Turniere.
 - Bei neuen Adressen ist „Einladung aktiv“ voreingestellt, auch bei der Schnellerfassung im Turnier. Im Adressbuch lässt sich das Kennzeichen ändern.
 - In der CSV-Spalte `invite` bedeutet `1` „an“. `0` und ein leeres Feld bedeuten „aus“. Fehlt die ganze Spalte, behalten bekannte Adress-IDs ihr Kennzeichen. Zeilen ohne bekannte ID erhalten „an“.

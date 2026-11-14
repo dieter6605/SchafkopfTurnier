@@ -3,6 +3,7 @@ import unittest
 from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urlencode
 
 from lxml import html
 
@@ -52,6 +53,74 @@ class AddressbookTests(unittest.TestCase):
             self.con.execute("INSERT INTO tournaments(title,event_date,start_time) VALUES('Probe','2026-11-12','18:00')")
             self.con.execute("INSERT INTO tournament_participants(tournament_id,player_no,address_id,display_name) "
                              "VALUES(1,1,1,'Probe')")
+
+    def page(self, path):
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200, path)
+        return html.fromstring(response.get_data(as_text=True))
+
+    def test_directory_search_filters_export_and_return_after_edit(self):
+        with self.con:
+            self.con.execute("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort,telefon) "
+                             "VALUES(1,'Alt','Ada','Ort','08123')")
+        stats = self.page("/addresses/stats")
+        quality = stats.xpath("//a[span='Telefon fehlt']/@href")[0]
+        filters = self.page(quality).xpath("//form[@method='get']")[0]
+        self.assertEqual(filters.fields["phone"], "fehlt")
+        self.assertTrue(filters.xpath("details[@open]"))
+        data = dict(filters.fields)
+        data["q"] = "Ada Alt"
+        path = filters.action + "?" + urlencode({k: v for k, v in data.items() if v is not None})
+        page = self.page(path)
+        row, = page.xpath("//tbody/tr")
+        self.assertIn("Alt, Ada", row.text_content())
+        edit = self.page(row.xpath("td[1]/a/@href")[0])
+        form = next(f for f in edit.forms if f.action == "/addresses/1/edit")
+        self.assertEqual(form.fields["next"], path)
+        values = dict(form.fields)
+        values["notizen"] = "Besuch am Samstag"
+        self.assertEqual(self.client.post(form.action, data=values).location, path)
+        self.assertEqual(self.con.execute("SELECT notizen FROM addresses WHERE id=1").fetchone()[0], values["notizen"])
+        for query in (path, "/addresses?q=%231", "/addresses?q=Alt+Ada"):
+            listing = self.page(query)
+            link = listing.get_element_by_id("btnAddrExportFiltered").get("href")
+            exported = list(csv.DictReader(StringIO(self.client.get(link).data.decode("utf-8-sig")), delimiter=";"))
+            expected = ["1", "2"] if query.endswith("Alt+Ada") else ["1"]
+            self.assertEqual(sorted(r["id"] for r in exported), expected)
+            self.assertEqual(len(listing.xpath("//tbody/tr")), len(expected))
+
+    def test_workspace_navigation_and_invite_filter_after_toggle(self):
+        for path, current in (("/addresses", "Adressen"), ("/addresses/1/edit", "Adressen"),
+                              ("/addresses/new", "Adressen"), ("/addresses/stats", "Statistik"),
+                              ("/addresses/import", "CSV-Import")):
+            with self.subTest(path=path):
+                page = self.page(path)
+                self.assertEqual(page.xpath("//nav[@aria-label='Adressbuchnavigation']/a[@aria-current]/text()"), [current])
+                self.assertEqual(len(page.xpath("//h1")), 1)
+        with self.con:
+            self.con.execute("UPDATE addresses SET invite=1 WHERE id=1")
+        def invite_count(label):
+            return self.page("/addresses/stats").xpath("//a[span=$label]/strong/text()", label=label)
+        self.assertEqual(invite_count("Einladbar ohne E-Mail"), ["1"])
+        listing = self.page("/addresses?invite=an")
+        form, = listing.xpath("//form[button[@aria-pressed='true']]")
+        self.assertEqual(self.client.post(form.action, data=dict(form.fields)).location, "/addresses?invite=an")
+        self.assertFalse(self.page("/addresses?invite=an").xpath("//tbody/tr"))
+        self.assertEqual(invite_count("Nicht einladbar"), ["1"])
+        off = self.page("/addresses?invite=aus")
+        self.assertTrue(off.xpath("//button[@aria-pressed='false']"))
+
+    def test_directory_pagination_exports_all_matching_pages(self):
+        with self.con:
+            self.con.executemany("INSERT INTO addresses(addressbook_id,nachname,vorname,wohnort) "
+                                 "VALUES(1,'Verein',?,'Testort')", [(f"Person {n:02d}",) for n in range(26)])
+        first = self.page("/addresses?q=Verein&per_page=25")
+        self.assertEqual(len(first.xpath("//tbody/tr")), 25)
+        second = self.page(first.xpath("//a[@aria-label='Nächste Seite']/@href")[0])
+        self.assertEqual(len(second.xpath("//tbody/tr")), 1)
+        self.assertEqual(second.xpath("//nav[@aria-label='Seiten der Trefferliste']//a[@aria-current]/text()"), ["2"])
+        export = self.client.get(second.get_element_by_id("btnAddrExportFiltered").get("href"))
+        self.assertEqual(len(list(csv.DictReader(StringIO(export.data.decode("utf-8-sig")), delimiter=";"))), 26)
 
     def test_header_only_invalid_rows_and_duplicate_ids_cannot_replace(self):
         before = self.snapshot()

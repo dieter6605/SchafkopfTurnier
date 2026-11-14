@@ -253,3 +253,47 @@
 @media (max-width: 767px) {
   .sk-export-grid, .sk-export-internal { grid-template-columns: minmax(0, 1fr); gap: .9rem; }
 }
+
+.sk-addressbook legend { font-size: 1.2rem; font-weight: 650; margin-bottom: .85rem; }
+.sk-addressbook h3 { font-size: 1.05rem; font-weight: 650; }
+.sk-addressbook .form-label { margin-bottom: .3rem; font-size: .9rem; font-weight: 550; }
+.sk-address-search, .sk-address-options, .sk-address-fields, .sk-address-stat-grid, .sk-address-ranks { display: grid; gap: .85rem 1rem; }
+.sk-address-search { grid-template-columns: minmax(15rem,2.6fr) minmax(10rem,1.2fr) repeat(2,minmax(7rem,1fr)) auto; align-items: end; }
+.sk-address-options, .sk-address-fields, .sk-address-ranks { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.sk-address-stat-grid { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; }
+.sk-address-filters, .sk-address-section { margin-top: 1.15rem; padding-top: 1rem; border-top: 1px solid var(--sk-line); }
+.sk-address-filters summary, .sk-address-downloads summary { cursor: pointer; color: var(--sk-blue); font-weight: 550; width: fit-content; }
+.sk-address-filters[open] summary { margin-bottom: .85rem; }
+.sk-address-filters + a:not(.d-none) { display: inline-block; margin-top: .7rem; }
+.sk-address-check { display: flex; align-items: center; gap: .5rem; align-self: end; padding-block: .55rem; }
+.sk-address-check input { margin-top: 0; }
+.sk-address-confirm { margin-top: 1rem; padding: 1rem; border-left: 3px solid #b24643; background: #fff4f2; }
+.sk-address-count { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .65rem 0; border-bottom: 1px solid var(--sk-line); overflow-wrap: anywhere; text-decoration: none; }
+.sk-address-count:hover, .sk-address-person a:hover { text-decoration: underline; }
+.sk-address-count strong { font-variant-numeric: tabular-nums; }
+.sk-address-ranks { margin-top: 1.5rem; }
+.sk-address-ranks > div { min-width: 0; }
+.sk-address-table th { border-top: 1px solid var(--sk-line); }
+.sk-address-table td { overflow-wrap: anywhere; }
+.sk-address-person a { text-decoration: none; }
+.sk-invite-button { border-radius: .5rem; border: 1px solid #c3cdd4; background: #fff; color: var(--sk-muted); padding: .35rem .65rem; white-space: nowrap; font-size: .86rem; }
+.sk-invite-button[aria-pressed=true] { color: var(--sk-green); background: #edf6f0; border-color: #b1cdb9; }
+@media (max-width: 900px) {
+  .sk-address-search { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .sk-address-search label:first-child { grid-column: 1 / -1; }
+}
+@media screen and (max-width: 650px) {
+  .sk-address-stat-grid, .sk-address-ranks { grid-template-columns: minmax(0,1fr); }
+  .sk-address-options, .sk-address-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .sk-address-table, .sk-address-table tbody { display: block; }
+  .sk-address-table thead { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+  .sk-address-table tr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .35rem .6rem; padding: .8rem 1rem; border-top: 1px solid var(--sk-line); }
+  .sk-address-table td { padding: 0; background: transparent; border: 0; }
+  .sk-address-person { grid-column: 1; grid-row: 1; }
+  .sk-address-email { grid-column: 1; grid-row: 2; }
+  .sk-address-table td:nth-child(3) { grid-column: 2; grid-row: 1; text-align: right; }
+  .sk-address-table td:nth-child(4) { grid-column: 2; grid-row: 2; }
+  .sk-address-history { grid-column: 1 / -1; font-size: .85rem; color: var(--sk-muted); }
+  .sk-address-history::before { content: "Teilnahmen · "; }
+  .sk-address-history small { display: inline; margin-left: .5rem; }
+}

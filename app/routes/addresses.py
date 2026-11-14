@@ -235,10 +235,18 @@ def _qs_for_list(
 # -----------------------------------------------------------------------------
 # Pages: Liste / Suche
 # -----------------------------------------------------------------------------
+def _address_search(term: str) -> tuple[str, list[str]]:
+    if term.startswith("#") and term[1:].isascii() and term[1:].isdigit():
+        return "id = ?", [term[1:]]
+    fields = ("nachname", "vorname", "wohnort", "ort", "plz", "email", "telefon", "strasse", "hausnummer",
+              "nachname || ' ' || vorname", "vorname || ' ' || nachname")
+    matches = " OR ".join(f"{field} LIKE ?" for field in fields)
+    return f"({matches})", [f"%{term}%"] * len(fields)
+
+
 @bp.get("/addresses")
 def addresses_list():
     qtxt = (request.args.get("q") or "").strip()
-    like = f"%{qtxt}%"
 
     # Ansicht: latest|all
     view = (request.args.get("view") or "latest").strip().lower()
@@ -383,14 +391,9 @@ def addresses_list():
             where, params = build_where_and_params()
 
             if qtxt:
-                where.append(
-                    "("
-                    "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
-                    "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
-                    "strasse LIKE ? OR hausnummer LIKE ?"
-                    ")"
-                )
-                params.extend([like, like, like, like, like, like, like, like, like])
+                clause, values = _address_search(qtxt)
+                where.append(clause)
+                params.extend(values)
 
             # Count
             sql_count = f"SELECT COUNT(*) AS c FROM addresses WHERE {' AND '.join(where)}"
@@ -804,7 +807,6 @@ def addresses_export_filtered():
       q, view, status, email, phone, plzort, street, wohnort, invite, mismatch, last_in_list
     """
     qtxt = (request.args.get("q") or "").strip()
-    like = f"%{qtxt}%"
 
     view = (request.args.get("view") or "latest").strip().lower()
     if view not in ("latest", "all"):
@@ -890,14 +892,9 @@ def addresses_export_filtered():
             )
 
         if qtxt:
-            where.append(
-                "("
-                "nachname LIKE ? OR vorname LIKE ? OR wohnort LIKE ? OR ort LIKE ? OR "
-                "plz LIKE ? OR email LIKE ? OR telefon LIKE ? OR "
-                "strasse LIKE ? OR hausnummer LIKE ?"
-                ")"
-            )
-            params.extend([like, like, like, like, like, like, like, like, like])
+            clause, values = _address_search(qtxt)
+            where.append(clause)
+            params.extend(values)
 
         # Falls keinerlei Filter aktiv und view=latest, exportieren wir analog zur Startseite
         any_filter = (

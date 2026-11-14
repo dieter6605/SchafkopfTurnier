@@ -35,8 +35,9 @@
 
   function clearSearchAndGoHome() {
     // Robust auf /addresses ohne Query.
-    const base = "/addresses";
-    if (location.pathname === base && !location.search) {
+    const base = document.getElementById("btnAddrBack")?.href;
+    if (!base) return false;
+    if (location.href === base) {
       const el = document.getElementById("addrSearch");
       if (el) el.value = "";
       return true;
@@ -157,6 +158,11 @@
 
     // ESC: zurück zur Adressbuch-Startansicht (ohne Query)
     if (key === "Escape") {
+      if (document.activeElement?.id === "addrSearch") {
+        ev.preventDefault();
+        document.activeElement.blur();
+        return;
+      }
       if (isTypingContext()) return;
       ev.preventDefault();
       clearSearchAndGoHome();

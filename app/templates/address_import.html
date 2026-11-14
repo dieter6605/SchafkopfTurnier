@@ -1,15 +1,12 @@
-{% extends "layout.html" %}
-{% block content %}
-<div class="d-flex align-items-center justify-content-between gap-2 mb-3 flex-wrap">
-  <h3>Adressbuch – CSV-Import</h3>
-  <div>
-    <a class="btn btn-outline-secondary" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">Zurück</a>
-    <a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Adressbuch für Wiederimport (CSV)</a>
-  </div>
-</div>
-<div class="card shadow-sm"><div class="card-body">
-  <p id="bookCount">Standardadressbuch · {{ existing }} vorhandene Adressen</p>
-  <p class="alert alert-info" id="bookLock" {% if not registered %}hidden{% endif %}>
+{% extends "_address_layout.html" %}
+{% block address_title %}CSV-Import{% endblock %}
+{% block address_back %}<a class="sk-back" id="btnAddrBack" href="{{ url_for('addresses.addresses_list') }}">← Adressbuch</a>{% endblock %}
+{% block address_subtitle %}<p class="text-secondary mt-2 mb-0" id="bookCount">Standardadressbuch · {{ existing }} vorhandene Adressen</p>{% endblock %}
+{% block address_actions %}<a class="btn btn-outline-secondary" id="btnAddrExport" href="{{ url_for('addresses.addresses_export') }}">Adressbuch für Wiederimport (CSV)</a>{% endblock %}
+{% block address_body %}
+<section class="sk-panel sk-pad" aria-labelledby="csvHeading">
+  <h2 class="mb-3" id="csvHeading">Adressdatei prüfen</h2>
+  <p class="sk-round-notice" id="bookLock" {% if not registered %}hidden{% endif %}>
     Das Ersetzen ist wegen vorhandener Turnieranmeldungen gesperrt. Du kannst eine CSV-Datei prüfen.
   </p>
   <form method="post" id="csvImport" action="{{ url_for('addresses.addresses_import_post') }}" enctype="multipart/form-data">
@@ -26,13 +23,13 @@
       {% endif %}
     </section>
     <input type="hidden" name="preview_token" value="{{ preview.token if preview else '' }}">
-    <div id="confirmArea" {% if not preview or not preview.token %}hidden{% endif %}>
+    <div class="sk-address-confirm" id="confirmArea" {% if not preview or not preview.token %}hidden{% endif %}>
       <p>Beim Bestätigen werden die vorhandenen Adressen des Standardadressbuchs durch die geprüften Zeilen ersetzt.</p>
       {% if preview and preview.token %}<p>Wähle für die Bestätigung dieselbe Datei erneut aus.</p>{% endif %}
       <button class="btn btn-danger" name="step" value="apply">Standardadressbuch ersetzen</button>
     </div>
   </form>
-</div></div>
+</section>
 {% endblock %}
 
 {% block scripts %}
