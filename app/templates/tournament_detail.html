@@ -123,11 +123,12 @@
     {% if t.marker %}<p>Teilnahmemarker · {{ t.marker }}</p>{% endif %}
     {% if t.organizer %}<p>Veranstalter · {{ t.organizer }}</p>{% endif %}
     {% if t.description %}<p>{{ t.description }}</p>{% endif %}
-    {% if closed_at %}<p>Abgeschlossen am {{ closed_at }}</p>{% endif %}
+    {% if is_closed %}
+    <p>Abgeschlossen am {{ closed_at }}. Wertungen und Druckunterlagen sind weiterhin verfügbar.</p>
+    {% else %}
     <div class="d-flex gap-2 mb-3">
     <a class="btn btn-outline-secondary" id="btnEditTournament"
-       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id, **list_filters) }}"
-       {% if is_closed %}aria-disabled="true"{% endif %}>
+       href="{{ url_for('tournaments.tournament_edit', tournament_id=t.id, **list_filters) }}">
       Bearbeiten
     </a>
 
@@ -137,14 +138,12 @@
           onsubmit="return window.confirm(this.dataset.confirm)">
       {{ csrf_field() }}
       <button class="btn btn-outline-danger" id="btnDeleteTournament"
-              type="submit"
-              {% if is_closed %}disabled{% endif %}>
+              type="submit">
         Löschen
       </button>
     </form>
-
-
     </div>
+    {% endif %}
 <div class="card shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -179,6 +178,7 @@
   </div>
 </div>
 
+{% if not is_closed %}
 <div class="card shadow-sm mb-3">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
@@ -187,10 +187,10 @@
         <div class="text-muted small">
           Marker <span class="sk-mono">{{ marker_disp }}</span> wird bei allen Teilnehmern gepflegt.
         </div>
-        {% if not is_closed and safe.score_issue %}
+        {% if safe.score_issue %}
           <div class="mt-1">{{ safe.score_issue }}</div>
         {% endif %}
-        {% if not is_closed and safe.marker_issue %}
+        {% if safe.marker_issue %}
           <div class="mt-1">{{ safe.marker_issue }}</div>
         {% endif %}
       </div>
@@ -200,13 +200,14 @@
             onsubmit="return confirmClose();">
         {{ csrf_field() }}
         <button class="btn btn-outline-danger"
-               {% if is_closed or not safe.ready %}disabled{% endif %}>
+               {% if not safe.ready %}disabled{% endif %}>
           Turnier abschließen
         </button>
       </form>
     </div>
   </div>
 </div>
+{% endif %}
 
 {# ==========================================================
    Lokale Wartung

@@ -258,6 +258,54 @@ class OverviewTests(unittest.TestCase):
         self.assertIn("kein vollständiger Vierertisch", missing.text_content())
         self.assertEqual(self.button(missing, "Sitzplan für Runde 1"), "/tournaments/1/rounds/1")
 
+    def test_archive_actions_and_keyboard_targets_follow_each_tournaments_status(self):
+        self.tournament("Archivturnier", marker_suffix="TEST")
+        self.register(4)
+        self.draw(1)
+        self.save_table("/tournaments/1/rounds/1/results/1")
+        self.client.post("/tournaments/1/close")
+        self.tournament("Offenes Turnier")
+        listing = self.page("/tournaments")
+        closed = listing.xpath("//tr[@data-open-url='/tournaments/1']")[0]
+        opened = listing.xpath("//tr[@data-open-url='/tournaments/2']")[0]
+        self.assertEqual([a.text_content().strip() for a in closed.xpath(".//a")], ["Öffnen"])
+        self.assertFalse(closed.xpath(".//form | .//button | @data-edit-url | @data-delete-form-id"))
+        self.assertEqual(opened.get("data-edit-url"), self.button(opened, "Bearbeiten"))
+        delete = opened.get_element_by_id(opened.get("data-delete-form-id"))
+        self.assertEqual(delete.get("action"), "/tournaments/2/delete")
+        self.assertIn("Offenes Turnier", delete.get("data-confirm"))
+
+        archive = self.page("/tournaments?status=abgeschlossen")
+        self.assertNotIn("Umschalt + Entf", archive.text_content())
+        detail = self.page(self.button(self.page(self.button(archive, "Öffnen")), "Turnierdetails"))
+        self.assertFalse(detail.xpath("//a[contains(@href,'/edit')] | "
+                                     "//form[contains(@action,'/delete') or contains(@action,'/close')]"))
+        self.assertIn("Abgeschlossen am", detail.text_content())
+        for label in ("Gesamtwertung", "Druck & Export"):
+            target = detail.xpath("//nav[@aria-label='Turniernavigation']/a[normalize-space(.)=$label]/@href",
+                                  label=label)[0]
+            self.page(target)
+        self.assertEqual(self.page(self.button(detail, "← Zur Trefferliste")).xpath("//input[@name='status']/@value"),
+                         ["abgeschlossen"])
+
+    def test_reopening_in_maintenance_restores_edit_and_delete_to_the_same_row(self):
+        self.tournament(marker_suffix="TEST")
+        self.register(4)
+        self.draw(1)
+        self.save_table("/tournaments/1/rounds/1/results/1")
+        self.client.post("/tournaments/1/close")
+        self.client.application.config["SKT_DEV_MODE"] = True
+        detail = self.page("/tournaments/1?bereich=details")
+        self.assertFalse(detail.xpath("//a[@id='btnEditTournament'] | //button[@id='btnDeleteTournament']"))
+        reopen, = detail.xpath("//form[@action='/tournaments/1/reopen']")
+        self.assertEqual(self.client.post(reopen.get("action"), data=dict(reopen.fields)).status_code, 302)
+        row, = self.page("/tournaments?status=offen").xpath("//tr[@data-open-url]")
+        self.assertEqual(self.button(row, "Bearbeiten"), row.get("data-edit-url"))
+        self.assertEqual(row.get_element_by_id(row.get("data-delete-form-id")).tag, "form")
+        reopened = self.page(row.get("data-open-url"))
+        self.assertTrue(reopened.xpath("//a[@id='btnEditTournament']/@href"))
+        self.assertTrue(reopened.xpath("//button[@id='btnDeleteTournament' and not(@disabled)]"))
+
     def test_filtered_list_returns_from_detail_and_forms_with_both_filters(self):
         title = "Grün & Weiß"
         self.tournament(title)
