@@ -85,19 +85,16 @@ def _list_backups(backup_dir: Path) -> list[dict]:
     if not backup_dir.exists():
         return []
 
-    files = sorted(
-        (p for p in backup_dir.iterdir() if p.is_file() and _is_allowed_backup_name(p.name)),
-        key=lambda p: p.name,
-        reverse=True,
-    )
-
     out: list[dict] = []
-    for p in files:
+    for p in backup_dir.iterdir():
+        if not _is_allowed_backup_name(p.name) or not p.is_file():
+            continue
         try:
             st = p.stat()
             out.append(
                 {
                     "name": p.name,
+                    "uploaded": p.name.startswith("skt-upload-"),
                     "size": st.st_size,
                     "size_h": _format_bytes(st.st_size),
                     "mtime": st.st_mtime,
@@ -106,7 +103,7 @@ def _list_backups(backup_dir: Path) -> list[dict]:
             )
         except OSError:
             continue
-    return out
+    return sorted(out, key=lambda backup: (backup["mtime"], backup["name"]), reverse=True)
 
 
 # -----------------------------------------------------------------------------
@@ -130,7 +127,7 @@ def backups_page():
 def home():
     bdir = current_app.config.get("SKT_BACKUP_DIR")
     backups = _list_backups(Path(bdir)) if bdir else []
-    latest_backup = max(backups, key=lambda backup: backup["mtime"], default=None)
+    latest_backup = backups[0] if backups else None
     today = date.today()
     with closing(db.connect()) as con, con:
         con.execute("BEGIN")
@@ -196,7 +193,7 @@ def help_tarif():
 def backup():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
-        flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
+        flash("Es ist kein Sicherungsordner eingerichtet.", "error")
         return redirect(url_for("home.backups_page"))
 
     try:
@@ -204,7 +201,7 @@ def backup():
     except (OSError, sqlite3.Error) as e:
         flash(f"Sicherung fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.backups_page"))
-    flash(f"Backup erstellt: {target.name}", "ok")
+    flash(f"Sicherung erstellt: {target.name}", "ok")
     return redirect(url_for("home.backups_page"))
 
 
@@ -229,25 +226,25 @@ def download_backup(filename: str):
 def delete_backup(filename: str):
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
-        flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
+        flash("Es ist kein Sicherungsordner eingerichtet.", "error")
         return redirect(url_for("home.backups_page"))
 
     safe_name = Path(filename).name
     if not _is_allowed_backup_name(safe_name):
-        flash("Ungültiger Backup-Dateiname.", "error")
+        flash("Ungültiger Dateiname für eine Sicherung.", "error")
         return redirect(url_for("home.backups_page"))
 
     backup_path = Path(bdir) / safe_name
     try:
         backup_path.unlink()
     except FileNotFoundError:
-        flash("Backup-Datei nicht gefunden.", "error")
+        flash("Sicherungsdatei nicht gefunden.", "error")
         return redirect(url_for("home.backups_page"))
     except Exception as e:
         flash(f"Löschen fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.backups_page"))
 
-    flash(f"Backup gelöscht: {safe_name}", "ok")
+    flash(f"Sicherungsdatei gelöscht: {safe_name}", "ok")
     return redirect(url_for("home.backups_page"))
 
 
@@ -255,18 +252,18 @@ def delete_backup(filename: str):
 def restore(filename: str):
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
-        flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
+        flash("Es ist kein Sicherungsordner eingerichtet.", "error")
         return redirect(url_for("home.backups_page"))
 
     safe_name = Path(filename).name
     if not _is_allowed_backup_name(safe_name):
-        flash("Ungültiger Backup-Dateiname.", "error")
+        flash("Ungültiger Dateiname für eine Sicherung.", "error")
         return redirect(url_for("home.backups_page"))
 
     return _restore_backup(Path(bdir) / safe_name)
 
 
-def _restore_backup(backup_path: Path, *, uploaded: bool = False):
+def _restore_backup(backup_path: Path, *, upload_name: str | None = None):
     pending = session.get("restore_warning", {})
     generation = digest = None
     if "confirmation" in request.form:
@@ -290,16 +287,17 @@ def _restore_backup(backup_path: Path, *, uploaded: bool = False):
         session["restore_warning"] = {
             "filename": backup_path.name, "digest": warning.digest, "generation": generation, "token": token,
         }
-        return render_template("restore_warning.html", filename=backup_path.name, issues=warning.issues, token=token)
+        return render_template("restore_warning.html", filename=backup_path.name, upload_name=upload_name,
+                               issues=warning.issues, token=token)
     except FileNotFoundError:
-        flash("Backup-Datei nicht gefunden.", "error")
+        flash("Sicherungsdatei nicht gefunden.", "error")
         return redirect(url_for("home.backups_page"))
     except Exception as e:
         flash(f"Wiederherstellen fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.backups_page"))
 
     session.pop("restore_warning", None)
-    label = "Upload" if uploaded else "Backup"
+    label = "Hochgeladene Sicherung" if upload_name else "Sicherung"
     flash(f"{label} wiederhergestellt: {backup_path.name}.", "ok")
     return redirect(url_for("home.backups_page"))
 
@@ -318,7 +316,7 @@ def _store_uploaded_backup(backup_dir: Path, upload: FileStorage) -> Path:
 def upload_only():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
-        flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
+        flash("Es ist kein Sicherungsordner eingerichtet.", "error")
         return redirect(url_for("home.backups_page"))
 
     backup_dir = Path(bdir)
@@ -340,7 +338,7 @@ def upload_only():
         flash(f"Upload fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.backups_page"))
 
-    flash(f"Backup hochgeladen: {target_path.name}", "ok")
+    flash(f"Datei im Sicherungsordner gespeichert: {target_path.name}", "ok")
     return redirect(url_for("home.backups_page"))
 
 
@@ -348,7 +346,7 @@ def upload_only():
 def restore_upload():
     bdir = (current_app.config.get("SKT_BACKUP_DIR") or "").strip()
     if not bdir:
-        flash("Backup-Verzeichnis ist nicht gesetzt.", "error")
+        flash("Es ist kein Sicherungsordner eingerichtet.", "error")
         return redirect(url_for("home.backups_page"))
 
     backup_dir = Path(bdir)
@@ -370,4 +368,4 @@ def restore_upload():
         flash(f"Upload fehlgeschlagen: {e}", "error")
         return redirect(url_for("home.backups_page"))
 
-    return _restore_backup(target_path, uploaded=True)
+    return _restore_backup(target_path, upload_name=f.filename)

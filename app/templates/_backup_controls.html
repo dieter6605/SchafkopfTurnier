@@ -1,112 +1,96 @@
-<section class="sk-panel" id="datensicherung" tabindex="-1">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div>
-        <h2 class="h5 mb-0">Gespeicherte Sicherungen</h2>
-        {% if backup_dir %}
-          <div class="text-muted small">Verzeichnis: <span class="font-monospace">{{ backup_dir }}</span></div>
-        {% else %}
-          <div class="text-muted small">Backup-Verzeichnis ist nicht gesetzt.</div>
-        {% endif %}
-      </div>
-
-      <div class="d-flex gap-2 flex-wrap">
-        <form method="post" action="{{ url_for('home.backup') }}">
-          {{ csrf_field() }}
-          <button class="btn btn-sm btn-outline-primary" {% if not backup_dir %}disabled{% endif %}>Sicherung erstellen</button>
-        </form>
-      <button class="btn btn-sm btn-outline-secondary"
-              type="button"
-              data-bs-toggle="collapse"
-              data-bs-target="#backupTools"
-              aria-expanded="false"
-              aria-controls="backupTools">
-        Hochladen und wiederherstellen
-      </button>
-      </div>
-    </div>
-
-    <div class="collapse mt-3" id="backupTools">
-      <div class="row g-3">
-        <div class="col-lg-6">
-          <div class="border rounded p-3">
-            <div class="fw-semibold mb-2">Backup hochladen (nur speichern)</div>
-            <form method="post" action="{{ url_for('home.upload_only') }}" enctype="multipart/form-data">
-              {{ csrf_field() }}
-              <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
-              <button class="btn btn-sm btn-outline-secondary mt-2" {% if not backup_dir %}disabled{% endif %}>
-                Hochladen
-              </button>
-            </form>
-          </div>
-        </div>
-
-        <div class="col-lg-6">
-          <div class="border rounded p-3">
-            <div class="fw-semibold mb-2">Upload + sofort wiederherstellen</div>
-            <form method="post" action="{{ url_for('home.restore_upload') }}" enctype="multipart/form-data">
-              {{ csrf_field() }}
-              <input class="form-control" type="file" name="backup_file" accept=".sqlite3" {% if not backup_dir %}disabled{% endif %}>
-              <button class="btn btn-sm btn-outline-danger mt-2"
-                      {% if not backup_dir %}disabled{% endif %}
-                      onclick="return confirm('Den aktuellen Datenstand durch die hochgeladene Sicherung ersetzen?');">
-                Upload wiederherstellen
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {% if backups and backups|length > 0 %}
-      <hr class="my-3">
-      <div class="table-responsive">
-        <table class="table table-striped mb-0 align-middle">
-          <thead>
-            <tr>
-              <th>Datei</th>
-              <th style="width:170px;">Datum</th>
-              <th style="width:120px;">Größe</th>
-              <th class="text-end" style="width:260px;">Aktionen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for b in backups %}
-              <tr>
-                <td class="font-monospace">{{ b.name }}</td>
-                <td class="text-muted">{{ b.mtime_h }}</td>
-                <td class="text-muted">{{ b.size_h }}</td>
-                <td class="text-end">
-                  <div class="d-flex justify-content-end gap-2 flex-wrap">
-                    <a class="btn btn-sm btn-outline-secondary"
-                       href="{{ url_for('home.download_backup', filename=b.name) }}">
-                      Download
-                    </a>
-
-                    <form method="post" action="{{ url_for('home.restore', filename=b.name) }}">
-                      {{ csrf_field() }}
-                      <button class="btn btn-sm btn-outline-warning"
-                              onclick="return confirm('Den aktuellen Datenstand durch diese Sicherung ersetzen?');">
-                        Wiederherstellen
-                      </button>
-                    </form>
-
-                    <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}">
-                      {{ csrf_field() }}
-                      <button class="btn btn-sm btn-outline-danger"
-                              onclick="return confirm('Backup wirklich löschen?');">
-                        Löschen
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <div class="text-muted mt-3">Noch keine Sicherungen vorhanden.</div>
-    {% endif %}
+{% set standalone = request.endpoint == 'home.backups_page' %}
+<div class="sk-backups" id="datensicherung">
+  <div class="sk-backup-summary">
+    <section class="sk-panel {{ 'sk-feature' if standalone else 'sk-pad' }}" aria-labelledby="backupCreateHeading">
+      <h2 id="backupCreateHeading">Aktuellen Stand sichern</h2>
+      {% if backup_dir %}
+        <p>Die Sicherung wird auf diesem Rechner gespeichert.</p>
+      {% else %}
+        <p>Es ist kein Sicherungsordner eingerichtet.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('home.backup') }}">
+        {{ csrf_field() }}
+        <button class="btn {{ 'btn-light' if standalone else 'btn-primary' }}" {% if not backup_dir %}disabled{% endif %}>Sicherung erstellen</button>
+      </form>
+    </section>
+    <section class="sk-panel sk-pad" aria-labelledby="latestBackupHeading">
+      <h2 id="latestBackupHeading">Zuletzt gespeicherte Datei</h2>
+      {% if backups %}
+        {% set latest = backups[0] %}
+        <strong class="sk-backup-date">{{ latest.mtime_h }}</strong>
+        <p class="sk-backup-filename">{{ latest.name }}</p>
+        <span class="text-secondary small">{{ 'Hochgeladen' if latest.uploaded else 'Lokal erstellt' }} · {{ latest.size_h }}</span>
+      {% else %}
+        <p class="mt-2 mb-0">Noch keine Sicherung vorhanden.</p>
+      {% endif %}
+    </section>
   </div>
-</section>
+
+  <section class="sk-panel" aria-labelledby="backupListHeading">
+    <div class="sk-toolbar">
+      <div><h2 id="backupListHeading">Gespeicherte Sicherungen</h2>
+        <p class="small text-secondary mt-1 mb-0">{{ backups|length }} {{ 'Datei' if backups|length == 1 else 'Dateien' }}{% if backups %} · Nach Speicherzeit, neueste zuerst{% endif %}</p>
+      </div>
+      {% if backup_dir %}<details class="sk-backup-folder">
+        <summary>Speicherort anzeigen</summary><p class="sk-backup-filename mb-0 mt-2">{{ backup_dir }}</p>
+      </details>{% endif %}
+    </div>
+    {% if backups %}
+    <table class="table sk-list sk-backup-table align-middle mb-0" aria-labelledby="backupListHeading">
+      <thead><tr><th scope="col">Datei</th><th scope="col">Gespeichert am</th><th scope="col">Größe</th><th scope="col">Aktionen</th></tr></thead>
+      <tbody>
+        {% for b in backups %}
+        <tr>
+          <td class="sk-backup-file"><strong class="sk-backup-filename">{{ b.name }}</strong>
+            <small class="sk-person-meta">{{ 'Hochgeladen' if b.uploaded else 'Lokal erstellt' }}</small>
+          </td>
+          <td class="sk-backup-time">{{ b.mtime_h }}</td>
+          <td class="sk-backup-size">{{ b.size_h }}</td>
+          <td class="sk-backup-tools">
+            <a href="{{ url_for('home.download_backup', filename=b.name) }}">Herunterladen<span class="visually-hidden"> · {{ b.name }}</span></a>
+            <details>
+              <summary>Verwalten<span class="visually-hidden"> · {{ b.name }}</span></summary>
+              <div class="sk-backup-row-actions">
+                <form method="post" action="{{ url_for('home.restore', filename=b.name) }}"
+                      data-confirm="Den aktuellen Datenstand durch „{{ b.name }}“ ersetzen?"
+                      onsubmit="return window.confirm(this.dataset.confirm)">
+                  {{ csrf_field() }}<button class="btn btn-sm btn-outline-secondary">Wiederherstellen</button>
+                </form>
+                <form method="post" action="{{ url_for('home.delete_backup', filename=b.name) }}"
+                      data-confirm="Die Sicherungsdatei „{{ b.name }}“ aus dem Sicherungsordner löschen?"
+                      onsubmit="return window.confirm(this.dataset.confirm)">
+                  {{ csrf_field() }}<button class="btn btn-sm btn-outline-danger">Datei löschen</button>
+                </form>
+              </div>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <details class="sk-panel sk-fold sk-backup-import">
+    <summary>Sicherungsdatei vom Rechner verwenden</summary>
+    <div class="sk-pad pt-0 sk-backup-uploads">
+      <form method="post" action="{{ url_for('home.upload_only') }}" enctype="multipart/form-data">
+        {{ csrf_field() }}
+        <h3>Datei im Sicherungsordner ablegen</h3>
+        <p>Die Datei steht anschließend in der Liste. Du arbeitest mit deinem bisherigen Datenstand weiter.</p>
+        <label class="form-label" for="backupStoreFile">Sicherungsdatei zum Ablegen</label>
+        <input class="form-control" type="file" id="backupStoreFile" name="backup_file" accept=".sqlite3" required {% if not backup_dir %}disabled{% endif %}>
+        <button class="btn btn-outline-secondary mt-3" {% if not backup_dir %}disabled{% endif %}>Datei ablegen</button>
+      </form>
+      <form method="post" action="{{ url_for('home.restore_upload') }}" enctype="multipart/form-data"
+            onsubmit="return window.confirm('Den aktuellen Datenstand durch „' + this.elements.backup_file.files[0].name + '“ ersetzen?')">
+        {{ csrf_field() }}
+        <h3>Aus Datei wiederherstellen</h3>
+        <p>Die Anwendung prüft die ausgewählte Datei. Beim Einspielen ersetzt sie den aktuellen Bestand und legt vorher eine Kopie an.</p>
+        <label class="form-label" for="backupRestoreFile">Sicherungsdatei zum Wiederherstellen</label>
+        <input class="form-control" type="file" id="backupRestoreFile" name="backup_file" accept=".sqlite3" required {% if not backup_dir %}disabled{% endif %}>
+        <button class="btn btn-outline-secondary mt-3" {% if not backup_dir %}disabled{% endif %}>Datei wiederherstellen</button>
+      </form>
+    </div>
+  </details>
+</div>

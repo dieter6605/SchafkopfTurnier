@@ -1,21 +1,25 @@
 {% extends "layout.html" %}
+{% block title %}Wiederherstellung prüfen · Datensicherung{% endblock %}
+{% block main_class %}sk-workspace{% endblock %}
 {% block content %}
-<h1 class="h3">Endstand vor der Wiederherstellung prüfen</h1>
-<p>Sicherung <strong class="text-break">{{ filename }}</strong></p>
-<div class="alert alert-warning">
-  <p>Die folgenden Turniere sind in der Sicherung als abgeschlossen gespeichert.
-     Für jedes Turnier wird die erste auffällige Wertung angezeigt.</p>
-  <ul class="mb-0">
+<div class="sk-heading"><div>
+  <h1>Wiederherstellung prüfen</h1>
+  <p class="text-secondary mt-2 mb-0">Der aktuelle Datenbestand ist weiterhin aktiv.</p>
+</div></div>
+<section class="sk-panel sk-pad sk-restore-review" aria-labelledby="restoreHeading">
+  <h2 id="restoreHeading">Auffällige Endstände</h2>
+  <p class="mt-2">Die folgenden Turniere sind in der Sicherung als abgeschlossen gespeichert. Pro Turnier siehst du die erste auffällige Wertung.</p>
+  <ul class="sk-round-notice sk-restore-issues">
     {% for issue in issues %}<li>{{ issue }}</li>{% endfor %}
   </ul>
-</div>
-<p>Der aktuelle Datenbestand ist weiterhin aktiv. Wenn du die Sicherung einspielst,
-   übernimmt die Anwendung auch die aufgeführten Endstände. Vorher legt sie eine Kopie
-   des aktuellen Bestands an.</p>
-<form method="post" action="{{ url_for('home.restore', filename=filename) }}" class="d-flex gap-2 flex-wrap">
-  {{ csrf_field() }}
-  <input type="hidden" name="confirmation" value="{{ token }}">
-  <button class="btn btn-secondary" name="decision" value="cancel">Abbrechen</button>
-  <button class="btn btn-danger" name="decision" value="restore">Sicherung trotzdem einspielen</button>
-</form>
+  <h3>Ausgewählte Sicherung</h3>
+  <p class="sk-backup-filename">{{ upload_name or filename }}{% if upload_name %}<small class="sk-person-meta">Im Sicherungsordner gespeichert als {{ filename }}</small>{% endif %}</p>
+  <p>Beim Einspielen übernimmt die Anwendung auch die aufgeführten Endstände. Vorher sichert sie den aktuellen Bestand.</p>
+  <form method="post" action="{{ url_for('home.restore', filename=filename) }}" class="d-flex gap-2 flex-wrap">
+    {{ csrf_field() }}
+    <input type="hidden" name="confirmation" value="{{ token }}">
+    <button class="btn btn-primary" name="decision" value="cancel">Abbrechen</button>
+    <button class="btn btn-outline-danger" name="decision" value="restore">Sicherung trotzdem einspielen</button>
+  </form>
+</section>
 {% endblock %}

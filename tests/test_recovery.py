@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -27,6 +28,47 @@ class RecoveryTests(unittest.TestCase):
         self.app = create_app(db_path=self.live, backup_dir=self.backups)
         self.app.testing = True
         self.client = form_client(self.app)
+
+    def test_backup_workspace_offers_creation_and_both_file_actions(self):
+        page = html.fromstring(self.client.get("/datensicherung").get_data(as_text=True))
+        self.assertEqual(page.xpath("//h1/text()"), ["Datensicherung"])
+        self.assertIn("Noch keine Sicherung", page.text_content())
+        for action in ("/upload-only", "/restore-upload"):
+            form, = page.xpath("//details//form[@action=$action]", action=action)
+            field, = form.xpath(".//input[@type='file' and @name='backup_file' and @required]")
+            self.assertTrue(form.xpath(".//label[@for=$id]", id=field.get("id")))
+            self.assertEqual(form.get("enctype"), "multipart/form-data")
+        create, = page.xpath("//form[@action='/backup']")
+        result = self.client.post(create.action, data=dict(create.fields), follow_redirects=True)
+        saved, = self.backups.glob("*.sqlite3")
+        self.assertIn(saved.name, html.fromstring(result.get_data(as_text=True)).xpath("//tbody/tr")[0].text_content())
+        self.app.config["SKT_BACKUP_DIR"] = ""
+        unavailable = html.fromstring(self.client.get("/datensicherung").get_data(as_text=True))
+        self.assertIn("kein Sicherungsordner eingerichtet", unavailable.text_content())
+        self.assertFalse(unavailable.xpath("//main//form//button[not(@disabled)]"))
+
+    def test_backup_list_order_origin_and_actions_match_files_and_home(self):
+        snapshot = db.backup_db(self.backups)
+        older = self.backups / "skt-upload-archiv.sqlite3"
+        older.write_bytes(snapshot.read_bytes())
+        newer = snapshot.rename(self.backups / 'skt-backup-Probe & "Runde 1".sqlite3')
+        os.utime(older, (1000000000, 1000000000))
+        os.utime(newer, (1100000000, 1100000000))
+        page = html.fromstring(self.client.get("/datensicherung").get_data(as_text=True))
+        rows = page.xpath("//tbody/tr")
+        self.assertEqual([r.xpath("td[1]/strong/text()")[0] for r in rows], [newer.name, older.name])
+        self.assertEqual([r.xpath("td[1]/small/text()")[0] for r in rows], ["Lokal erstellt", "Hochgeladen"])
+        self.assertIn(newer.name, page.xpath("//section[@aria-labelledby='latestBackupHeading']")[0].text_content())
+        home = html.fromstring(self.client.get("/").get_data(as_text=True))
+        self.assertIn(newer.name, home.xpath("//section[h2='Zuletzt gespeicherte Sicherung']")[0].text_content())
+        for row, file in zip(rows, (newer, older)):
+            details, = row.xpath(".//details")
+            self.assertNotIn("open", details.attrib)
+            for form in details.xpath(".//form"):
+                self.assertIn(file.name, form.get("data-confirm"))
+                self.assertEqual(form.get("onsubmit"), "return window.confirm(this.dataset.confirm)")
+            with self.client.get(row.xpath(".//a/@href")[0]) as download:
+                self.assertEqual(download.data, file.read_bytes())
 
     def test_fresh_database_records_participants_and_restarts(self):
         self.client.post("/tournaments/new", data={
@@ -71,6 +113,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn("Turnier 1 · Freitagsturnier: Runde 1, Tisch 1", page.text_content())
         self.assertIn(expected, page.text_content())
         form, = page.xpath("//form[.//input[@name='confirmation']]")
+        self.assertEqual(page.xpath("//nav[@aria-label='Hauptnavigation']//a[@aria-current]/text()"), ["Datensicherung"])
+        self.assertEqual(form.xpath(".//button/@value"), ["cancel", "restore"])
+        self.assertIn("aktuelle Datenbestand ist weiterhin aktiv", page.text_content())
         return form.action, dict(form.fields)
 
     def test_restore_warns_until_confirmed_and_keeps_previous_valid_scores(self):
@@ -232,9 +277,10 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(list(self.directory.glob("*.before-restore-*")))
         self.assertEqual(saved.read_bytes(), source)
 
-        target, fields = self.warning_form(self.client.post("/restore-upload", data={
-            "backup_file": (BytesIO(source), "archiv.sqlite3"),
-        }))
+        response = self.client.post("/restore-upload", data={"backup_file": (BytesIO(source), "archiv.sqlite3")})
+        page = html.fromstring(response.get_data(as_text=True))
+        self.assertIn("archiv.sqlite3", page.xpath("//p[contains(@class,'sk-backup-filename')]")[0].text_content())
+        target, fields = self.warning_form(response)
         self.client.post(target, data={**fields, "decision": "restore"})
         with closing(db.connect()) as con:
             self.assertEqual(con.execute("SELECT SUM(points) FROM tournament_scores").fetchone()[0], 1)
@@ -270,7 +316,7 @@ class RecoveryTests(unittest.TestCase):
         original = self.live.read_bytes()
         response = self.client.post("/restore/" + saved.name)
         page = html.fromstring(response.get_data(as_text=True))
-        notices = page.xpath("//div[contains(@class,'alert-warning')]//li/text()")
+        notices = page.xpath("//section[@aria-labelledby='restoreHeading']//ul/li/text()")
         self.assertEqual(len(notices), 2)
         self.assertIn("Turnier 1 · Freitagsturnier: Runde 1, Tisch 1", notices[0])
         self.assertIn("41 Soli", notices[0])

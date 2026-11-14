@@ -29,7 +29,7 @@
     {% endif %}
   </section>
   <section class="sk-panel sk-support">
-    <h2>Letzte Datensicherung</h2>
+    <h2>Zuletzt gespeicherte Sicherung</h2>
     <strong>{{ latest_backup.mtime_h if latest_backup else 'Noch keine Sicherung' }}</strong>
     {% if latest_backup %}<p class="text-secondary text-break">{{ latest_backup.name }}</p>{% endif %}
     <a class="btn btn-outline-secondary mt-auto" href="{{ url_for('home.backups_page') }}">Datensicherung öffnen</a>

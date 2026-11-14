@@ -11,15 +11,19 @@ Kurzanleitung für den Turniertag
 - Auf „Start“ das aktuelle Turnier und den nächsten Schritt prüfen. „Turnier öffnen“ führt zur Übersicht mit dem Stand der einzelnen Tische.
 - Unter „Turniere“ nach Name oder Ort suchen und offene oder abgeschlossene Turniere auswählen.
 
-**Backup erstellen (empfohlen)**
-- „Datensicherung“ → „Sicherung erstellen“
-- Meldung „Backup erstellt“ abwarten
+**Sicherung erstellen**
+
+Unter **Datensicherung** auf **Sicherung erstellen** klicken. Die Meldung nennt die neue Datei. Unter **Gespeicherte Sicherungen** steht die zuletzt gespeicherte Datei oben. Bei hochgeladenen Dateien bezeichnet das Datum den Speicherzeitpunkt auf diesem Rechner. Über **Herunterladen** lässt sich eine Kopie auf einem weiteren Datenträger ablegen.
 
 Beim ersten Start mit einer älteren Datenbank prüft die Anwendung die Sitzplätze und Ergebnisse. Fehlt zu einem Ergebnis der passende Sitzplatz oder zu einem Sitzplatz die Anmeldung oder Runde, bricht die Umstellung ab. Die Meldung nennt Turnier, Runde, Tisch und Teilnehmer-ID. Diese Angaben mit dem ursprünglichen Sitzplan vergleichen. Die Prüfung gilt auch bei der Wiederherstellung einer älteren Sicherung.
 
 **Sicherung wiederherstellen**
 
-Unter „Datensicherung“ bei der gewünschten Sicherung „Wiederherstellen“ wählen oder unter „Hochladen und wiederherstellen“ eine Datei auswählen. Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
+Unter **Gespeicherte Sicherungen** bei der gewünschten Datei **Verwalten → Wiederherstellen** wählen. Die Rückfrage nennt die Datei, die den aktiven Datenstand ersetzen soll. **Abbrechen** schließt die Rückfrage.
+
+Für eine externe `.sqlite3`-Datei **Sicherungsdatei vom Rechner verwenden** öffnen. **Datei ablegen** speichert sie im Sicherungsordner. **Datei wiederherstellen** prüft sie und spielt sie nach der Bestätigung ein.
+
+Enthält ein abgeschlossenes Turnier eine fehlerhafte Wertung, zeigt die Anwendung je betroffenem Turnier den ersten Befund mit Runde und Tisch, soweit vorhanden. „Abbrechen“ erhält den aktiven Bestand. Mit „Sicherung trotzdem einspielen“ übernimmt die Turnierleitung ausdrücklich die angezeigte Sicherung einschließlich der beanstandeten Werte. Vor dem Ersetzen legt die Anwendung im Datenordner eine Kopie des bisherigen Stands an. Offene Turniere lassen sich auch mit ausstehenden Tischergebnissen wiederherstellen.
 
 **Adressen pflegen**
 

@@ -297,3 +297,37 @@
   .sk-address-history::before { content: "Teilnahmen · "; }
   .sk-address-history small { display: inline; margin-left: .5rem; }
 }
+
+.sk-backup-summary, .sk-backup-uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.sk-backup-summary { margin-bottom: 1.25rem; }
+.sk-backup-summary .sk-feature h2 { margin: 0 0 .5rem; }
+.sk-backup-date { display: block; margin: .65rem 0 .2rem; color: var(--sk-navy); font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.sk-backup-filename { overflow-wrap: anywhere; }
+.sk-backup-summary .sk-backup-filename { margin-bottom: .35rem; }
+.sk-backup-folder { max-width: 100%; }
+.sk-backup-folder summary, .sk-backup-tools summary { width: fit-content; cursor: pointer; color: var(--sk-blue); }
+.sk-backup-table th { border-top: 1px solid var(--sk-line); }
+.sk-backup-table .sk-backup-file { width: 45%; }
+.sk-backup-table tbody tr:last-child td { border-bottom: 0; }
+.sk-backup-time, .sk-backup-size { font-variant-numeric: tabular-nums; }
+.sk-backup-tools details { margin-top: .25rem; }
+.sk-backup-row-actions { display: flex; align-items: start; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+.sk-backup-import { margin-top: 1.25rem; }
+.sk-backup-uploads form { min-width: 0; }
+.sk-backup-uploads h3, .sk-restore-review h3 { font-size: 1.05rem; font-weight: 650; }
+.sk-restore-review { max-width: 56rem; }
+.sk-restore-issues { padding-left: 2.3rem; overflow-wrap: anywhere; }
+@media (min-width: 768px) {
+  .sk-backup-uploads form + form { border-left: 1px solid var(--sk-line); padding-left: 1.25rem; }
+}
+@media (max-width: 767px) {
+  .sk-backup-summary, .sk-backup-uploads { grid-template-columns: minmax(0, 1fr); gap: .85rem; }
+  .sk-backup-uploads form + form { padding-top: 1rem; border-top: 1px solid var(--sk-line); }
+  .sk-backup-table, .sk-backup-table tbody { display: block; }
+  .sk-backup-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .sk-backup-table tr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .3rem .6rem; padding: .85rem 1rem; border-top: 1px solid var(--sk-line); }
+  .sk-backup-table td { padding: 0; border: 0; background: transparent; }
+  .sk-backup-table .sk-backup-file { width: auto; grid-column: 1 / -1; }
+  .sk-backup-time, .sk-backup-size { color: var(--sk-muted); font-size: .9rem; }
+  .sk-backup-tools { grid-column: 1 / -1; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1rem; }
+}

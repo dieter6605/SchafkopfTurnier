@@ -129,7 +129,7 @@
             ('Start', 'home.home', ep == 'home.home'),
             ('Turniere', 'tournaments.tournaments_list', request.blueprint == 'tournaments'),
             ('Adressbuch', 'addresses.addresses_list', request.blueprint == 'addresses'),
-            ('Datensicherung', 'home.backups_page', ep == 'home.backups_page')] %}
+            ('Datensicherung', 'home.backups_page', ep in ('home.backups_page', 'home.restore', 'home.restore_upload'))] %}
             <li><a class="nav-link" href="{{ url_for(endpoint) }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a></li>
           {% endfor %}
           <li class="nav-item dropdown">
