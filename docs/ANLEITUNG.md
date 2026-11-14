@@ -97,17 +97,13 @@ Im Turnier **Runden & Ergebnisse** öffnen. Die aktuelle Runde zeigt alle Tische
 - Unter **Tischblätter und Auslosungsdaten** findest du die Tischblätter für Helfer und Turnierleitung. „Sitzplan drucken“ erstellt den alphabetischen Aushang.
 - Im Sitzplan öffnet Umschalt+R eine bereits ausgeloste Folgerunde. In der letzten ausgelosten Runde fragt die Anwendung, ob sie die nächste Runde auslosen soll.
 
-## 7. Sitzpläne drucken / aushängen
+## 7. Druck & Export
 
-- Unter „Druck & Export“ lädt „Helfer / Aushang (ZIP)“ Startliste, Gesamtwertung sowie Sitzpläne und Wertungen der einzelnen Runden herunter. Zur Spielerkennung dienen Startnummer, Vorname, Nachname und Wohnort.
-- „Turnierleitung mit Kontaktdaten (ZIP)“ enthält zusätzlich die vollständigen Anmeldedaten und Auswertungen für die interne Verwaltung.
-- „Tischblatt für Helfer“ und „Tischblätter für Helfer“ drucken Namen, Startnummer und Wohnort. Für ein Einzelblatt, ein Sammeldokument oder ein Tischblatt-ZIP mit E-Mail auf der ersten Seite „Turnierleitung (mit E-Mail)“ öffnen.
+- **Tischblätter für Helfer** zeigt die jüngste ausgeloste Runde. Für einen Nachdruck eine frühere Runde auswählen und **Anzeigen** drücken. **Sammeldokument (DOCX)** enthält die vollständigen Tische in einem Word-Dokument. **Einzeldateien (ZIP)** enthält eine Word-Datei je Tisch. Unter **Einzelnes Tischblatt nachdrucken** den gewünschten Tisch anklicken.
+- **Sitzplan für Runde … öffnen** und **Rundenwertung öffnen** führen zu den Druckansichten der gewählten Runde. Dort den jeweiligen Druckknopf verwenden.
+- **Listen für den Aushang** bietet das **Helferpaket (ZIP)** mit Startliste, Gesamtwertung, Sitzplänen und Rundenwertungen als CSV. Zur Spielerkennung dienen Startnummer, Vorname, Nachname und Wohnort. Die Gesamtwertung lässt sich auch direkt als CSV herunterladen oder über die Druckansicht aushängen.
+- **Turnierleitung · mit Kontaktdaten** aufklappen, um den vollständigen Turnierexport oder Tischblätter mit E-Mail-Adresse zu erhalten. Der vollständige Export umfasst alle Runden und erfordert eine Bestätigung. Für interne Tischblätter gilt dieselbe Rundenauswahl wie für die Helferblätter.
 - In Tabellen-CSV erhalten Textfelder mit Formelanfang das sichtbare Präfix `Text: `. Negative Punkte bleiben Zahlen. Für den unveränderten Austausch von Adressdaten die CSV „Adressbuch für Wiederimport“ auf der Importseite verwenden.
-
-- Runde anzeigen
-- Browser → Drucken
-- Druckkopf mit Logo erscheint automatisch
-- Für Aushang geeignet
 
 Die Anwendung erstellt die Word-Tischblätter für Einzelblatt, Sammeldokument und ZIP in `app/routes/tournaments/round_export_docx_merged.py`. Änderungen am Drucklayout werden dort vorgenommen.
 

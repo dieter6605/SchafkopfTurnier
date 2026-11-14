@@ -8,6 +8,7 @@ from flask import current_app, flash, redirect, render_template, request, url_fo
 from ... import db
 from . import bp
 from .overview import tournament_overview
+from .round_export_docx_merged import _fetch_round_tables
 from .helpers import (
     _get_tournament,
     _first_score_issue,
@@ -157,16 +158,31 @@ def tournament_create():
 def tournament_detail(tournament_id: int):
     with closing(db.connect()) as con, con:
         con.execute("BEGIN")
-        wlan_generation = db.wlan_generation(con) if current_app.config["WLAN_ORIGIN"] else None
         t = _get_tournament(con, tournament_id)
         if not t:
             flash("Turnier nicht gefunden.", "error")
             return redirect(url_for("tournaments.tournaments_list"))
 
+        section = request.args.get("bereich")
+        if section == "druck":
+            rounds = [row[0] for row in con.execute(
+                "SELECT round_no FROM tournament_rounds WHERE tournament_id=? ORDER BY round_no DESC",
+                (tournament_id,),
+            )]
+            selected = request.args.get("runde", type=int)
+            if selected not in rounds:
+                selected = rounds[0] if rounds else None
+            tables = _fetch_round_tables(con, tournament_id, selected, "helfer") if selected is not None else []
+            return render_template(
+                "tournament_print.html", t=t, section=section, rounds=rounds, selected=selected,
+                table_numbers=[table.table_no for table in tables], score_issue=_first_score_issue(con, tournament_id),
+            )
+
         overview = tournament_overview(con, t)
-        if request.args.get("bereich") == "runden":
+        if section == "runden":
             return render_template("tournament_rounds.html", t=t, overview=overview, section="runden")
 
+        wlan_generation = db.wlan_generation(con) if current_app.config["WLAN_ORIGIN"] else None
         fk_on = int(con.execute("PRAGMA foreign_keys;").fetchone()[0] or 0)
         integrity = str(con.execute("PRAGMA integrity_check;").fetchone()[0] or "")
         fk_issues = db.q(con, "PRAGMA foreign_key_check;")
@@ -197,8 +213,7 @@ def tournament_detail(tournament_id: int):
             and score_issue is None
         )
 
-    section = request.args.get("bereich")
-    if section not in ("druck", "details"):
+    if section != "details":
         section = "uebersicht"
     return render_template(
         "tournament_detail.html", wlan_generation=wlan_generation,

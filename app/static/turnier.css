@@ -237,3 +237,19 @@
   .sk-overall-table td, .sk-overall-table th { padding: .3rem .5rem; }
   .sk-overall-table a, .sk-overall-place { color: black !important; }
 }
+
+.sk-export-grid, .sk-export-internal { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.25rem; }
+.sk-export-grid { align-items: start; margin-bottom: 1.25rem; }
+.sk-export-context { color: var(--sk-muted); font-weight: 600; }
+.sk-round-select, .sk-download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.sk-round-select .form-select { width: auto; }
+.sk-sheet-reprint { margin-top: 1.1rem; }
+.sk-sheet-reprint summary { width: fit-content; cursor: pointer; color: var(--sk-blue); font-weight: 550; padding-block: .35rem; }
+.sk-sheet-reprint .sk-download-actions { margin-top: .45rem; }
+.sk-export-ranking { border-top: 1px solid var(--sk-line); margin-top: 1.2rem; padding-top: 1rem; }
+.sk-print-workspace h3 { font-size: 1.02rem; font-weight: 650; }
+.sk-export-ranking a + a { margin-left: .5rem; }
+.sk-management-export > summary { color: var(--sk-navy); }
+@media (max-width: 767px) {
+  .sk-export-grid, .sk-export-internal { grid-template-columns: minmax(0, 1fr); gap: .9rem; }
+}

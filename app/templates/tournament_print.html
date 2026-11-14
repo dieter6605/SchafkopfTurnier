@@ -1,0 +1,104 @@
+{% extends "layout.html" %}
+{% from "_tablesheet_download.html" import management_export %}
+{% block title %}Druck &amp; Export · {{ t.title }}{% endblock %}
+{% block main_class %}sk-workspace sk-print-workspace{% endblock %}
+{% block tournament_navigation %}{% endblock %}
+
+{% macro sheet_links(audience) %}
+  <div class="sk-download-actions">
+    <a class="btn {{ 'btn-primary' if audience == 'helfer' else 'btn-outline-secondary' }}"
+       href="{{ url_for('tournaments.tournament_round_tablesheets_docx_merged', tournament_id=t.id, round_no=selected, ausgabe=audience) }}">Sammeldokument (DOCX)</a>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('tournaments.tournament_round_tablesheets_docx_zip', tournament_id=t.id, round_no=selected, ausgabe=audience) }}">Einzeldateien (ZIP)</a>
+  </div>
+  <details class="sk-sheet-reprint">
+    <summary>Einzelnes Tischblatt nachdrucken</summary>
+    <div class="sk-download-actions">
+      {% for number in table_numbers %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('tournaments.tournament_round_tablesheet_docx_single', tournament_id=t.id, round_no=selected, table_no=number, ausgabe=audience) }}">Tisch {{ number }}<span class="visually-hidden"> · Runde {{ selected }} (DOCX)</span></a>
+      {% endfor %}
+    </div>
+  </details>
+{% endmacro %}
+
+{% block content %}
+<a class="sk-back" href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">← {{ t.title }}</a>
+<div class="sk-heading">
+  <div><h1>Druck &amp; Export</h1>
+    <p class="text-secondary mt-2 mb-0">{{ t.event_date|turnierdatum }} · {{ t.start_time }} Uhr{% if t.location %} · {{ t.location }}{% endif %}</p>
+  </div>
+  {% if skt_tournament_closed %}<span class="sk-badge closed">Turnier abgeschlossen</span>{% endif %}
+</div>
+{% include "_tournament_nav.html" %}
+
+<div class="sk-export-grid">
+  <section class="sk-panel" aria-labelledby="sheetsHeading">
+    <div class="sk-pad">
+      <div class="sk-section-heading">
+        <h2 id="sheetsHeading">Tischblätter für Helfer</h2>
+        {% if rounds|length > 1 %}
+          <form class="sk-round-select" method="get" action="{{ url_for('tournaments.tournament_detail', tournament_id=t.id) }}">
+            <input type="hidden" name="bereich" value="druck">
+            <label for="printRound" class="visually-hidden">Runde für Tischblätter und Druckansichten</label>
+            <select class="form-select" id="printRound" name="runde">
+              {% for rn in rounds %}<option value="{{ rn }}" {% if rn == selected %}selected{% endif %}>Runde {{ rn }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-outline-secondary">Anzeigen</button>
+          </form>
+        {% endif %}
+      </div>
+      {% if selected is not none %}
+        <p class="sk-export-context">Runde {{ selected }} · {{ table_numbers|length }} {{ 'vollständiger Tisch' if table_numbers|length == 1 else 'vollständige Tische' }}</p>
+        {% if table_numbers %}
+          <p>Jeder Tisch erhält zwei Spielseiten mit Startnummer, Namen und Wohnort.</p>
+          {{ sheet_links('helfer') }}
+        {% else %}<p>Für diese Runde ist noch kein vollständiger Vierertisch im Sitzplan vorhanden.</p>{% endif %}
+      {% else %}
+        <p class="text-secondary">Nach der ersten Auslosung stehen hier die Tischblätter bereit.</p>
+        <a href="{{ url_for('tournaments.tournament_detail', tournament_id=t.id, bereich='runden') }}">Runden &amp; Ergebnisse öffnen</a>
+      {% endif %}
+    </div>
+    {% if selected is not none %}
+      <div class="sk-round-links">
+        <a href="{{ url_for('tournaments.tournament_round_view', tournament_id=t.id, round_no=selected) }}">Sitzplan für Runde {{ selected }} öffnen</a>
+        <a href="{{ url_for('tournaments.tournament_round_results_standings', tournament_id=t.id, round_no=selected) }}">Rundenwertung öffnen</a>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="sk-panel sk-pad" aria-labelledby="listsHeading">
+    <h2 id="listsHeading">Listen für den Aushang</h2>
+    <p class="mt-2">Das Helferpaket enthält Startliste, Sitzpläne, Rundenwertungen und Gesamtwertung als CSV.</p>
+    <a class="btn btn-outline-primary" href="{{ url_for('tournaments.tournament_helper_zip', tournament_id=t.id) }}">Helferpaket (ZIP)</a>
+    <div class="sk-export-ranking">
+      <h3>Gesamtwertung</h3>
+      <div class="sk-download-actions">
+        <a href="{{ url_for('tournaments.tournament_standings_overall', tournament_id=t.id) }}">Druckansicht öffnen</a>
+        <a href="{{ url_for('tournaments.tournament_export_csv', tournament_id=t.id) }}">CSV herunterladen</a>
+      </div>
+    </div>
+    {% if score_issue and (rounds or skt_tournament_closed) %}
+      <p class="sk-round-notice mb-0 mt-3"><strong>Vorläufige Platzierungen.</strong> {{ score_issue }}</p>
+    {% endif %}
+  </section>
+</div>
+
+<details class="sk-panel sk-fold sk-management-export">
+  <summary>Turnierleitung · mit Kontaktdaten</summary>
+  <div class="sk-pad pt-0 sk-export-internal">
+    <div>
+      <h3>Vollständiger Turnierexport</h3>
+      <p>Das interne ZIP enthält die Anmeldedaten mit Kontaktdaten und die Auswertungen aller Runden.</p>
+      {{ management_export(t) }}
+    </div>
+    {% if table_numbers %}
+      <div>
+        <h3>Tischblätter mit E-Mail · Runde {{ selected }}</h3>
+        <p>Die E-Mail-Adresse steht auf der ersten Spielseite.</p>
+        {{ sheet_links('leitung') }}
+      </div>
+    {% endif %}
+  </div>
+</details>
+{% endblock %}

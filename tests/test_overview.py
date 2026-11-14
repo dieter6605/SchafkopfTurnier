@@ -1,8 +1,10 @@
 import unittest
 from contextlib import closing
 from datetime import date, timedelta
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from zipfile import ZipFile
 
 from lxml import html
 
@@ -193,6 +195,68 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual([r.xpath(".//a/@href")[0] for r in rows],
                          [f"/tournaments/1/players/{n}" for n in range(1, 5)])
 
+    def test_print_workspace_uses_selected_round_and_separates_audiences(self):
+        self.tournament()
+        self.register(8)
+        self.draw(1)
+        self.draw(2)
+        path = "/tournaments/1?bereich=druck"
+        current = self.page(path)
+        form, = current.xpath("//form[.//select[@name='runde']]")
+        self.assertEqual(dict(form.fields), {"bereich": "druck", "runde": "2"})
+        self.assertEqual(form.xpath(".//option/@value"), ["2", "1"])
+        previous = self.page(form.action + "?bereich=druck&runde=1")
+        sheets, = previous.xpath("//section[.//h2='Tischblätter für Helfer']")
+        internal, = previous.xpath("//details[summary='Turnierleitung · mit Kontaktdaten']")
+        self.assertNotIn("open", internal.attrib)
+        self.assertEqual(self.button(sheets, "Sitzplan für Runde 1"), "/tournaments/1/rounds/1")
+        self.assertEqual(self.button(sheets, "Rundenwertung öffnen"), "/tournaments/1/rounds/1/results/standings")
+        self.assertEqual(self.button(previous, "Druckansicht öffnen"), "/tournaments/1/standings")
+        self.assertEqual(self.button(previous, "CSV herunterladen"), "/tournaments/1/export.csv")
+        self.assertEqual(self.button(previous, "Helferpaket"), "/tournaments/1/helfer.zip")
+        self.assertTrue(internal.xpath(".//a[@href='/tournaments/1/export.zip' and @data-confirm and @onclick]"))
+        for scope, audience, prefix in ((sheets, "helfer", "Helfer"), (internal, "leitung", "Turnierleitung")):
+            links = scope.xpath(".//a[contains(@href, 'docx')]/@href")
+            self.assertEqual(links, [
+                f"/tournaments/1/rounds/1/{part}?ausgabe={audience}"
+                for part in ("tablesheets-docx-merged", "tablesheets-docx-zip", "tablesheets-docx/1", "tablesheets-docx/2")
+            ])
+            download = self.client.get(links[1])
+            self.assertEqual(download.status_code, 200)
+            self.assertIn(prefix, download.headers["Content-Disposition"])
+            with ZipFile(BytesIO(download.data)) as archive:
+                self.assertEqual(sorted(archive.namelist()), [
+                    f"{prefix}_Herbstturnier_R01_T01.docx", f"{prefix}_Herbstturnier_R01_T02.docx",
+                ])
+        self.assertFalse(previous.xpath("//section//a[contains(@href,'ausgabe=leitung') or contains(@href,'/export.zip')]"))
+        self.assertEqual(self.page(path + "&runde=99").xpath("//option[@selected]/@value"), ["2"])
+
+    def test_print_workspace_before_draw_and_with_incomplete_seats(self):
+        self.tournament()
+        path = "/tournaments/1?bereich=druck"
+        before = self.page(path)
+        self.assertFalse(before.xpath("//select | //a[contains(@href,'docx')]"))
+        self.assertIn("Nach der ersten Auslosung", before.text_content())
+        self.assertEqual(self.button(before, "Helferpaket"), "/tournaments/1/helfer.zip")
+        self.register(8)
+        self.draw(1)
+        with closing(db.connect()) as con, con:
+            con.execute("DELETE FROM tournament_seats WHERE table_no=1 AND seat='D'")
+            con.execute("UPDATE tournaments SET closed_at='2026-11-13'")
+        partial = self.page(path)
+        self.assertIn("Turnier abgeschlossen", partial.text_content())
+        self.assertIn("Vorläufige Platzierungen.", partial.text_content())
+        self.assertIn("Runde 1, Tisch 1", partial.text_content())
+        self.assertIn("1 vollständiger Tisch", partial.text_content())
+        self.assertFalse(partial.xpath("//a[contains(@href,'tablesheets-docx/1?')]"))
+        self.assertTrue(partial.xpath("//a[contains(@href,'tablesheets-docx/2?ausgabe=helfer')]"))
+        with closing(db.connect()) as con, con:
+            con.execute("DELETE FROM tournament_seats WHERE table_no=2")
+        missing = self.page(path)
+        self.assertFalse(missing.xpath("//a[contains(@href,'docx')]"))
+        self.assertIn("kein vollständiger Vierertisch", missing.text_content())
+        self.assertEqual(self.button(missing, "Sitzplan für Runde 1"), "/tournaments/1/rounds/1")
+
     def test_start_selection_empty_and_filtered_lists_and_navigation(self):
         self.assertIn("Erstes Turnier anlegen", self.page("/").text_content())
         self.tournament(days=-1)
@@ -216,4 +280,4 @@ class OverviewTests(unittest.TestCase):
         for a in nav:
             page = self.page(a.get("href"))
             self.assertEqual(page.xpath("//nav[@aria-label='Turniernavigation']/a[@aria-current]/text()"), [a.text])
-        self.assertTrue(self.page(nav[-1].get("href")).xpath("//details[@open]//a[contains(@href,'docx')]"))
+        self.assertEqual(self.page(nav[-1].get("href")).xpath("//h1/text()"), ["Druck & Export"])
